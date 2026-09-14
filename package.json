@@ -1,6 +1,6 @@
 {
-  "name": "gestao-operacional-disbecol",
-  "version": "1.0.0",
+  "name": "disb-gestao",
+  "version": "1.0.7",
   "private": true,
   "scripts": {
     "prepare:web": "node scripts/copy-web.mjs",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@capacitor/android": "latest",
-    "@capacitor/core": "latest"
+    "@capacitor/core": "latest",
+    "@capacitor/geolocation": "latest"
   },
   "devDependencies": {
     "@capacitor/cli": "latest"

@@ -1,1 +1,1 @@
-v1.0.2 - ícone Disbecol atualizado
+v1.0.7 - conciliacao de conferencias por numero do mapa; historico independente da data; diagnostico da Edge Function admin-users

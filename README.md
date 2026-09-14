@@ -1,4 +1,4 @@
-# Gestão Operacional Disbecol — Supabase v1
+# Disb Gestão — Supabase
 
 Aplicativo unificado com **NRI + Avarias + Conferência de Vasilhames**, usando Supabase/PostgreSQL como banco principal.
 
@@ -197,3 +197,18 @@ O APK usa exatamente o mesmo banco Supabase da versão web.
 - `maps`
 
 O bucket privado de fotos e assinaturas é `avarias`.
+
+## v1.0.5 — Clientes por código + filial
+A base de clientes agora aceita o mesmo Código PDV em filiais diferentes. A chave de importação é `Código PDV + Filial`.
+Quando um código existir em mais de uma filial, o cadastro de Avarias solicita que o usuário selecione o cliente correto antes de continuar.
+
+Para atualizar um banco criado em versões anteriores, execute `supabase/04_clientes_codigo_filial.sql` uma única vez no SQL Editor antes de importar CLIENTES.
+
+
+## Alterações v1.0.7
+
+- Dashboard e histórico de conferências conciliam `MAPA` pelo número, independentemente da data da linha em `MAPAS`.
+- Quando houver mais de uma linha do mesmo mapa na base, é usada a ocorrência mais recente de `MAPAS`.
+- O filtro de data do dashboard filtra a data da conferência; a base `MAPAS` continua disponível para localizar o mesmo número em qualquer data.
+- A tela de usuários mostra uma mensagem específica quando a Edge Function `admin-users` não está publicada/acessível.
+- Consulte `supabase/DEPLOY_ADMIN_USERS.md` para publicar a função.

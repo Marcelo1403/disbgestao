@@ -1,6 +1,8 @@
 {
   "appId": "br.com.disbecol.gestaooperacional",
-  "appName": "Gestão Operacional",
+  "appName": "Disb Gestão",
   "webDir": "www",
-  "server": {"androidScheme": "https"}
+  "server": {
+    "androidScheme": "https"
+  }
 }
