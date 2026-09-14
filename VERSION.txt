@@ -1,1 +1,1 @@
-v1.0.9 - produto avariado com texto livre, sem sugestoes automaticas
+v1.0.11 - perfis unificados, Motorista, NRI Ambev/Marketplace, Sem Validade, sem sugestoes e GPS Android
