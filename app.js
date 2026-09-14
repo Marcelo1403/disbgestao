@@ -65,7 +65,7 @@ async function init(){
   updateOnlineStatus();
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>reg.update().catch(()=>{})).catch(()=>{});
 
   if (!isConfigured()) {
     setBackendStatus('error','Configure o Supabase em config.js');
@@ -132,8 +132,6 @@ function bindBaseEvents(){
   $('avData').addEventListener('change',()=>{});
   $('avPdv').addEventListener('input',onPdvInput);
   $('avClienteEscolha').addEventListener('change',onCustomerChoiceChange);
-  $('avProduto').addEventListener('input',e=>refreshAvariaProductSuggestions(e.target.value));
-  $('avProduto').addEventListener('focus',e=>refreshAvariaProductSuggestions(e.target.value));
   $('avLote').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
   $('btnAvCamera').addEventListener('click',()=>$('avFotoCamera').click());
   $('btnAvArquivo').addEventListener('click',()=>$('avFotoArquivo').click());
@@ -286,15 +284,11 @@ function populateReferenceInputs(){
   fillSelect('nriUnidade',refs.units.map(x=>x.name),'Selecione'); fillSelect('nriTurno',refs.shifts.map(x=>x.name),'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
   fillSelect('pendUnidade',refs.units.map(x=>x.name),'Todas'); fillSelect('histNriUnidade',refs.units.map(x=>x.name),'Todas');
   $('listaProdutos').innerHTML=refs.products.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join('');
-  refreshAvariaProductSuggestions('');
 }
 function fillSelect(id,values,placeholder){const el=$(id);const old=el.value;el.innerHTML=`<option value="">${esc(placeholder)}</option>`+values.map(v=>`<option>${esc(v)}</option>`).join('');if(values.includes(old))el.value=old;}
 function sanitizeRefText(v){return repairText(String(v??'')).trim();}
 function repairText(v){let s=String(v??'');const map={'Ã¡':'á','Ã ': 'à','Ã¢':'â','Ã£':'ã','Ã¤':'ä','Ã©':'é','Ã¨':'è','Ãª':'ê','Ã«':'ë','Ã­':'í','Ã¬':'ì','Ã®':'î','Ã¯':'ï','Ã³':'ó','Ã²':'ò','Ã´':'ô','Ãµ':'õ','Ã¶':'ö','Ãº':'ú','Ã¹':'ù','Ã»':'û','Ã¼':'ü','Ã§':'ç','Ã':'Á','Ã€':'À','Ã‚':'Â','Ãƒ':'Ã','Ã„':'Ä','Ã‰':'É','Ãˆ':'È','ÃŠ':'Ê','Ã‹':'Ë','Ã':'Í','ÃŒ':'Ì','ÃŽ':'Î','Ã':'Ï','Ã“':'Ó','Ã’':'Ò','Ã”':'Ô','Ã•':'Õ','Ã–':'Ö','Ãš':'Ú','Ã™':'Ù','Ã›':'Û','Ãœ':'Ü','Ã‡':'Ç','â€“':'–','â€”':'—','â€˜':'‘','â€™':'’','â€œ':'“','â€':'”','â€¢':'•','Â ':' ','Âº':'º','Âª':'ª'};for(const [a,b] of Object.entries(map))s=s.split(a).join(b);s=s.replace(/Â(?=[A-Za-zÀ-ÿ])/g,'');return s;}
 function sanitizeRefs(data){return {products:(data.products||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name)})).filter(x=>x.code&&x.name),units:(data.units||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),shifts:(data.shifts||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),drivers:(data.drivers||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),factories:(data.factories||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),customers:(data.customers||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name),city:sanitizeRefText(x.city),branch:sanitizeRefText(x.branch)})).filter(x=>x.code&&x.name)};}
-function findProductByName(name){const q=norm(name);if(!q)return null;return refs.products.find(p=>norm(p.name)===q)||null;}
-function searchProducts(term,limit=12){const q=norm(term);const all=(refs.products||[]).slice();if(!q)return all.slice(0,limit);const starts=[],contains=[];for(const p of all){const text=norm(`${p.code} ${p.name}`);if(text.startsWith(q))starts.push(p);else if(text.includes(q))contains.push(p);}return starts.concat(contains).slice(0,limit);}
-function refreshAvariaProductSuggestions(term=''){const list=$('listaProdutosAvaria');if(!list)return;const items=searchProducts(term,20);list.innerHTML=items.map(p=>`<option value="${esc(p.name)}">${esc(p.code)} • ${esc(p.name)}</option>`).join('');}
 
 // NRI ------------------------------------------------------------------------
 function fillDefaultDates(){
@@ -377,10 +371,10 @@ function onCustomerChoiceChange(){
   showCustomer(selectedCustomer());
 }
 async function onAvariaPhoto(e){const file=e.target.files?.[0];if(!file)return;try{avPhotoBlob=await compressImage(file,1280,.76);if(avPhotoPreviewUrl)URL.revokeObjectURL(avPhotoPreviewUrl);avPhotoPreviewUrl=URL.createObjectURL(avPhotoBlob);$('avFotoPreview').src=avPhotoPreviewUrl;$('avFotoPreview').classList.remove('hidden');$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='Obtendo localização…';avGps=await captureGps();$('avGpsStatus').className='gps-status ok';$('avGpsStatus').textContent=`GPS capturado: ${avGps.latitude.toFixed(6)}, ${avGps.longitude.toFixed(6)} • ±${Math.round(avGps.accuracy||0)} m`;}catch(err){avGps=null;$('avGpsStatus').className='gps-status error';$('avGpsStatus').textContent=`GPS não capturado: ${humanGpsError(err)}`;}}
-function addAvariaItem(){const matched=findProductByName($('avProduto').value.trim());if(matched)$('avProduto').value=matched.name;const product=sanitizeRefText($('avProduto').value.trim()),lot=$('avLote').value.trim().toUpperCase(),quantity=num($('avQuantidade').value),unit=$('avUnidade').value,reason=$('avMotivo').value;if(!product||!lot||quantity<=0||!unit||!reason)return toast('Preencha produto, lote, quantidade, unidade e motivo.','error');if(!avPhotoBlob)return toast('A foto é obrigatória.','error');if(!avGps)return toast('A localização GPS da foto é obrigatória.','error');const id=avariaEditingId||uuid();const old=avariaItems.find(x=>x.id===id);const item={id,product,lot,quantity,unit,reason,photoBlob:avPhotoBlob,previewUrl:avPhotoPreviewUrl,gps:avGps};const idx=avariaItems.findIndex(x=>x.id===id);if(idx>=0){if(old?.previewUrl&&old.previewUrl!==item.previewUrl)URL.revokeObjectURL(old.previewUrl);avariaItems[idx]=item;}else avariaItems.push(item);renderAvariaItems();clearAvariaItemEditor(false);}
+function addAvariaItem(){const product=sanitizeRefText($('avProduto').value.trim()),lot=$('avLote').value.trim().toUpperCase(),quantity=num($('avQuantidade').value),unit=$('avUnidade').value,reason=$('avMotivo').value;if(!product||!lot||quantity<=0||!unit||!reason)return toast('Preencha produto, lote, quantidade, unidade e motivo.','error');if(!avPhotoBlob)return toast('A foto é obrigatória.','error');if(!avGps)return toast('A localização GPS da foto é obrigatória.','error');const id=avariaEditingId||uuid();const old=avariaItems.find(x=>x.id===id);const item={id,product,lot,quantity,unit,reason,photoBlob:avPhotoBlob,previewUrl:avPhotoPreviewUrl,gps:avGps};const idx=avariaItems.findIndex(x=>x.id===id);if(idx>=0){if(old?.previewUrl&&old.previewUrl!==item.previewUrl)URL.revokeObjectURL(old.previewUrl);avariaItems[idx]=item;}else avariaItems.push(item);renderAvariaItems();clearAvariaItemEditor(false);}
 function renderAvariaItems(){$('avItemCounter').textContent=`${avariaItems.length} produto(s)`;const el=$('avItemList');if(!avariaItems.length){el.className='item-list empty-state';el.textContent='Nenhum produto adicionado.';return;}el.className='item-list';el.innerHTML=avariaItems.map(x=>`<div class="item-row" data-id="${x.id}"><div class="info"><small>Produto</small><strong>${esc(x.product)}</strong></div><div class="info"><small>Lote</small><strong>${esc(x.lot)}</strong></div><div class="info"><small>Quantidade</small><strong>${fmtNum(x.quantity)} ${esc(x.unit)}</strong></div><div class="info"><small>Motivo</small><strong>${esc(x.reason)}</strong></div><div class="info"><small>GPS</small><strong>${x.gps.latitude.toFixed(5)}, ${x.gps.longitude.toFixed(5)}</strong></div><div class="mini-actions"><button class="mini-btn" data-act="edit">Editar</button><button class="mini-btn danger" data-act="del">Excluir</button></div></div>`).join('');}
 function onAvariaItemListClick(e){const b=e.target.closest('button[data-act]');if(!b)return;const item=avariaItems.find(x=>x.id===b.closest('[data-id]').dataset.id);if(!item)return;if(b.dataset.act==='del'){if(item.previewUrl)URL.revokeObjectURL(item.previewUrl);avariaItems=avariaItems.filter(x=>x.id!==item.id);renderAvariaItems();return;}avariaEditingId=item.id;$('avProduto').value=item.product;$('avLote').value=item.lot;$('avQuantidade').value=item.quantity;$('avUnidade').value=item.unit;$('avMotivo').value=item.reason;avPhotoBlob=item.photoBlob;avPhotoPreviewUrl=item.previewUrl;avGps=item.gps;$('avFotoPreview').src=item.previewUrl;$('avFotoPreview').classList.remove('hidden');$('avGpsStatus').className='gps-status ok';$('avGpsStatus').textContent=`GPS capturado: ${item.gps.latitude.toFixed(6)}, ${item.gps.longitude.toFixed(6)}`;$('btnAdicionarAvItem').textContent='Salvar alteração';$('btnCancelarAvItem').classList.remove('hidden');}
-function clearAvariaItemEditor(revoke=true){avariaEditingId=null;if(revoke&&avPhotoPreviewUrl&&!avariaItems.some(x=>x.previewUrl===avPhotoPreviewUrl))URL.revokeObjectURL(avPhotoPreviewUrl);avPhotoBlob=null;avPhotoPreviewUrl='';avGps=null;['avProduto','avLote','avQuantidade','avMotivo'].forEach(id=>$(id).value='');$('avUnidade').value='UNIDADE';$('avFotoCamera').value='';$('avFotoArquivo').value='';$('avFotoPreview').classList.add('hidden');$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='GPS ainda não capturado.';refreshAvariaProductSuggestions('');$('btnAdicionarAvItem').textContent='+ Adicionar produto';$('btnCancelarAvItem').classList.add('hidden');}
+function clearAvariaItemEditor(revoke=true){avariaEditingId=null;if(revoke&&avPhotoPreviewUrl&&!avariaItems.some(x=>x.previewUrl===avPhotoPreviewUrl))URL.revokeObjectURL(avPhotoPreviewUrl);avPhotoBlob=null;avPhotoPreviewUrl='';avGps=null;['avProduto','avLote','avQuantidade','avMotivo'].forEach(id=>$(id).value='');$('avUnidade').value='UNIDADE';$('avFotoCamera').value='';$('avFotoArquivo').value='';$('avFotoPreview').classList.add('hidden');$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='GPS ainda não capturado.';$('btnAdicionarAvItem').textContent='+ Adicionar produto';$('btnCancelarAvItem').classList.add('hidden');}
 function clearAvariaRequest(){avariaItems.forEach(x=>{if(x.previewUrl)URL.revokeObjectURL(x.previewUrl);});avariaItems=[];renderAvariaItems();clearAvariaItemEditor();$('avData').value=localIsoDate(new Date());$('avEntregador').value=profile?.name||'';['avPdv','avMapa'].forEach(id=>$(id).value='');$('avClienteNome').textContent='Digite um PDV';$('avCidade').textContent='—';selectedCustomerKey='';$('avClienteEscolha').innerHTML='';$('avClienteDuplicado').classList.add('hidden');clearSignature();}
 async function submitAvaria(e){e.preventDefault();const customer=selectedCustomer();if(!customer)return toast(currentCustomerMatches().length>1?'Selecione qual cliente corresponde ao PDV informado.':'Informe um PDV válido.','error');if(!$('avMapa').value.trim())return toast('Informe o mapa.','error');if(!avariaItems.length)return toast('Adicione ao menos um produto avariado.','error');if(!signatureDirty)return toast('A assinatura do cliente é obrigatória.','error');const btn=$('btnSalvarAvaria');btn.disabled=true;btn.textContent='Enviando…';try{const reqKey=uuid();const sigBlob=await canvasBlob($('signatureCanvas'),.82);const signaturePath=`${authUser.id}/${reqKey}/assinatura.jpg`;await uploadStorage(signaturePath,sigBlob);const uploaded=await Promise.all(avariaItems.map(async(x,i)=>{const path=`${authUser.id}/${reqKey}/foto_${String(i+1).padStart(2,'0')}.jpg`;await uploadStorage(path,x.photoBlob);return {...x,photo_path:path};}));const payload={date:$('avData').value,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:$('avMapa').value.trim(),signature_path:signaturePath,items:uploaded.map(x=>({product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photo_path:x.photo_path,latitude:x.gps.latitude,longitude:x.gps.longitude,accuracy:x.gps.accuracy||'',gps_at:x.gps.capturedAt}))};const {error}=await sb.rpc('create_damage_request',{p_payload:payload});if(error)throw error;toast('Avaria registrada com sucesso.','success');clearAvariaRequest();}catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;btn.textContent='Registrar requisição';}}
 async function uploadStorage(path,blob){const {error}=await sb.storage.from('avarias').upload(path,blob,{contentType:'image/jpeg',upsert:false});if(error)throw error;}
@@ -422,7 +416,45 @@ let users=[];async function loadUsers(){if(!isAdmin())return;try{const {data,err
 function renderUsers(){$('tbodyUsuarios').innerHTML=users.map(u=>`<tr><td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${esc(ROLE_LABELS[u.role]||u.role)}</td><td>${u.active?'<span class="status ok">Ativo</span>':'<span class="status bad">Inativo</span>'}</td><td><button class="mini-btn" data-user="${esc(u.username)}">Editar</button></td></tr>`).join('');}
 function onUserTableClick(e){const b=e.target.closest('button[data-user]');if(!b)return;const u=users.find(x=>x.username===b.dataset.user);if(!u)return;$('usuarioOriginal').value=u.username;$('usuarioLogin').value=u.username;$('usuarioNome').value=u.name;$('usuarioPerfil').value=u.role;$('usuarioSenha').value='';$('usuarioAtivo').checked=u.active;}
 function clearUserForm(){$('usuarioOriginal').value='';$('usuarioLogin').value='';$('usuarioNome').value='';$('usuarioPerfil').value='COLABORADOR_ARMAZEM';$('usuarioSenha').value='';$('usuarioAtivo').checked=true;}
-async function saveUser(e){e.preventDefault();const original=$('usuarioOriginal').value.trim();const body={action:original?'update':'create',originalUsername:original,username:$('usuarioLogin').value,name:$('usuarioNome').value,role:$('usuarioPerfil').value,password:$('usuarioSenha').value,active:$('usuarioAtivo').checked};if(!body.username.trim()||!body.name.trim())return toast('Informe usuário e nome.','error');if(!original&&body.password.length<6)return toast('A senha do novo usuário deve ter pelo menos 6 caracteres.','error');const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';try{const {data,error}=await sb.functions.invoke('admin-users',{body});if(error){const msg=String(error.message||error);if(/Failed to send a request|fetch|FunctionFetchError/i.test(msg))throw new Error('A função admin-users não está acessível no Supabase. Publique/republique a Edge Function admin-users antes de cadastrar usuários.');throw error;}if(data?.ok===false)throw new Error(data.error);toast('Usuário salvo.','success');clearUserForm();await loadUsers();}catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;btn.textContent='Salvar usuário';}}
+async function saveUser(e){
+  e.preventDefault();
+  const original=$('usuarioOriginal').value.trim();
+  const body={action:original?'update':'create',originalUsername:original,username:$('usuarioLogin').value,name:$('usuarioNome').value,role:$('usuarioPerfil').value,password:$('usuarioSenha').value,active:$('usuarioAtivo').checked};
+  if(!body.username.trim()||!body.name.trim())return toast('Informe usuário e nome.','error');
+  if(!original&&body.password.length<6)return toast('A senha do novo usuário deve ter pelo menos 6 caracteres.','error');
+  const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';
+  try{
+    const {data:{session},error:sessionError}=await sb.auth.getSession();
+    if(sessionError||!session?.access_token)throw new Error('Sua sessão expirou. Saia do sistema e entre novamente.');
+    const {data,error}=await sb.functions.invoke('admin-users',{body,headers:{Authorization:`Bearer ${session.access_token}`}});
+    if(error){
+      let detail='';
+      try{
+        if(error.context&&typeof error.context.clone==='function'){
+          const response=error.context.clone();
+          try{const parsed=await response.json();detail=parsed?.error||parsed?.message||parsed?.code||'';}catch(_jsonErr){detail=await response.text().catch(()=> '');}
+        }
+      }catch(_e){}
+      if(detail)throw new Error(detail);
+      const msg=String(error.message||error);
+      if(/Failed to send a request|fetch|FunctionFetchError/i.test(msg))throw new Error('A função admin-users não está acessível no Supabase. Republique a Edge Function.');
+      throw new Error(msg);
+    }
+    if(data?.ok===false)throw new Error(data.error||'Falha ao salvar usuário.');
+    toast(data?.repaired?'Usuário recuperado e salvo com sucesso.':'Usuário salvo.','success');
+    clearUserForm();await loadUsers();
+  }catch(err){toast(humanUserAdminError(err),'error');}
+  finally{btn.disabled=false;btn.textContent='Salvar usuário';}
+}
+function humanUserAdminError(e){
+  const m=String(e?.message||e||'Erro desconhecido');
+  if(/FORBIDDEN/i.test(m))return 'Seu usuário não está com perfil ADMIN ativo no Supabase.';
+  if(/AUTH_|JWT|sessão|session/i.test(m))return 'Sua sessão não foi validada pela função. Saia do Disb Gestão, entre novamente e tente de novo. Detalhe: '+m;
+  if(/SENHA_MIN_6/i.test(m))return 'A senha precisa ter pelo menos 6 caracteres.';
+  if(/PERFIL_INVALIDO/i.test(m))return 'Perfil de usuário inválido.';
+  if(/USUARIO_JA_EXISTE|already been registered|already exists|duplicate/i.test(m))return 'Esse usuário já existe. Tente editar o cadastro existente.';
+  return m;
+}
 
 // IMPORT ---------------------------------------------------------------------
 async function importBaseCsv(){if(!isAdmin())return;const file=$('importFile').files?.[0];if(!file)return toast('Selecione um arquivo CSV.','error');const type=$('importTipo').value;const out=$('importResult');out.textContent='Lendo arquivo…';try{const text=await readCsvFileText(file);const rows=parseCsvObjects(text);if(!rows.length)throw new Error('O arquivo não possui registros.');const normalized=dedupeImport(type,normalizeImport(type,rows));out.textContent=`${normalized.length} linhas reconhecidas. Enviando…`;let done=0;for(const chunk of chunks(normalized,300)){let res;if(type==='maps')res=await sb.from('maps').upsert(chunk,{onConflict:'map_number,map_date'});else if(type==='nris')res=await sb.from('nris').upsert(chunk,{onConflict:'nri'});else if(type==='conferences')res=await sb.from('container_conferences').upsert(chunk,{onConflict:'map_number,conference_date'});else res=await sb.from(type).upsert(chunk,{onConflict:importConflict(type)});if(res.error)throw res.error;done+=chunk.length;out.textContent=`Importados ${done}/${normalized.length}…`;}
