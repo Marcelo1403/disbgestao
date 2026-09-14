@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#073b6f">
+  <title>Gestão Operacional Disbecol</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css?v=1.0.1">
+</head>
+<body>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-shell">
+      <div class="login-brand-panel">
+        <div class="login-logo">DO</div>
+        <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
+        <h1>Gestão Operacional</h1>
+        <p>NRI, avarias e conferência de vasilhames em um único aplicativo.</p>
+        <div class="feature-list">
+          <span>✓ Cadastro por carreta e impressão de NRIs</span>
+          <span>✓ Avarias com foto, GPS e assinatura</span>
+          <span>✓ Conferência e comparativo de vasilhames</span>
+        </div>
+      </div>
+      <div class="login-form-panel">
+        <span class="eyebrow">ACESSO AO SISTEMA</span>
+        <h2>Bem-vindo</h2>
+        <p>Entre com o usuário e a senha cadastrados no sistema.</p>
+        <div id="backendStatus" class="backend-status checking"><i></i><span>Verificando conexão…</span></div>
+        <form id="formLogin">
+          <div class="field"><label>Usuário</label><input id="loginUsuario" autocomplete="username" required placeholder="Digite seu usuário"></div>
+          <div class="field password-field"><label>Senha</label><input id="loginSenha" type="password" autocomplete="current-password" required placeholder="Digite sua senha"><button id="btnMostrarSenha" type="button">Mostrar</button></div>
+          <button id="btnEntrar" class="btn primary wide" type="submit">Entrar →</button>
+        </form>
+        <div id="loginMessage" class="login-message"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="brand-row"><div class="brand-box">DO</div><div><strong>Gestão Operacional</strong><span>Supabase • tempo real</span></div></div>
+      <div class="nav-group-label">NRI</div>
+      <button class="nav-item role-nri" data-view="nri-cadastro"><span>＋</span>Cadastro por carreta</button>
+      <button class="nav-item role-nri" data-view="nri-pendentes"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
+      <div class="nav-group-label role-avaria">Entrega</div>
+      <button class="nav-item role-avaria" data-view="avaria-cadastro"><span>!</span>Registrar avaria</button>
+      <div class="nav-group-label role-conferencia">Conferência</div>
+      <button class="nav-item role-conferencia" data-view="conf-cadastro"><span>✓</span>Conferência de vasilhames</button>
+      <button class="nav-item role-conferencia" data-view="conf-minhas"><span>↺</span>Minhas conferências</button>
+      <div class="nav-group-label admin-only">Administração</div>
+      <button class="nav-item admin-only" data-view="avaria-admin"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
+      <button class="nav-item admin-only" data-view="nri-historico"><span>⌕</span>Histórico NRI</button>
+      <button class="nav-item admin-only" data-view="conf-historico"><span>▤</span>Histórico conferências</button>
+      <button class="nav-item admin-only" data-view="conf-dashboard"><span>◫</span>Dashboard conferência</button>
+      <button class="nav-item admin-only" data-view="usuarios"><span>♙</span>Usuários</button>
+      <button class="nav-item admin-only" data-view="bases"><span>⇅</span>Bases / importação</button>
+      <button id="btnSairMobile" class="sidebar-logout">Sair</button>
+    </aside>
+
+    <header class="topbar">
+      <button id="menuBtn" class="menu-btn">☰</button>
+      <div class="topbar-title"><strong id="topbarTitulo">Gestão Operacional</strong><span id="topbarSubtitulo">—</span></div>
+      <div class="sync-pill" id="syncPill"><i></i><span>Online</span></div>
+      <div class="user-box"><div id="userAvatar" class="avatar">U</div><div><strong id="userNome">Usuário</strong><span id="userPerfil">PERFIL</span></div><button id="btnSair">Sair</button></div>
+    </header>
+    <div id="overlay" class="overlay"></div>
+
+    <main class="content">
+      <!-- NRI CADASTRO -->
+      <section id="view-nri-cadastro" class="view role-nri">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Cadastro por carreta</h1><p>Cadastre vários produtos, lotes e NRIs em uma única requisição.</p></div><span class="page-chip">NRI</span></div>
+        <div class="card">
+          <form id="formNriCadastro" novalidate>
+            <div class="form-block">
+              <div class="block-head"><span class="step">1</span><div><strong>Dados da carreta</strong><small>Preencha uma vez para toda a requisição.</small></div></div>
+              <div class="grid grid-4">
+                <div class="field"><label>Unidade *</label><select id="nriUnidade" required></select></div>
+                <div class="field"><label>Dia do recebimento *</label><input id="nriRecebimento" type="date" required></div>
+                <div class="field"><label>Conferente</label><input id="nriConferente" readonly></div>
+                <div class="field"><label>Turno *</label><select id="nriTurno" required></select></div>
+                <div class="field"><label>Hora *</label><input id="nriHora" type="time" required></div>
+                <div class="field"><label>Motorista da carreta *</label><select id="nriMotorista" required></select></div>
+                <div class="field"><label>Placa *</label><input id="nriPlaca" maxlength="12" autocomplete="off" placeholder="AAA2A222" required></div>
+                <div class="field"><label>Fábrica *</label><select id="nriFabrica" required></select></div>
+              </div>
+            </div>
+            <div class="form-block accent">
+              <div class="block-head"><span class="step">2</span><div><strong>Adicionar produto / lote</strong><small>Você pode incluir produtos e lotes diferentes na mesma carreta.</small></div></div>
+              <div class="grid grid-3">
+                <div class="field"><label>Código do produto *</label><input id="nriCodigo" list="listaProdutos" inputmode="numeric" placeholder="Digite o código"><datalist id="listaProdutos"></datalist></div>
+                <div class="field"><label>Validade *</label><input id="nriValidade" inputmode="numeric" maxlength="8" placeholder="dd/mm/aa"></div>
+                <div class="field"><label>Lote *</label><input id="nriLote" placeholder="Digite o lote"></div>
+                <div class="field"><label>Quantidade *</label><input id="nriQuantidade" type="number" min="1" value="1"></div>
+                <div class="field"><label>Quantidade de paletes (NRIs) *</label><input id="nriPaletes" type="number" min="1" max="99" value="1"></div>
+                <div class="field"><label>Bloqueio</label><input id="nriBloqueio" readonly placeholder="validade - 30 dias"></div>
+              </div>
+              <div id="produtoPreview" class="product-preview"><div id="produtoPlaceholder">Digite o código para carregar o produto.</div><img id="produtoImagem" class="hidden" alt=""><div id="produtoInfo" class="hidden"><small id="produtoCodigo"></small><strong id="produtoNome"></strong></div></div>
+              <div class="actions right"><button type="button" id="btnCancelarNriItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarNriItem" class="btn primary">+ Adicionar à carreta</button></div>
+            </div>
+            <div class="list-card"><div class="list-head"><div><strong>Produtos adicionados</strong><small>Edite ou exclua antes de finalizar.</small></div><span id="nriItemCounter" class="counter">0 itens • 0 NRIs</span></div><div id="nriItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
+            <div class="actions right"><button type="button" id="btnLimparNri" class="btn secondary">Limpar carreta</button><button type="submit" id="btnCadastrarCarreta" class="btn primary">Cadastrar carreta</button></div>
+          </form>
+        </div>
+      </section>
+
+      <!-- NRI PENDENTES -->
+      <section id="view-nri-pendentes" class="view role-nri">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Impressões pendentes</h1><p>Três etiquetas idênticas por NRI em uma folha A4.</p></div><span class="page-chip">IMPRESSÃO</span></div>
+        <div class="card">
+          <div class="filters grid grid-3"><div class="field"><label>Produto, NRI, lote ou placa</label><input id="pendFiltro" placeholder="Pesquisar..."></div><div class="field"><label>Unidade</label><select id="pendUnidade"><option value="">Todas</option></select></div><div class="actions end"><button id="btnSelecionarPendentes" class="btn secondary">Selecionar visíveis</button></div></div>
+          <div class="toolbar"><button id="btnImprimirTudo" class="btn primary">Imprimir tudo</button><button id="btnImprimirSelecionadas" class="btn secondary">Imprimir selecionadas</button></div>
+          <div class="table-wrap"><table><thead><tr><th></th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody id="tbodyPendentes"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- AVARIA CADASTRO -->
+      <section id="view-avaria-cadastro" class="view role-avaria">
+        <div class="page-head"><div><div class="breadcrumb">Entrega / Avarias</div><h1>Registrar avaria</h1><p>Uma requisição pode conter vários produtos e evidências.</p></div><span class="page-chip">ENTREGA</span></div>
+        <div class="card">
+          <form id="formAvaria" novalidate>
+            <div class="grid grid-4">
+              <div class="field"><label>Data *</label><input id="avData" type="date" required></div>
+              <div class="field"><label>Entregador</label><input id="avEntregador" readonly></div>
+              <div class="field"><label>PDV *</label><input id="avPdv" inputmode="numeric" required placeholder="Código do cliente"></div>
+              <div class="field"><label>Mapa *</label><input id="avMapa" inputmode="numeric" required></div>
+            </div>
+            <div id="avClienteCard" class="customer-card"><div><small>CLIENTE</small><strong id="avClienteNome">Digite um PDV</strong></div><div><small>CIDADE</small><strong id="avCidade">—</strong></div></div>
+            <div class="form-block accent">
+              <div class="block-head"><span class="step">+</span><div><strong>Produto avariado</strong><small>Foto e GPS são obrigatórios por produto.</small></div></div>
+              <div class="grid grid-4">
+                <div class="field span-2"><label>Produto avariado *</label><input id="avProduto"></div>
+                <div class="field"><label>Lote *</label><input id="avLote"></div>
+                <div class="field"><label>Quantidade *</label><input id="avQuantidade" type="number" min="0" step="1"></div>
+                <div class="field"><label>Unidade *</label><select id="avUnidade"><option>UNIDADE</option><option>CAIXA</option></select></div>
+                <div class="field span-2"><label>Motivo *</label><select id="avMotivo"><option value="">Selecione</option><option>Quebrado</option><option>Embalagem amassada/rasgada</option><option>Faltando na Grade</option><option>Não foi no caminhão</option><option>Furada</option><option>Sem Tampa</option><option>Mal cheia</option></select></div>
+              </div>
+              <div class="evidence-grid">
+                <div class="evidence-card"><strong>Foto obrigatória</strong><div class="actions"><button type="button" id="btnAvCamera" class="btn secondary">Abrir câmera</button><button type="button" id="btnAvArquivo" class="btn secondary">Enviar foto</button></div><input id="avFotoCamera" type="file" accept="image/*" capture="environment" class="hidden"><input id="avFotoArquivo" type="file" accept="image/*" class="hidden"><img id="avFotoPreview" class="photo-preview hidden" alt=""><div id="avGpsStatus" class="gps-status">GPS ainda não capturado.</div></div>
+              </div>
+              <div class="actions right"><button type="button" id="btnCancelarAvItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarAvItem" class="btn primary">+ Adicionar produto</button></div>
+            </div>
+            <div class="list-card"><div class="list-head"><div><strong>Produtos da requisição</strong><small>Revise antes de enviar.</small></div><span id="avItemCounter" class="counter">0 produtos</span></div><div id="avItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
+            <div class="section-title">Assinatura do cliente</div>
+            <div class="signature-card"><canvas id="signatureCanvas" width="1000" height="300"></canvas><div class="actions"><button type="button" id="btnLimparAssinatura" class="btn secondary">Limpar assinatura</button></div></div>
+            <div class="actions right"><button type="button" id="btnLimparAvaria" class="btn secondary">Limpar requisição</button><button type="submit" id="btnSalvarAvaria" class="btn primary">Registrar requisição</button></div>
+          </form>
+        </div>
+      </section>
+
+      <!-- CONFERENCIA CADASTRO -->
+      <section id="view-conf-cadastro" class="view role-conferencia">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / Conferência</div><h1>Conferência de vasilhames</h1><p>Informe as quantidades físicas retornadas no mapa.</p></div><span class="page-chip">CONFERÊNCIA</span></div>
+        <div class="card">
+          <div class="live-info"><div><small>CONFERENTE</small><strong id="confConferente">—</strong></div><div><small>DATA/HORA</small><strong id="confAgora">—</strong></div></div>
+          <form id="formConferencia">
+            <div class="field max-320"><label>Mapa *</label><input id="confMapa" inputmode="numeric" maxlength="12" required></div>
+            <div class="section-title">Vasilhames retornados</div>
+            <div class="qty-grid">
+              <label class="qty-card"><span>Garrafeiras de 300ml</span><input id="confG300" type="number" min="0" value="0"></label>
+              <label class="qty-card"><span>600ml Verde</span><input id="confG600V" type="number" min="0" value="0"></label>
+              <label class="qty-card"><span>600ml Marrom</span><input id="confG600M" type="number" min="0" value="0"></label>
+              <label class="qty-card"><span>Garrafeiras de Litrão</span><input id="confLitrao" type="number" min="0" value="0"></label>
+              <label class="qty-card"><span>Barris de Chopp 30L</span><input id="confB30" type="number" min="0" value="0"></label>
+              <label class="qty-card"><span>Barris de Chopp 50L</span><input id="confB50" type="number" min="0" value="0"></label>
+            </div>
+            <div class="actions right"><button type="button" id="btnLimparConf" class="btn secondary">Limpar</button><button class="btn primary" type="submit">Registrar conferência</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section id="view-conf-minhas" class="view role-conferencia">
+        <div class="page-head"><div><div class="breadcrumb">Conferência / Histórico</div><h1>Minhas conferências</h1><p>Somente os registros feitos pelo usuário atual.</p></div><span class="page-chip">MEU HISTÓRICO</span></div>
+        <div class="card"><div class="filters grid grid-3"><div class="field"><label>Mapa</label><input id="minhasMapa"></div><div class="field"><label>Data</label><input id="minhasData" type="date"></div><div class="actions end"><button id="btnAtualizarMinhas" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Data / hora</th><th>Mapa</th><th>300ml</th><th>600 Verde</th><th>600 Marrom</th><th>Litrão</th><th>30L</th><th>50L</th></tr></thead><tbody id="tbodyMinhas"></tbody></table></div></div>
+      </section>
+
+      <!-- ADMIN AVARIAS -->
+      <section id="view-avaria-admin" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Avarias</div><h1>Todas as avarias</h1><p>Aprove todos, alguns ou um único produto por requisição.</p></div><span class="page-chip admin">ADMIN</span></div>
+        <div class="card"><div class="filters grid grid-3"><div class="field"><label>Buscar</label><input id="avAdminBusca" placeholder="PDV, cliente, lote, produto, mapa..."></div><div class="field"><label>Status</label><select id="avAdminStatus"><option value="">Todos</option><option>PENDENTE</option><option>PARCIAL</option><option>APROVADO</option><option>REPROVADO</option></select></div><div class="actions end"><button id="btnAtualizarAvarias" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Data / PDV / Mapa</th><th>Entregador</th><th>Produtos</th><th>Lotes</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyAvariasAdmin"></tbody></table></div></div>
+      </section>
+
+      <!-- HISTORICO NRI -->
+      <section id="view-nri-historico" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / NRI</div><h1>Histórico / rastreabilidade</h1><p>Consulte NRIs por lote, produto, placa, conferente ou período.</p></div><span class="page-chip admin">ADMIN</span></div>
+        <div class="card"><div class="filters grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="histNriBusca"></div><div class="field"><label>Status</label><select id="histNriStatus"><option value="">Todos</option><option>PENDENTE</option><option>IMPRESSO</option><option>REMOVIDO</option></select></div><div class="field"><label>Unidade</label><select id="histNriUnidade"><option value="">Todas</option></select></div><div class="field"><label>De</label><input id="histNriDe" type="date"></div><div class="field"><label>Até</label><input id="histNriAte" type="date"></div><div class="actions end span-2"><button id="btnAtualizarHistNri" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Cadastro</th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Usuário / Conferente</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyHistNri"></tbody></table></div></div>
+      </section>
+
+      <!-- HISTORICO CONFERENCIA -->
+      <section id="view-conf-historico" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Conferência</div><h1>Histórico de conferências</h1><p>Todas as conferências com exportação em CSV.</p></div><span class="page-chip admin">ADMIN</span></div>
+        <div class="card"><div class="filters grid grid-4"><div class="field"><label>Mapa</label><input id="histConfMapa"></div><div class="field"><label>Conferente</label><input id="histConfConferente"></div><div class="field"><label>De</label><input id="histConfDe" type="date"></div><div class="field"><label>Até</label><input id="histConfAte" type="date"></div></div><div class="toolbar"><button id="btnAtualizarHistConf" class="btn secondary">Atualizar</button><button id="btnExportarHistConf" class="btn primary">Baixar CSV</button></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Hora</th><th>Conferente</th><th>Mapa</th><th>Cidade</th><th>Motorista</th><th>Ajudante 1</th><th>Ajudante 2</th><th>300ml</th><th>600V</th><th>600M</th><th>Litrão</th><th>30L</th><th>50L</th></tr></thead><tbody id="tbodyHistConf"></tbody></table></div></div>
+      </section>
+
+      <!-- DASHBOARD -->
+      <section id="view-conf-dashboard" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Conferência</div><h1>Dashboard comparativo</h1><p>Planejado x conferido, impacto financeiro e rankings.</p></div><span class="page-chip admin">DASHBOARD</span></div>
+        <div class="card"><div class="filters grid grid-4"><div class="field"><label>Data</label><input id="dashData" type="date"></div><div class="field"><label>Mapa</label><input id="dashMapa"></div><div class="field"><label>Cidade</label><input id="dashCidade"></div><div class="actions end"><button id="btnAtualizarDashboard" class="btn primary">Atualizar</button></div></div></div>
+        <div class="kpi-grid"><div class="kpi"><span>Mapas planejados</span><strong id="kpiPlanejados">0</strong></div><div class="kpi"><span>Conferidos</span><strong id="kpiConferidos">0</strong></div><div class="kpi"><span>Sem conferência</span><strong id="kpiPendentes">0</strong></div><div class="kpi warning"><span>Mapas divergentes</span><strong id="kpiDivergentes">0</strong></div><div class="kpi positive"><span>Divergências positivas</span><strong id="kpiPositivo">R$ 0,00</strong></div><div class="kpi negative"><span>Divergências negativas</span><strong id="kpiNegativo">R$ 0,00</strong></div></div>
+        <div class="card"><div class="table-wrap"><table><thead><tr><th>Data / mapa</th><th>Cidade</th><th>Equipe</th><th>Conferente</th><th>Status</th><th>Itens divergentes</th><th>Ações</th></tr></thead><tbody id="tbodyDashboard"></tbody></table></div></div>
+        <div class="ranking-grid"><div class="card"><div class="section-title">Ranking de motoristas</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Motorista</th><th>Mapas divergentes</th><th>Valor positivo</th><th>Valor negativo</th></tr></thead><tbody id="rankMotoristas"></tbody></table></div></div><div class="card"><div class="section-title">Ranking de ajudantes</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Ajudante</th><th>Mapas divergentes</th><th>Valor positivo</th><th>Valor negativo</th></tr></thead><tbody id="rankAjudantes"></tbody></table></div></div></div>
+      </section>
+
+      <!-- USERS -->
+      <section id="view-usuarios" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Usuários</div><h1>Usuários e perfis</h1><p>Um único cadastro de usuários para todos os módulos.</p></div><span class="page-chip admin">ADMIN</span></div>
+        <div class="admin-grid"><div class="card"><form id="formUsuario"><input id="usuarioOriginal" type="hidden"><div class="field"><label>Usuário *</label><input id="usuarioLogin"></div><div class="field"><label>Nome *</label><input id="usuarioNome"></div><div class="field"><label>Perfil *</label><select id="usuarioPerfil"><option value="COLABORADOR_ARMAZEM">Colaborador Armazém</option><option value="COLABORADOR_ENTREGA">Colaborador Entrega</option><option value="CONFERENTE">Conferente</option><option value="ADMIN">Admin</option></select></div><div class="field"><label>Senha</label><input id="usuarioSenha" type="password" placeholder="Obrigatória no novo usuário"></div><label class="check"><input id="usuarioAtivo" type="checkbox" checked> Usuário ativo</label><div class="actions right"><button id="btnLimparUsuario" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar usuário</button></div></form></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyUsuarios"></tbody></table></div></div></div>
+      </section>
+
+      <!-- BASES -->
+      <section id="view-bases" class="view admin-only">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Dados</div><h1>Bases e importações</h1><p>Importe CSVs exportados do Google Sheets para migrar as bases sem digitação manual.</p></div><span class="page-chip admin">MIGRAÇÃO</span></div>
+        <div class="card">
+          <div class="notice"><strong>Importação rápida:</strong> exporte a aba do Google Sheets como CSV e selecione o tipo abaixo. O sistema reconhece os cabeçalhos usados nos aplicativos anteriores.</div>
+          <div class="grid grid-3"><div class="field"><label>Tipo de base</label><select id="importTipo"><option value="products">PRODUTOS</option><option value="units">UNIDADES</option><option value="shifts">TURNOS</option><option value="drivers">MOTORISTAS</option><option value="factories">FABRICAS</option><option value="customers">CLIENTES</option><option value="maps">MAPAS</option><option value="nris">HISTÓRICO NRIS</option><option value="conferences">HISTÓRICO CONFERÊNCIAS</option></select></div><div class="field span-2"><label>Arquivo CSV</label><input id="importFile" type="file" accept=".csv,text/csv"></div></div>
+          <div class="actions right"><button id="btnImportarBase" class="btn primary">Importar para Supabase</button></div>
+          <div id="importResult" class="import-result"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal"><div class="modal-box"><div class="modal-head"><div><strong id="modalTitle">Detalhes</strong><small id="modalSubtitle"></small></div><button id="modalClose">×</button></div><div id="modalBody" class="modal-body"></div><div id="modalActions" class="modal-actions"></div></div></div>
+  <iframe id="printFrame" class="print-frame" title="Impressão"></iframe>
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js?v=1.0.1"></script>
+  <script src="app.js?v=1.0.1"></script>
+</body>
+</html>
