@@ -93,7 +93,8 @@ async function init(){
   }
   try{
     sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},
+      global:{fetch:(input,init={})=>fetch(input,{...init,cache:'no-store'})}
     });
     setBackendStatus('checking','Conectando ao Supabase…');
     const {data:{session},error} = await sb.auth.getSession();
@@ -852,7 +853,7 @@ function setupPullRealtime(){
   teardownPullRealtime();
   if(!sb||(!canPull()&&!canNri()))return;
   pullRealtimeChannel=sb.channel(`pull-${authUser.id}-${Date.now()}`);
-  ['pull_trips','pull_events','pull_occurrences','pull_track_points'].forEach(table=>{
+  ['pull_trips','pull_events','pull_occurrences','pull_track_points','pull_settings'].forEach(table=>{
     pullRealtimeChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>schedulePullReload());
   });
   pullRealtimeChannel.subscribe();
@@ -890,19 +891,24 @@ function pullStepExecutorNumber(step){const n=Number(step?.executor_driver);retu
 function pullStepExecutorName(step){if(!pullActiveTrip)return '';const n=pullStepExecutorNumber(step);return n===1?pullActiveTrip.driver1_name:n===2?pullActiveTrip.driver2_name:(pullActiveTrip.active_driver_name||'motorista ativo');}
 function pullCanExecuteStep(step){if(!pullActiveTrip||!step)return false;const n=pullStepExecutorNumber(step);if(n===1)return pullActiveTrip.driver1_id===authUser?.id;if(n===2)return pullActiveTrip.driver2_id===authUser?.id;return pullIsActiveDriver();}
 function pullGpsTarget(){return Math.min(500,Math.max(5,Number(pullSettings?.gps_max_accuracy_m||200)));}
-async function refreshPullGpsSettings(){
+async function refreshPullGpsTarget(){
+  if(!sb)return pullGpsTarget();
   const {data,error}=await sb.from('pull_settings').select('singleton,gps_max_accuracy_m,track_interval_seconds,track_min_distance_m,updated_at').eq('singleton',true).maybeSingle();
   if(error)throw error;
   if(data)pullSettings={...(pullSettings||{}),...data};
   const target=pullGpsTarget();
-  console.info(`[Puxada GPS] tolerancia atual carregada do Supabase: ${target} m`,pullSettings);
+  console.info(`[Puxada GPS] tolerância atual carregada do Supabase: ±${target} m`,data||null);
   return target;
 }
 function renderPullDriver(){
   const active=!!pullActiveTrip;
   $('pullDriverStartCard')?.classList.toggle('hidden',active);
   $('pullDriverActive')?.classList.toggle('hidden',!active);
-  if(!active){stopPullTracking();stopPullClock();return;}
+  if(!active){
+    stopPullTracking();stopPullClock();
+    if($('pullStartGps')){$('pullStartGps').className='gps-status';$('pullStartGps').textContent=`Tolerância GPS carregada: até ±${pullGpsTarget()} m. A localização será capturada ao iniciar.`;}
+    return;
+  }
   $('pullActiveCode').textContent=pullActiveTrip.trip_code||'Puxada';
   $('pullActivePlate').textContent=pullActiveTrip.plate||'—';
   $('pullActiveFactory').textContent=pullActiveTrip.factory||'—';
@@ -912,19 +918,21 @@ function renderPullDriver(){
   const nextNo=next?pullMainStepNumber(next):null;
   const responsible=next?pullStepExecutorName(next):'';
   const executorNo=next?pullStepExecutorNumber(next):null;
+  const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');
+  const occurrenceLocksStep=!!openOcc&&!!next&&next.required!==false;
   $('pullNextStepName').textContent=next?`${nextNo}. ${next.name}`:'Todas as etapas concluídas';
-  const canPoint=!!next&&pullCanExecuteStep(next);
+  const canPoint=!!next&&pullCanExecuteStep(next)&&!occurrenceLocksStep;
   $('btnPullNextStep').disabled=!canPoint;
-  $('btnPullNextStep').textContent=!next?'Ciclo concluído':canPoint?'Registrar próxima etapa':`Aguardando ${responsible}`;
+  $('btnPullNextStep').textContent=!next?'Ciclo concluído':occurrenceLocksStep?`Finalize ${openOcc.occurrence_name}`:canPoint?'Registrar próxima etapa':`Aguardando ${responsible}`;
   let hint=nextNo?`Etapa ${nextNo} de ${pullMainSteps.length} • responsável: ${executorNo?`Motorista ${executorNo} — `:''}${responsible}. GPS exigido ≤ ${pullGpsTarget()} m.`:'Todas as etapas principais foram concluídas.';
   if(next?.requires_factory_geofence){const f=pullFactories.find(x=>x.name===pullActiveTrip.factory);hint+=f?.radius_meters?` Raio de auditoria da fábrica: ${f.radius_meters} m; estar fora do raio não impede o registro.`:' A fábrica ainda não possui raio de auditoria configurado.';}
-  if(next&&!canPoint)hint=`Esta etapa deve ser registrada por ${executorNo?`Motorista ${executorNo} — `:''}${responsible}. O seu acesso à viagem continua disponível para acompanhamento.`;
+  if(occurrenceLocksStep)hint=`Ocorrência “${openOcc.occurrence_name}” em andamento. Finalize a ocorrência antes de registrar a etapa obrigatória ${nextNo}. ${next.name}.`;
+  else if(next&&!pullCanExecuteStep(next))hint=`Esta etapa deve ser registrada por ${executorNo?`Motorista ${executorNo} — `:''}${responsible}. O seu acesso à viagem continua disponível para acompanhamento.`;
   $('pullNextStepHint').textContent=hint;
-  const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');
   const occBox=$('pullOpenOccurrence');
   if(openOcc){occBox.classList.remove('hidden');occBox.innerHTML=`<div><small>OCORRÊNCIA EM ANDAMENTO</small><strong>${esc(openOcc.occurrence_name)}</strong><span>Iniciada ${fmtDateTime(openOcc.started_at)} por ${esc(openOcc.started_by_name)}</span></div><button class="btn primary" data-end-occ="${openOcc.id}" ${pullIsActiveDriver()?'':'disabled'}>Encerrar ocorrência</button>`;}
   else{occBox.classList.add('hidden');occBox.innerHTML='';}
-  $('pullOccurrenceButtons').innerHTML=pullOccurrenceTypes.map(x=>`<button class="btn secondary" data-occ="${x.id}" ${(!pullIsActiveDriver()||!!openOcc&&x.duration_mode==='INTERVAL')?'disabled':''}>+ ${esc(x.name)}</button>`).join('');
+  $('pullOccurrenceButtons').innerHTML=pullOccurrenceTypes.map(x=>`<button class="btn secondary" data-occ="${x.id}" ${(!pullIsActiveDriver()||!!openOcc)?'disabled':''}>+ ${esc(x.name)}</button>`).join('');
   const timeline=[...pullDriverEvents.map(x=>({kind:'STEP',at:x.recorded_at,name:pullNumberedStepName(x),user:x.user_name,gps:`${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)}`,extra:`precisão ±${Math.round(Number(x.gps_accuracy)||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio • ${Math.round(x.distance_factory_m||0)} m`:x.geofence_status==='OUTSIDE'?` • fora do raio • ${Math.round(x.distance_factory_m||0)} m • permitido`:''}`})),...pullDriverOccurrences.map(x=>({kind:'OCC',at:x.started_at,name:x.occurrence_name,user:x.started_by_name,gps:`${Number(x.start_latitude).toFixed(5)}, ${Number(x.start_longitude).toFixed(5)}`,extra:x.status==='OPEN'?'Em andamento':`Encerrada ${fmtDateTime(x.ended_at)}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));
   const tl=$('pullDriverTimeline');
   if(!timeline.length){tl.className='pull-timeline empty-state';tl.textContent='Nenhuma etapa.';}else{tl.className='pull-timeline';tl.innerHTML=timeline.map(x=>`<div class="pull-timeline-item ${x.kind==='OCC'?'occurrence':''}"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.name)}</strong><span>${esc(x.user)} • ${esc(x.gps)}${x.extra?` • ${esc(x.extra)}`:''}</span></div></div>`).join('');}
@@ -941,11 +949,11 @@ async function startPullTrip(e){
   const partner='Ambev';
   const driver2=$('pullStartDriver2').value;
   if(!origin||!plate||!factory||!driver2)return toast('Informe origem, placa, fábrica e Motorista 2.','error');
-  const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Atualizando configuração GPS…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Consultando tolerância GPS atual no servidor…';
+  const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Atualizando configuração…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Consultando tolerância GPS atual no Supabase…';
   try{
-    const target=await refreshPullGpsSettings();
-    btn.textContent='Capturando GPS…';$('pullStartGps').textContent=`Tolerância atual: ±${target} m • buscando GPS…`;
-    const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{$('pullStartGps').textContent=`GPS atual ±${Math.round(s.accuracy)} m • limite atual ≤ ${target} m…`;}});
+    const target=await refreshPullGpsTarget();
+    btn.textContent='Capturando GPS…';$('pullStartGps').textContent=`Buscando GPS (limite atual ≤ ${target} m)…`;
+    const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{$('pullStartGps').textContent=`GPS atual ±${Math.round(s.accuracy)} m • limite carregado ≤ ${target} m…`;}});
     $('pullStartGps').className='gps-status ok';$('pullStartGps').textContent=`GPS pronto • precisão ±${Math.round(gps.accuracy||0)} m`;
     btn.textContent='Iniciando…';
     const {data,error}=await sb.rpc('start_pull_trip',{p_origin_unit:origin,p_plate:plate,p_factory:factory,p_carrier:partner,p_driver2:driver2,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt});
@@ -957,12 +965,18 @@ async function startPullTrip(e){
 async function recordPullNextStep(){
   if(!pullActiveTrip)return;
   const step=pullNextStep();if(!step||!pullCanExecuteStep(step))return;
-  const btn=$('btnPullNextStep');btn.disabled=true;btn.textContent='Atualizando configuração GPS…';
+  const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');
+  if(openOcc&&step.required!==false){
+    toast(`Finalize a ocorrência “${openOcc.occurrence_name}” antes de registrar a próxima etapa obrigatória.`,'error');
+    renderPullDriver();
+    return;
+  }
+  const btn=$('btnPullNextStep');btn.disabled=true;btn.textContent='Atualizando configuração…';
   const hint=$('pullNextStepHint');const baseHint=hint?.textContent||'';
   try{
-    const target=await refreshPullGpsSettings();
-    btn.textContent='Capturando GPS…';if(hint)hint.textContent=`Tolerância atual carregada: ±${target} m • buscando GPS…`;
-    const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{if(hint)hint.textContent=`Buscando posição… sinal atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m.`;}});
+    const target=await refreshPullGpsTarget();
+    btn.textContent='Capturando GPS…';
+    const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{if(hint)hint.textContent=`Buscando posição… sinal atual ±${Math.round(s.accuracy)} m • limite carregado ≤ ${target} m.`;}});
     if(hint)hint.textContent=`GPS validado: ±${Math.round(gps.accuracy)} m. Registrando etapa…`;
     btn.textContent='Registrando…';
     const {data,error}=await sb.rpc('record_pull_step',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_exception_reason:'',p_device_at:gps.capturedAt});
@@ -979,8 +993,8 @@ async function recordPullNextStep(){
   finally{btn.disabled=false;renderPullDriver();}
 }
 
-async function onPullOccurrenceClick(e){const b=e.target.closest('button[data-occ]');if(!b||b.disabled||!pullActiveTrip)return;const step=pullOccurrenceTypes.find(x=>x.id===b.dataset.occ);if(!step)return;const note=prompt(`Observação para ${step.name} (opcional):`,'')||'';b.disabled=true;const old=b.textContent;try{const target=await refreshPullGpsSettings();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});b.textContent='Registrando…';const {error}=await sb.rpc('start_pull_occurrence',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_note:note});if(error)throw error;toast(step.duration_mode==='INTERVAL'?`${step.name} iniciado.`:`${step.name} registrado.`,'success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;b.textContent=old;}}
-async function onPullOpenOccurrenceClick(e){const b=e.target.closest('[data-end-occ]');if(!b||b.disabled)return;const old=b.textContent;b.disabled=true;try{const target=await refreshPullGpsSettings();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});b.textContent='Encerrando…';const {error}=await sb.rpc('end_pull_occurrence',{p_occurrence_id:b.dataset.endOcc,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy});if(error)throw error;toast('Ocorrência encerrada.','success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;b.textContent=old;}}
+async function onPullOccurrenceClick(e){const b=e.target.closest('button[data-occ]');if(!b||b.disabled||!pullActiveTrip)return;const step=pullOccurrenceTypes.find(x=>x.id===b.dataset.occ);if(!step)return;const note=prompt(`Observação para ${step.name} (opcional):`,'')||'';b.disabled=true;const old=b.textContent;try{b.textContent='Atualizando configuração…';const target=await refreshPullGpsTarget();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});b.textContent='Registrando…';const {error}=await sb.rpc('start_pull_occurrence',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_note:note});if(error)throw error;toast(step.duration_mode==='INTERVAL'?`${step.name} iniciado.`:`${step.name} registrado.`,'success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;b.textContent=old;}}
+async function onPullOpenOccurrenceClick(e){const b=e.target.closest('[data-end-occ]');if(!b||b.disabled)return;const old=b.textContent;b.disabled=true;try{b.textContent='Atualizando configuração…';const target=await refreshPullGpsTarget();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});b.textContent='Encerrando…';const {error}=await sb.rpc('end_pull_occurrence',{p_occurrence_id:b.dataset.endOcc,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy});if(error)throw error;toast('Ocorrência encerrada.','success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;b.textContent=old;}}
 
 function syncPullTracking(){
   const next=pullNextStep();
@@ -1247,7 +1261,7 @@ async function loadPullConfig(){if(!isAdmin())return;try{await loadPullReference
 async function savePullSettings(e){e.preventDefault();try{const gps=Math.min(500,Math.max(5,intVal('pullGpsAccuracy')||200));$('pullGpsAccuracy').value=gps;const row={singleton:true,gps_max_accuracy_m:gps,track_interval_seconds:intVal('pullTrackInterval'),track_min_distance_m:intVal('pullTrackDistance'),updated_by:authUser.id,updated_at:new Date().toISOString()};const {error}=await sb.from('pull_settings').upsert(row,{onConflict:'singleton'});if(error)throw error;pullSettings={...(pullSettings||{}),...row};toast(`Configuração salva. Etapas exigirão GPS de até ±${gps} m.`,'success');}catch(err){toast(humanPullError(err),'error');}}
 function renderPullFactoryList(){$('pullFactoryList').innerHTML=pullFactories.map(f=>`<button type="button" class="compact-row" data-factory-edit="${esc(f.name)}"><span><strong>${esc(f.name)}</strong><small>${f.latitude==null?'Localização de auditoria não configurada':`${Number(f.latitude).toFixed(5)}, ${Number(f.longitude).toFixed(5)} • raio de auditoria ${f.radius_meters||'—'} m`}</small></span><span>Editar</span></button>`).join('')||'<div class="empty-state">Nenhuma fábrica.</div>';$('pullFactoryList').onclick=e=>{const b=e.target.closest('[data-factory-edit]');if(!b)return;$('pullFactoryName').value=b.dataset.factoryEdit;fillPullFactoryForm();};}
 function fillPullFactoryForm(){const f=pullFactories.find(x=>x.name===$('pullFactoryName').value);$('pullFactoryOriginal').value=f?.name||'';$('pullFactoryLat').value=f?.latitude??'';$('pullFactoryLon').value=f?.longitude??'';$('pullFactoryRadius').value=f?.radius_meters??'';}
-async function useGpsForPullFactory(){const b=$('btnPullFactoryGps');b.disabled=true;const old=b.textContent;b.textContent='Capturando…';try{const target=await refreshPullGpsSettings();const g=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});$('pullFactoryLat').value=g.latitude.toFixed(7);$('pullFactoryLon').value=g.longitude.toFixed(7);toast(`Localização capturada com precisão ±${Math.round(g.accuracy||0)} m.`,'success');}catch(e){toast(humanGpsOrPullError(e),'error');}finally{b.disabled=false;b.textContent=old;}}
+async function useGpsForPullFactory(){const b=$('btnPullFactoryGps');b.disabled=true;const old=b.textContent;b.textContent='Atualizando configuração…';try{const target=await refreshPullGpsTarget();b.textContent='Capturando…';const g=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>b.textContent=`GPS ±${Math.round(s.accuracy)} m / limite ${target} m…`});$('pullFactoryLat').value=g.latitude.toFixed(7);$('pullFactoryLon').value=g.longitude.toFixed(7);toast(`Localização capturada com precisão ±${Math.round(g.accuracy||0)} m.`,'success');}catch(e){toast(humanGpsOrPullError(e),'error');}finally{b.disabled=false;b.textContent=old;}}
 async function savePullFactory(e){e.preventDefault();const name=$('pullFactoryName').value;if(!name)return toast('Selecione a fábrica.','error');try{const {error}=await sb.from('factories').update({latitude:num($('pullFactoryLat').value),longitude:num($('pullFactoryLon').value),radius_meters:intVal('pullFactoryRadius')}).eq('name',name);if(error)throw error;toast('Localização e raio de auditoria da fábrica salvos.','success');await loadPullReferenceData();fillPullFactoryForm();renderPullFactoryList();}catch(err){toast(humanPullError(err),'error');}}
 function clearPullVehicleForm(){$('pullVehicleId').value='';$('pullVehiclePlate').value='';$('pullVehicleCarrier').value='';$('pullVehicleActive').checked=true;}
 function renderPullVehicleRows(){$('pullVehicleRows').innerHTML=pullVehicles.map(v=>`<button type="button" class="compact-row" data-vehicle-edit="${v.id}"><span><strong>${esc(v.plate)}</strong><small>${esc(v.carrier||'Sem transportadora')} • ${v.active?'ativo':'inativo'}</small></span><span>Editar</span></button>`).join('')||'<div class="empty-state">Nenhum veículo cadastrado.</div>';}
@@ -1279,7 +1293,7 @@ function minutesToInput(v){return fmtMinutes(Number(v)||0);}
 function parseDurationInput(v){const s=String(v||'').trim();if(!s)return 0;const m=s.match(/^(\d{1,4}):([0-5]\d)$/);if(!m)return null;return Number(m[1])*60+Number(m[2]);}
 function distanceMeters(a,b,c,d){const R=6371000,p=x=>x*Math.PI/180,dp=p(c-a),dl=p(d-b),q=Math.sin(dp/2)**2+Math.cos(p(a))*Math.cos(p(c))*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(q));}
 function fmtMonthKey(k){const [y,m]=String(k).split('-');return new Intl.DateTimeFormat('pt-BR',{month:'short',year:'numeric'}).format(new Date(Number(y),Number(m)-1,1)).replace('.','');}
-function humanPullError(e){const m=String(e?.message||e||'Erro na Puxada');const map={ETAPA_MOTORISTA_1:'Esta etapa deve ser registrada pelo Motorista 1.',ETAPA_MOTORISTA_2:'Esta etapa deve ser registrada pelo Motorista 2.',GPS_PRECISAO_INSUFICIENTE:'O GPS ainda não atingiu a precisão máxima permitida. Aguarde alguns segundos em local aberto e tente novamente.',MOTORISTA_2_INVALIDO:'Motorista 2 inválido ou inativo.',MOTORISTA_2_DEVE_SER_OUTRO_USUARIO:'O Motorista 2 precisa ser outro usuário.',MOTORISTA_COM_CICLO_EM_ANDAMENTO:'Um dos motoristas já possui uma Puxada em andamento.',PLACA_COM_CICLO_EM_ANDAMENTO:'Esta placa já possui uma Puxada em andamento.',MOTORISTA_NAO_ESTA_ATIVO:'A etapa deve ser apontada pelo motorista que está conduzindo neste trecho.',FABRICA_INVALIDA:'Fábrica inválida.',ORIGEM_INVALIDA:'Selecione uma origem ativa para a viagem.',PARCEIRO_OBRIGATORIO:'Selecione o parceiro / transportadora da viagem.',UNIDADE_PADRAO_PUXADA_NAO_CONFIGURADA:'Versão antiga do banco: aplique a atualização SQL da Puxada.',ETAPA_INICIO_NAO_CONFIGURADA:'A etapa inicial da Puxada não está configurada.',CICLO_NAO_ENCONTRADO:'Ciclo não encontrado.',CICLO_NAO_ESTA_EM_ANDAMENTO:'Este ciclo não está mais em andamento.',ETAPA_FORA_DE_SEQUENCIA:'Essa não é a próxima etapa esperada.',SEM_PROXIMA_ETAPA:'Não há próxima etapa.',GPS_BAIXA_PRECISAO:'Versão antiga do banco ainda está bloqueando precisão baixa. Aplique a atualização SQL.',FORA_RAIO_FABRICA:'Versão antiga do banco ainda está bloqueando o raio da fábrica. Aplique a atualização SQL.',JA_EXISTE_OCORRENCIA_ABERTA:'Já existe uma ocorrência com duração em andamento.',OCORRENCIA_NAO_ESTA_ABERTA:'A ocorrência já foi encerrada.',MOTIVO_AJUSTE_OBRIGATORIO:'Informe o motivo do ajuste de TMA.',AJUSTE_MAIOR_QUE_TMA_BRUTO:'As horas a diminuir não podem ser maiores que o TMA bruto.',PUXADA_NAO_DISPONIVEL_PARA_NRI:'Esta carreta não está mais disponível para cadastro de NRI.'};const key=Object.keys(map).find(k=>m.includes(k));return key?map[key]:humanError(e);}
+function humanPullError(e){const m=String(e?.message||e||'Erro na Puxada');const map={ETAPA_MOTORISTA_1:'Esta etapa deve ser registrada pelo Motorista 1.',ETAPA_MOTORISTA_2:'Esta etapa deve ser registrada pelo Motorista 2.',GPS_PRECISAO_INSUFICIENTE:'O GPS ainda não atingiu a precisão máxima permitida. Aguarde alguns segundos em local aberto e tente novamente.',MOTORISTA_2_INVALIDO:'Motorista 2 inválido ou inativo.',MOTORISTA_2_DEVE_SER_OUTRO_USUARIO:'O Motorista 2 precisa ser outro usuário.',MOTORISTA_COM_CICLO_EM_ANDAMENTO:'Um dos motoristas já possui uma Puxada em andamento.',PLACA_COM_CICLO_EM_ANDAMENTO:'Esta placa já possui uma Puxada em andamento.',MOTORISTA_NAO_ESTA_ATIVO:'A etapa deve ser apontada pelo motorista que está conduzindo neste trecho.',FABRICA_INVALIDA:'Fábrica inválida.',ORIGEM_INVALIDA:'Selecione uma origem ativa para a viagem.',PARCEIRO_OBRIGATORIO:'Selecione o parceiro / transportadora da viagem.',UNIDADE_PADRAO_PUXADA_NAO_CONFIGURADA:'Versão antiga do banco: aplique a atualização SQL da Puxada.',ETAPA_INICIO_NAO_CONFIGURADA:'A etapa inicial da Puxada não está configurada.',CICLO_NAO_ENCONTRADO:'Ciclo não encontrado.',CICLO_NAO_ESTA_EM_ANDAMENTO:'Este ciclo não está mais em andamento.',ETAPA_FORA_DE_SEQUENCIA:'Essa não é a próxima etapa esperada.',SEM_PROXIMA_ETAPA:'Não há próxima etapa.',GPS_BAIXA_PRECISAO:'Versão antiga do banco ainda está bloqueando precisão baixa. Aplique a atualização SQL.',FORA_RAIO_FABRICA:'Versão antiga do banco ainda está bloqueando o raio da fábrica. Aplique a atualização SQL.',OCORRENCIA_EM_ANDAMENTO:'Existe uma ocorrência em andamento. Finalize a ocorrência antes de registrar a próxima etapa obrigatória.',JA_EXISTE_OCORRENCIA_ABERTA:'Já existe uma ocorrência com duração em andamento.',OCORRENCIA_NAO_ESTA_ABERTA:'A ocorrência já foi encerrada.',MOTIVO_AJUSTE_OBRIGATORIO:'Informe o motivo do ajuste de TMA.',AJUSTE_MAIOR_QUE_TMA_BRUTO:'As horas a diminuir não podem ser maiores que o TMA bruto.',PUXADA_NAO_DISPONIVEL_PARA_NRI:'Esta carreta não está mais disponível para cadastro de NRI.'};const key=Object.keys(map).find(k=>m.includes(k));return key?map[key]:humanError(e);}
 function humanGpsOrPullError(e){const m=String(e?.message||e||'');return /PERMISSAO_LOCALIZACAO|permission|GPS|location|geolocation|PositionError/i.test(m)?humanGpsError(e):humanPullError(e);}
 
 

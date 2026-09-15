@@ -1,1 +1,1 @@
-v1.1.7 - recarrega tolerancia GPS do Supabase imediatamente antes de cada apontamento
+v1.1.9 - bloqueia etapas obrigatorias enquanto houver ocorrencia em andamento
