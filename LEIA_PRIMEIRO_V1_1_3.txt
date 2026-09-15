@@ -1,0 +1,7 @@
+DISB GESTAO v1.1.3
+
+1. Nao e necessario executar novo SQL no Supabase.
+2. Substitua os arquivos do PATCH na raiz do projeto.
+3. Publique no GitHub.
+4. Para o APK, execute npm install, npm run android:sync e depois assembleDebug dentro de android.
+5. No detalhamento de uma Puxada, use Ver no mapa em qualquer etapa principal para focar o marcador correspondente.

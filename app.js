@@ -734,6 +734,7 @@ let pullTrackWatch=null;
 let pullTrackLast=null;
 let pullClockTimer=null;
 let pullMapInstances=[];
+let pullMapContexts=new Map();
 
 function bindPullEvents(){
   $('formPullStart')?.addEventListener('submit',startPullTrip);
@@ -1063,12 +1064,42 @@ function pullTripStatusLabel(t){return t.status==='IN_PROGRESS'?'Em andamento':t
 function onPullHistoryClick(e){const d=e.target.closest('[data-hist-detail]');if(d)return openPullTripDetail(d.dataset.histDetail,false);const a=e.target.closest('[data-tma-adjust]');if(a)return openPullTmaAdjust(a.dataset.tmaAdjust);}
 
 async function openPullTripDetail(id,live=false){
-  try{const t=(pullHistory.find(x=>x.id===id)||($('pullFarolCards')?._rows||[]).find(x=>x.id===id))||((await sb.from('pull_trips').select('*').eq('id',id).single()).data);if(!t)throw new Error('CICLO_NAO_ENCONTRADO');const [ev,oc,tp,aud,nri]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',id).order('recorded_at'),sb.from('pull_occurrences').select('*').eq('trip_id',id).order('started_at'),sb.from('pull_track_points').select('*').eq('trip_id',id).order('recorded_at').limit(5000),sb.from('pull_tma_adjust_audit').select('*').eq('trip_id',id).order('changed_at',{ascending:false}),sb.from('nri_requests').select('id,created_at').eq('pull_trip_id',id)]);[ev,oc,tp,aud,nri].forEach(r=>{if(r.error)throw r.error;});const m=pullTripMetrics(t);const mapId=`pullMap-${String(id).replace(/-/g,'')}`;const timeline=[...(ev.data||[]).map(x=>({at:x.recorded_at,title:pullNumberedStepName(x),detail:`${x.user_name} • ${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)} • precisão ±${Math.round(x.gps_accuracy||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)`:x.geofence_status==='OUTSIDE'?` • fora do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)${x.exception_reason?` • ${x.exception_reason}`:''}`:''}`})),...(oc.data||[]).map(x=>({at:x.started_at,title:`Ocorrência: ${x.occurrence_name}`,detail:`${x.started_by_name}${x.ended_at?` • ${fmtDurationMinutes(minutesBetween(x.started_at,x.ended_at))}`:' • em andamento'}${x.note?` • ${x.note}`:''}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));const body=`<div class="detail-grid"><div class="detail-card"><small>Origem</small><strong>${esc(t.origin_unit||'—')}</strong></div><div class="detail-card"><small>Placa / fábrica</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div><div class="detail-card"><small>Parceiro</small><strong>${esc(t.carrier||'—')}</strong></div><div class="detail-card"><small>Motoristas</small><strong>${esc(t.driver1_name)} / ${esc(t.driver2_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(t.started_at)}</strong></div><div class="detail-card"><small>Fim da viagem</small><strong>${fmtDateTime(t.ended_at)}</strong></div></div><div class="pull-metric-strip"><span>TMV Ida <b>${fmtMinutes(m.TMV_OUT)}</b></span><span>TMA Fábrica <b>${fmtMinutes(m.FACTORY)}</b></span><span>TMV Volta <b>${fmtMinutes(m.TMV_RETURN)}</b></span><span>TMA Revenda <b>${m.UNIT==null?'Aguardando':fmtMinutes(m.UNIT)}</b></span><span>Ciclo <b>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</b></span></div>${t.tma_adjust_minutes>0?`<div class="notice"><strong>TMA ajustado:</strong> bruto ${fmtMinutes(m.UNIT_RAW)} − ${fmtMinutes(t.tma_adjust_minutes)} = <b>${fmtMinutes(m.UNIT)}</b><br>${esc(t.tma_adjust_reason)} • por ${esc(t.tma_adjusted_by_name||'Admin')} em ${fmtDateTime(t.tma_adjusted_at)}</div>`:''}<div id="${mapId}" class="pull-map"></div><div class="section-title">Linha do tempo</div><div class="pull-timeline">${timeline.map(x=>`<div class="pull-timeline-item"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.title)}</strong><span>${esc(x.detail)}</span></div></div>`).join('')}</div><div class="notice"><strong>NRIs vinculados:</strong> ${(nri.data||[]).length}</div>${(aud.data||[]).length?`<details><summary>Auditoria de ajustes TMA (${aud.data.length})</summary>${aud.data.map(a=>`<div class="audit-row">${fmtDateTime(a.changed_at)} • ${esc(a.changed_by_name)} • ${fmtMinutes(a.old_minutes)} → ${fmtMinutes(a.new_minutes)} • ${esc(a.new_reason||'sem ajuste')}</div>`).join('')}</details>`:''}`;const actions=[];if(!live&&t.next_started_at)actions.push({label:'Ajustar TMA Revenda',class:'secondary',onClick:()=>{closeModal();openPullTmaAdjust(t.id);}});openModal(`${t.trip_code} • ${t.plate}`,pullTripStatusLabel(t),body,actions);setTimeout(()=>renderPullMap(mapId,t,tp.data||[],ev.data||[]),120);}catch(e){toast(humanPullError(e),'error');}
+  try{
+    const t=(pullHistory.find(x=>x.id===id)||($('pullFarolCards')?._rows||[]).find(x=>x.id===id))||((await sb.from('pull_trips').select('*').eq('id',id).single()).data);
+    if(!t)throw new Error('CICLO_NAO_ENCONTRADO');
+    const [ev,oc,tp,aud,nri]=await Promise.all([
+      sb.from('pull_events').select('*').eq('trip_id',id).order('recorded_at'),
+      sb.from('pull_occurrences').select('*').eq('trip_id',id).order('started_at'),
+      sb.from('pull_track_points').select('*').eq('trip_id',id).order('recorded_at').limit(5000),
+      sb.from('pull_tma_adjust_audit').select('*').eq('trip_id',id).order('changed_at',{ascending:false}),
+      sb.from('nri_requests').select('id,created_at').eq('pull_trip_id',id)
+    ]);
+    [ev,oc,tp,aud,nri].forEach(r=>{if(r.error)throw r.error;});
+    const m=pullTripMetrics(t);
+    const mapId=`pullMap-${String(id).replace(/-/g,'')}`;
+    const timeline=[
+      ...(ev.data||[]).map(x=>({kind:'STEP',mapKey:String(x.id||`${x.action_code||'STEP'}-${x.step_order||''}-${x.recorded_at||''}`),at:x.recorded_at,title:pullNumberedStepName(x),detail:`${x.user_name} • ${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)} • precisão ±${Math.round(x.gps_accuracy||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)`:x.geofence_status==='OUTSIDE'?` • fora do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)${x.exception_reason?` • ${x.exception_reason}`:''}`:''}`})),
+      ...(oc.data||[]).map(x=>({kind:'OCC',mapKey:'',at:x.started_at,title:`Ocorrência: ${x.occurrence_name}`,detail:`${x.started_by_name}${x.ended_at?` • ${fmtDurationMinutes(minutesBetween(x.started_at,x.ended_at))}`:' • em andamento'}${x.note?` • ${x.note}`:''}`}))
+    ].sort((a,b)=>new Date(a.at)-new Date(b.at));
+    const body=`<div class="detail-grid"><div class="detail-card"><small>Origem</small><strong>${esc(t.origin_unit||'—')}</strong></div><div class="detail-card"><small>Placa / fábrica</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div><div class="detail-card"><small>Parceiro</small><strong>${esc(t.carrier||'Ambev')}</strong></div><div class="detail-card"><small>Motoristas</small><strong>${esc(t.driver1_name)} / ${esc(t.driver2_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(t.started_at)}</strong></div><div class="detail-card"><small>Fim da viagem</small><strong>${fmtDateTime(t.ended_at)}</strong></div></div><div class="pull-metric-strip"><span>TMV Ida <b>${fmtMinutes(m.TMV_OUT)}</b></span><span>TMA Fábrica <b>${fmtMinutes(m.FACTORY)}</b></span><span>TMV Volta <b>${fmtMinutes(m.TMV_RETURN)}</b></span><span>TMA Revenda <b>${m.UNIT==null?'Aguardando':fmtMinutes(m.UNIT)}</b></span><span>Ciclo <b>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</b></span></div>${t.tma_adjust_minutes>0?`<div class="notice"><strong>TMA ajustado:</strong> bruto ${fmtMinutes(m.UNIT_RAW)} − ${fmtMinutes(t.tma_adjust_minutes)} = <b>${fmtMinutes(m.UNIT)}</b><br>${esc(t.tma_adjust_reason)} • por ${esc(t.tma_adjusted_by_name||'Admin')} em ${fmtDateTime(t.tma_adjusted_at)}</div>`:''}<div id="${mapId}" class="pull-map"></div><div class="section-title">Linha do tempo</div><div class="pull-timeline">${timeline.map(x=>`<div class="pull-timeline-item ${x.kind==='OCC'?'occurrence':''}"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.title)}</strong><span>${esc(x.detail)}</span>${x.mapKey?`<button type="button" class="pull-map-jump" data-pull-map-jump="${esc(x.mapKey)}" data-pull-map-id="${esc(mapId)}">Ver no mapa</button>`:''}</div></div>`).join('')}</div><div class="notice"><strong>NRIs vinculados:</strong> ${(nri.data||[]).length}</div>${(aud.data||[]).length?`<details><summary>Auditoria de ajustes TMA (${aud.data.length})</summary>${aud.data.map(a=>`<div class="audit-row">${fmtDateTime(a.changed_at)} • ${esc(a.changed_by_name)} • ${fmtMinutes(a.old_minutes)} → ${fmtMinutes(a.new_minutes)} • ${esc(a.new_reason||'sem ajuste')}</div>`).join('')}</details>`:''}`;
+    const actions=[];
+    if(!live&&t.next_started_at)actions.push({label:'Ajustar TMA Revenda',class:'secondary',onClick:()=>{closeModal();openPullTmaAdjust(t.id);}});
+    openModal(`${t.trip_code} • ${t.plate}`,pullTripStatusLabel(t),body,actions);
+    setTimeout(()=>{
+      renderPullMap(mapId,t,tp.data||[],ev.data||[]);
+      const modalBody=$('modalBody');
+      if(modalBody)modalBody.onclick=e=>{const b=e.target.closest('[data-pull-map-jump]');if(b)focusPullMapPoint(b.dataset.pullMapId,b.dataset.pullMapJump);};
+    },120);
+  }catch(e){toast(humanPullError(e),'error');}
 }
 function renderPullMap(mapId,t,track,events){
-  const el=$(mapId);if(!el||!window.L)return;
+  const el=$(mapId);if(!el||!window.L)return null;
   try{
+    const old=pullMapContexts.get(mapId);
+    if(old?.map){try{old.map.remove();}catch(_e){}}
+    pullMapContexts.delete(mapId);
     const map=L.map(el);pullMapInstances.push(map);
+    const markers=new Map();
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
     const trackPts=(track||[]).map(x=>[Number(x.latitude),Number(x.longitude)]).filter(x=>x.every(Number.isFinite));
     const eventRows=(events||[]).filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude))).sort((a,b)=>(Number(a.step_order)||0)-(Number(b.step_order)||0)||new Date(a.recorded_at)-new Date(b.recorded_at));
@@ -1077,15 +1108,33 @@ function renderPullMap(mapId,t,track,events){
     else if(eventPts.length>1)L.polyline(eventPts).addTo(map);
     eventRows.forEach((ev,idx)=>{
       const n=pullMainStepNumber(ev)||idx+1;
+      const key=String(ev.id||`${ev.action_code||'STEP'}-${ev.step_order||''}-${ev.recorded_at||''}`);
       const icon=L.divIcon({className:'pull-stage-marker-shell',html:`<span class="pull-stage-map-marker">${n}</span>`,iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-18]});
       const audit=ev.geofence_status==='INSIDE'?`<br>Dentro do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`:ev.geofence_status==='OUTSIDE'?`<br>Fora do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`:'';
-      L.marker([Number(ev.latitude),Number(ev.longitude)],{icon}).addTo(map).bindPopup(`<strong>Etapa ${n}: ${esc(ev.step_name||'Etapa')}</strong><br>${esc(fmtDateTime(ev.recorded_at))}<br>${esc(ev.user_name||'')}${audit}`);
+      const marker=L.marker([Number(ev.latitude),Number(ev.longitude)],{icon}).addTo(map).bindPopup(`<strong>Etapa ${n}: ${esc(ev.step_name||'Etapa')}</strong><br>${esc(fmtDateTime(ev.recorded_at))}<br>${esc(ev.user_name||'')}${audit}`);
+      markers.set(key,marker);
     });
     const boundsPts=[...trackPts,...eventPts];
     if(boundsPts.length)map.fitBounds(L.latLngBounds(boundsPts).pad(.15));else map.setView([-6.5,-36.5],6);
     const f=pullFactories.find(x=>x.name===t.factory);
     if(f?.latitude!=null&&f?.longitude!=null){L.marker([f.latitude,f.longitude]).addTo(map).bindPopup(`Fábrica ${esc(f.name)}`);if(f.radius_meters)L.circle([f.latitude,f.longitude],{radius:Number(f.radius_meters)}).addTo(map);}
-  }catch(e){console.warn(e);}
+    const ctx={map,markers,container:el};
+    pullMapContexts.set(mapId,ctx);
+    return ctx;
+  }catch(e){console.warn(e);return null;}
+}
+function focusPullMapPoint(mapId,mapKey){
+  const ctx=pullMapContexts.get(mapId);
+  const marker=ctx?.markers?.get(String(mapKey||''));
+  if(!ctx||!marker)return toast('Não foi possível localizar esta etapa no mapa.','error');
+  const point=marker.getLatLng();
+  ctx.container?.scrollIntoView({behavior:'smooth',block:'center'});
+  setTimeout(()=>{try{ctx.map.invalidateSize();ctx.map.flyTo(point,Math.max(17,ctx.map.getZoom()||0),{animate:true,duration:.55});marker.openPopup();}catch(e){console.warn(e);}},180);
+}
+function cleanupPullMaps(){
+  pullMapContexts.forEach(ctx=>{try{ctx.map?.remove();}catch(_e){}});
+  pullMapContexts.clear();
+  pullMapInstances=[];
 }
 
 function openPullTmaAdjust(id){const t=pullHistory.find(x=>x.id===id);if(!t||!t.ended_at||!t.next_started_at)return toast('O TMA Revenda ainda não está fechado.','error');const raw=minutesBetween(t.ended_at,t.next_started_at);const current=Number(t.tma_adjust_minutes||0);const suggested=current||pullSuggestedDiscountForTrip(id);const body=`<div class="notice">TMA bruto desta placa: <strong>${fmtMinutes(raw)}</strong>. O dashboard utilizará TMA bruto menos o desconto aprovado pelo ADMIN.</div><div class="field"><label>Horas a diminuir (HH:MM)</label><input id="modalTmaDiscount" value="${minutesToInput(suggested)}" placeholder="00:00"></div><div class="field"><label>Motivo do ajuste ${suggested?'*':''}</label><textarea id="modalTmaReason" rows="3" placeholder="Ex.: descanso regulamentar / ponto fechado">${esc(t.tma_adjust_reason||'')}</textarea></div>`;openModal(`Ajustar TMA • ${t.plate}`,t.trip_code,body,[{label:'Salvar ajuste',class:'primary',onClick:async()=>{const mins=parseDurationInput($('modalTmaDiscount').value);const reason=$('modalTmaReason').value.trim();if(mins==null)return toast('Informe o desconto em HH:MM.','error');if(mins>0&&!reason)return toast('Informe o motivo do ajuste.','error');try{const {error}=await sb.rpc('adjust_pull_tma',{p_trip_id:t.id,p_minutes:mins,p_reason:reason});if(error)throw error;closeModal();toast('TMA ajustado e auditado.','success');await loadPullHistory();}catch(e){toast(humanPullError(e),'error');}}}]);}
@@ -1151,7 +1200,7 @@ function humanGpsOrPullError(e){const m=String(e?.message||e||'');return /PERMIS
 
 // MODAL / HELPERS ------------------------------------------------------------
 function openModal(title,subtitle,body,actions=[]){$('modalTitle').textContent=title;$('modalSubtitle').textContent=subtitle||'';$('modalBody').innerHTML=body||'';const a=$('modalActions');a.innerHTML='';actions.forEach(x=>{const b=document.createElement('button');b.className=`btn ${x.class||'secondary'}`;b.textContent=x.label;b.addEventListener('click',x.onClick);a.appendChild(b);});$('modal').classList.add('open');}
-function closeModal(){$('modal').classList.remove('open');$('modalBody').onchange=null;$('modalBody').innerHTML='';$('modalActions').innerHTML='';}
+function closeModal(){cleanupPullMaps();$('modal').classList.remove('open');$('modalBody').onchange=null;$('modalBody').onclick=null;$('modalBody').innerHTML='';$('modalActions').innerHTML='';}
 function statusBadge(s){const cls=s==='IMPRESSO'||s==='APROVADO'?'ok':s==='REPROVADO'||s==='REMOVIDO'?'bad':s==='PARCIAL'?'partial':'pending';return `<span class="status ${cls}">${esc(s)}</span>`;}
 function dashStatus(s){return s==='OK'?'<span class="status ok">Sem diferença</span>':s==='DIVERGENTE'?'<span class="status bad">Com diferença</span>':'<span class="status pending">Sem base MAPAS</span>';}
 function toast(msg,type=''){const t=$('toast');t.textContent=msg;t.className=`toast show ${type}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='toast',3600);}
