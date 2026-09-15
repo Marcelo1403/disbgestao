@@ -1,1 +1,1 @@
-v1.0.12 - menu modular, avarias multifotos, evidencias recolhiveis e dashboard por data da rota
+v1.1.0 - modulo Puxada com GPS, farol, historico, metas, dashboards, geofence e integracao NRI

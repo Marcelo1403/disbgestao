@@ -150,7 +150,7 @@ Deno.serve(async (req: Request) => {
     const active = body.active !== false;
     const password = String(body.password || '');
     const domain = Deno.env.get('USER_EMAIL_DOMAIN') || 'disbecol.app';
-    const allowedRoles = ['ADMIN', 'COLABORADOR_ARMAZEM', 'COLABORADOR_ENTREGA', 'CONFERENTE'];
+    const allowedRoles = ['ADMIN', 'COLABORADOR_ARMAZEM', 'COLABORADOR_ENTREGA', 'CONFERENTE', 'MOTORISTA_PUXADOR'];
 
     if (!allowedRoles.includes(role)) return json({ ok: false, error: 'PERFIL_INVALIDO' });
     if (!username || !name) return json({ ok: false, error: 'DADOS_OBRIGATORIOS' });

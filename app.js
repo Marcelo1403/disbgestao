@@ -5,7 +5,7 @@ const CFG = window.APP_CONFIG || {};
 const $ = id => document.getElementById(id);
 const TZ = 'America/Fortaleza';
 const ROLE_LABELS = {
-  ADMIN:'Admin', COLABORADOR_ARMAZEM:'Colaborador Armazém / Conferente', COLABORADOR_ENTREGA:'Motorista', CONFERENTE:'Colaborador Armazém / Conferente'
+  ADMIN:'Admin', COLABORADOR_ARMAZEM:'Colaborador Armazém / Conferente', COLABORADOR_ENTREGA:'Motorista', CONFERENTE:'Colaborador Armazém / Conferente', MOTORISTA_PUXADOR:'Motorista Puxador'
 };
 const VALUE_TYPES = [
   {key:'g300',label:'Garrafeiras 300ml',value:69.5},
@@ -19,11 +19,12 @@ const VALUE_TYPES = [
 let sb = null;
 let authUser = null;
 let profile = null;
-let refs = {products:[],units:[],shifts:[],drivers:[],factories:[],customers:[]};
+let refs = {products:[],units:[],drivers:[],factories:[],customers:[]};
 let productsByCode = new Map();
 let customersByCode = new Map();
 let selectedCustomerKey = '';
 let nriDraftItems = [];
+let nriPullLocked = false;
 let nriEditingId = null;
 let pendingNris = [];
 let selectedNris = new Set();
@@ -52,6 +53,13 @@ const viewMeta = {
   'nri-historico':['Histórico NRI','Rastreabilidade completa'],
   'conf-historico':['Histórico de conferências','Todos os registros'],
   'conf-dashboard':['Dashboard comparativo','Planejado x conferido'],
+  'nri-carretas':['Carretas pendentes','Puxada concluída aguardando NRI'],
+  'puxada-viagem':['Minha Puxada','Etapas, GPS e ocorrências'],
+  'puxada-farol':['Farol de andamento','Carretas em viagem e localização'],
+  'puxada-historico':['Relatório / Histórico','Ciclos, percurso e tempos'],
+  'puxada-dashboard':['Dashboards da Puxada','Aderência e planificador'],
+  'puxada-metas':['Metas da Puxada','Metas globais por ano'],
+  'puxada-config':['Configurações da Puxada','Etapas, geofence e veículos'],
   'usuarios':['Usuários e perfis','Controle de acesso'],
   'bases':['Bases / importação','Migração do Google Sheets']
 };
@@ -172,6 +180,7 @@ function bindBaseEvents(){
   $('btnLimparUsuario').addEventListener('click',clearUserForm);
   $('tbodyUsuarios').addEventListener('click',onUserTableClick);
   $('btnImportarBase').addEventListener('click',importBaseCsv);
+  bindPullEvents();
 }
 
 async function login(e){
@@ -195,7 +204,7 @@ async function loadProfile(user){
   if(error||!data||!data.active){profile=null;return false;} profile=data; return true;
 }
 async function logout(){
-  teardownRealtime(); profile=null;authUser=null; refs={products:[],units:[],shifts:[],drivers:[],factories:[],customers:[]};
+  teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null; refs={products:[],units:[],drivers:[],factories:[],customers:[]};
   $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
   try{await sb.auth.signOut();}catch(_e){}
   setLoginMessage('');
@@ -211,19 +220,24 @@ async function startApp(){
   applyRole(); restoreNavModules(); fillDefaultDates(); updateDashboardPeriod();
   await loadReferences(true);
   setupRealtime();
-  if(canNri()) { await loadPending(); }
+  await initPullModule();
+  if(canNri()) { await loadPending(); await loadPullNriPending(true); }
   if(isAdmin()) { loadAdminAvarias(); }
-  const defaultView = profile.role==='COLABORADOR_ENTREGA'?'avaria-cadastro':profile.role==='CONFERENTE'?'conf-cadastro':'nri-cadastro';
+  const defaultView = profile.role==='COLABORADOR_ENTREGA'?'avaria-cadastro':profile.role==='MOTORISTA_PUXADOR'?'puxada-viagem':profile.role==='CONFERENTE'?'conf-cadastro':'nri-cadastro';
   openView(defaultView,true);
 }
 function isAdmin(){return profile?.role==='ADMIN';}
+function isPullDriver(){return profile?.role==='MOTORISTA_PUXADOR';}
 function canNri(){return ['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE'].includes(profile?.role);}
 function canAvaria(){return ['ADMIN','COLABORADOR_ENTREGA'].includes(profile?.role);}
 function canConference(){return ['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE'].includes(profile?.role);}
+function canPull(){return isAdmin()||isPullDriver();}
 function applyRole(){
   document.querySelectorAll('.role-nri').forEach(x=>x.classList.toggle('hidden',!canNri()));
   document.querySelectorAll('.role-avaria').forEach(x=>x.classList.toggle('hidden',!canAvaria()));
   document.querySelectorAll('.role-conferencia').forEach(x=>x.classList.toggle('hidden',!canConference()));
+  document.querySelectorAll('.role-puxada').forEach(x=>x.classList.toggle('hidden',!canPull()));
+  document.querySelectorAll('.puxador-only').forEach(x=>x.classList.toggle('hidden',!isPullDriver()));
   document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',!isAdmin()));
 }
 function toggleNavModule(module){
@@ -267,6 +281,7 @@ function openView(name,force=false){
   if(name==='conf-historico')loadConferenceHistory();
   if(name==='conf-dashboard')loadDashboard();
   if(name==='usuarios')loadUsers();
+  if(name==='nri-carretas'||name.startsWith('puxada-')) pullOnView(name);
 }
 function toggleSidebar(open){$('sidebar').classList.toggle('open',open);$('overlay').classList.toggle('show',open);}
 
@@ -286,16 +301,15 @@ async function loadReferences(useCache=false){
   if(refRefreshPromise)return refRefreshPromise;
   refRefreshPromise=(async()=>{
     try{
-      const [p,u,s,d,f,c]=await Promise.all([
+      const [p,u,d,f,c]=await Promise.all([
         sb.from('products').select('code,name').eq('active',true).order('code'),
         sb.from('units').select('name').eq('active',true).order('name'),
-        sb.from('shifts').select('name').eq('active',true).order('name'),
         sb.from('drivers').select('name').eq('active',true).order('name'),
         sb.from('factories').select('name').eq('active',true).order('name'),
         sb.from('customers').select('code,name,city,branch').order('code')
       ]);
-      const errors=[p,u,s,d,f,c].map(x=>x.error).filter(Boolean); if(errors.length)throw errors[0];
-      refs=sanitizeRefs({products:p.data||[],units:u.data||[],shifts:s.data||[],drivers:d.data||[],factories:f.data||[],customers:c.data||[]});
+      const errors=[p,u,d,f,c].map(x=>x.error).filter(Boolean); if(errors.length)throw errors[0];
+      refs=sanitizeRefs({products:p.data||[],units:u.data||[],drivers:d.data||[],factories:f.data||[],customers:c.data||[]});
       localStorage.setItem('ops_ref_cache',JSON.stringify({at:Date.now(),data:refs})); rebuildReferenceMaps();populateReferenceInputs();
     }catch(e){ if(!refs.products.length)toast(humanError(e),'error'); }
     finally{refRefreshPromise=null;}
@@ -314,14 +328,14 @@ function rebuildReferenceMaps(){
   });
 }
 function populateReferenceInputs(){
-  fillSelect('nriUnidade',refs.units.map(x=>x.name),'Selecione'); fillSelect('nriTurno',refs.shifts.map(x=>x.name),'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
+  fillSelect('nriUnidade',refs.units.map(x=>x.name),'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
   fillSelect('pendUnidade',refs.units.map(x=>x.name),'Todas'); fillSelect('histNriUnidade',refs.units.map(x=>x.name),'Todas');
   updateNriTypeFields();
 }
 function fillSelect(id,values,placeholder){const el=$(id);const old=el.value;el.innerHTML=`<option value="">${esc(placeholder)}</option>`+values.map(v=>`<option>${esc(v)}</option>`).join('');if(values.includes(old))el.value=old;}
 function sanitizeRefText(v){return repairText(String(v??'')).trim();}
 function repairText(v){let s=String(v??'');const map={'Ã¡':'á','Ã ': 'à','Ã¢':'â','Ã£':'ã','Ã¤':'ä','Ã©':'é','Ã¨':'è','Ãª':'ê','Ã«':'ë','Ã­':'í','Ã¬':'ì','Ã®':'î','Ã¯':'ï','Ã³':'ó','Ã²':'ò','Ã´':'ô','Ãµ':'õ','Ã¶':'ö','Ãº':'ú','Ã¹':'ù','Ã»':'û','Ã¼':'ü','Ã§':'ç','Ã':'Á','Ã€':'À','Ã‚':'Â','Ãƒ':'Ã','Ã„':'Ä','Ã‰':'É','Ãˆ':'È','ÃŠ':'Ê','Ã‹':'Ë','Ã':'Í','ÃŒ':'Ì','ÃŽ':'Î','Ã':'Ï','Ã“':'Ó','Ã’':'Ò','Ã”':'Ô','Ã•':'Õ','Ã–':'Ö','Ãš':'Ú','Ã™':'Ù','Ã›':'Û','Ãœ':'Ü','Ã‡':'Ç','â€“':'–','â€”':'—','â€˜':'‘','â€™':'’','â€œ':'“','â€':'”','â€¢':'•','Â ':' ','Âº':'º','Âª':'ª'};for(const [a,b] of Object.entries(map))s=s.split(a).join(b);s=s.replace(/Â(?=[A-Za-zÀ-ÿ])/g,'');return s;}
-function sanitizeRefs(data){return {products:(data.products||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name)})).filter(x=>x.code&&x.name),units:(data.units||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),shifts:(data.shifts||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),drivers:(data.drivers||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),factories:(data.factories||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),customers:(data.customers||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name),city:sanitizeRefText(x.city),branch:sanitizeRefText(x.branch)})).filter(x=>x.code&&x.name)};}
+function sanitizeRefs(data){return {products:(data.products||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name)})).filter(x=>x.code&&x.name),units:(data.units||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),drivers:(data.drivers||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),factories:(data.factories||[]).map(x=>({name:sanitizeRefText(x.name)})).filter(x=>x.name),customers:(data.customers||[]).map(x=>({code:normalizeCode(x.code),name:sanitizeRefText(x.name),city:sanitizeRefText(x.city),branch:sanitizeRefText(x.branch)})).filter(x=>x.code&&x.name)};}
 
 // NRI ------------------------------------------------------------------------
 function fillDefaultDates(){
@@ -344,6 +358,7 @@ function setSelectFixedValue(select,value,disabled){
 }
 function updateNriTypeFields(){
   const marketplace=$('nriTipo').value==='MARKETPLACE';
+  if(nriPullLocked)return;
   setSelectFixedValue($('nriMotorista'),'--',marketplace);
   setSelectFixedValue($('nriFabrica'),'--',marketplace);
   const plate=$('nriPlaca');
@@ -368,20 +383,20 @@ function renderNriDraftItems(){
 }
 function onNriDraftListClick(e){const b=e.target.closest('button[data-act]');if(!b)return;const row=b.closest('[data-id]');const item=nriDraftItems.find(x=>x.id===row.dataset.id);if(!item)return;if(b.dataset.act==='del'){nriDraftItems=nriDraftItems.filter(x=>x.id!==item.id);renderNriDraftItems();if(nriEditingId===item.id)clearNriItemEditor();return;}nriEditingId=item.id;$('nriCodigo').value=item.product_code;$('nriSemValidade').checked=!item.validity_date;$('nriValidade').value=formatShortDate(item.validity_date);$('nriLote').value=item.lot;$('nriQuantidade').value=item.quantity;$('nriPaletes').value=item.pallets;$('nriBloqueio').value=item.block_date?formatShortDate(item.block_date):'--';updateNriValidityMode();onProductCode();$('btnAdicionarNriItem').textContent='Salvar alteração';$('btnCancelarNriItem').classList.remove('hidden');}
 function clearNriItemEditor(){nriEditingId=null;['nriCodigo','nriValidade','nriLote','nriBloqueio'].forEach(id=>$(id).value='');$('nriSemValidade').checked=false;updateNriValidityMode();$('nriQuantidade').value=1;$('nriPaletes').value=1;$('produtoPlaceholder').classList.remove('hidden');$('produtoImagem').classList.add('hidden');$('produtoInfo').classList.add('hidden');$('btnAdicionarNriItem').textContent='+ Adicionar à carreta';$('btnCancelarNriItem').classList.add('hidden');}
-function clearNriRequest(){nriDraftItems=[];renderNriDraftItems();clearNriItemEditor();['nriUnidade','nriTurno','nriMotorista','nriFabrica','nriPlaca'].forEach(id=>$(id).value='');$('nriTipo').value='AMBEV';updateNriTypeFields();$('nriRecebimento').value=localIsoDate(new Date());$('nriHora').value=localTime(new Date());$('nriConferente').value=profile?.name||'';}
+function clearNriRequest(){nriDraftItems=[];renderNriDraftItems();clearNriItemEditor();clearNriPullContext();['nriUnidade','nriMotorista','nriFabrica','nriPlaca'].forEach(id=>$(id).value='');$('nriTipo').value='AMBEV';updateNriTypeFields();$('nriRecebimento').value=localIsoDate(new Date());$('nriHora').value=localTime(new Date());$('nriConferente').value=profile?.name||'';}
 async function submitNriRequest(e){
   e.preventDefault();if(!nriDraftItems.length)return toast('Adicione ao menos um produto à carreta.','error');
   const requestType=$('nriTipo').value==='MARKETPLACE'?'MARKETPLACE':'AMBEV';
-  const common={unit:$('nriUnidade').value,request_type:requestType,receipt_date:$('nriRecebimento').value,shift:$('nriTurno').value,receipt_time:$('nriHora').value,driver:requestType==='MARKETPLACE'?'--':$('nriMotorista').value,plate:requestType==='MARKETPLACE'?'--':$('nriPlaca').value.trim(),factory:requestType==='MARKETPLACE'?'--':$('nriFabrica').value};
-  const requiredBase=[common.unit,common.request_type,common.receipt_date,common.shift,common.receipt_time];
-  if(requiredBase.some(v=>!String(v).trim()))return toast('Preencha unidade, tipo, data, turno e hora.','error');
+  const common={unit:$('nriUnidade').value,request_type:requestType,receipt_date:$('nriRecebimento').value,receipt_time:$('nriHora').value,driver:requestType==='MARKETPLACE'?'--':$('nriMotorista').value,plate:requestType==='MARKETPLACE'?'--':$('nriPlaca').value.trim(),factory:requestType==='MARKETPLACE'?'--':$('nriFabrica').value,pull_trip_id:$('nriPullTripId')?.value||null};
+  const requiredBase=[common.unit,common.request_type,common.receipt_date,common.receipt_time];
+  if(requiredBase.some(v=>!String(v).trim()))return toast('Preencha unidade, tipo, data e hora.','error');
   if(requestType==='AMBEV'&&[common.driver,common.plate,common.factory].some(v=>!String(v).trim()))return toast('Preencha motorista, placa e fábrica para recebimento Ambev.','error');
   const btn=$('btnCadastrarCarreta');btn.disabled=true;btn.textContent='Cadastrando…';
-  try{const {data,error}=await sb.rpc('create_nri_request',{p_payload:{...common,items:nriDraftItems}});if(error)throw error;const count=data?.nris?.length||nriDraftItems.reduce((s,x)=>s+x.pallets,0);toast(`${count} NRIs cadastradas e enviadas para Impressões pendentes.`,'success');clearNriRequest();await loadPending(true);}
+  try{const {data,error}=await sb.rpc('create_nri_request',{p_payload:{...common,items:nriDraftItems}});if(error)throw error;const count=data?.nris?.length||nriDraftItems.reduce((s,x)=>s+x.pallets,0);toast(`${count} NRIs cadastradas e enviadas para Impressões pendentes.`,'success');clearNriRequest();await loadPending(true);await loadPullNriPending(true);}
   catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;renderNriDraftItems();}
 }
 async function loadPending(silent=false){if(!canNri())return;try{const {data,error}=await sb.from('nris').select('*').eq('status','PENDENTE').order('created_at',{ascending:false}).limit(1500);if(error)throw error;pendingNris=(data||[]).map(mapNri);selectedNris=new Set([...selectedNris].filter(id=>pendingNris.some(x=>x.id===id)));renderPending();$('badgePendentes').textContent=pendingNris.length;}catch(e){if(!silent)toast(humanError(e),'error');}}
-function mapNri(r){return {...r,codigoProduto:r.product_code,nomeProduto:r.product_name,unidade:r.unit,tipo:r.request_type||'AMBEV',validade:r.validity_date,lote:r.lot,recebimento:r.receipt_date,bloqueio:r.block_date,conferente:r.checker_name,turno:r.shift,hora:fmtTime(r.receipt_time),motorista:r.driver,placa:r.plate,fabrica:r.factory,quantidade:r.quantity};}
+function mapNri(r){return {...r,codigoProduto:r.product_code,nomeProduto:r.product_name,unidade:r.unit,tipo:r.request_type||'AMBEV',validade:r.validity_date,lote:r.lot,recebimento:r.receipt_date,bloqueio:r.block_date,conferente:r.checker_name,hora:fmtTime(r.receipt_time),motorista:r.driver,placa:r.plate,fabrica:r.factory,quantidade:r.quantity};}
 function filteredPending(){const q=norm($('pendFiltro').value),u=$('pendUnidade').value;return pendingNris.filter(x=>(!u||x.unidade===u)&&(!q||norm([x.nri,x.codigoProduto,x.nomeProduto,x.lote,x.placa].join(' ')).includes(q)));}
 function renderPending(){const arr=filteredPending();$('tbodyPendentes').innerHTML=arr.length?arr.map(x=>`<tr><td><input type="checkbox" data-check="${x.id}" ${selectedNris.has(x.id)?'checked':''}></td><td><strong>${esc(x.nri)}</strong><small>${esc(x.codigoProduto)} • ${esc(x.nomeProduto)}</small></td><td>${esc(x.lote)}<small>${x.validade?fmtDate(x.validade):'Sem Validade'}</small></td><td>${esc(x.unidade)}<small>${esc(x.placa)} • ${esc(x.motorista)}</small></td><td>${fmtNum(x.quantidade)}</td><td><div class="mini-actions"><button class="mini-btn" data-act="preview" data-id="${x.id}">Visualizar</button><button class="mini-btn" data-act="print" data-id="${x.id}">Imprimir</button><button class="mini-btn danger" data-act="remove" data-id="${x.id}">Remover</button></div></td></tr>`).join(''):`<tr><td colspan="6">Nenhuma NRI pendente.</td></tr>`;}
 function onPendingCheck(e){if(!e.target.matches('input[data-check]'))return;e.target.checked?selectedNris.add(e.target.dataset.check):selectedNris.delete(e.target.dataset.check);}
@@ -391,8 +406,8 @@ async function removeNri(r){if(!confirm(`Remover ${r.nri} da fila?`))return;try{
 function showNriPreview(r){openModal(`NRI ${r.nri}`,`${r.codigoProduto} • ${r.nomeProduto}`,htmlEtiqueta(r,false),[{label:'Imprimir',class:'primary',onClick:()=>{closeModal();startPrint([r],r.status==='IMPRESSO');}}]);setTimeout(()=>{const img=$('modalBody').querySelector('img[data-product]');if(img)setProductImage(img,r.codigoProduto);},10);}
 async function startPrint(records,reprint=false){if(!records?.length)return toast('Selecione ao menos uma NRI.','error');printOperation={records,reprint};const frame=$('printFrame');const doc=frame.contentWindow.document;doc.open();doc.write(printDocument(records));doc.close();await wait(90);frame.contentWindow.focus();frame.contentWindow.print();openModal('Confirmar impressão','O diálogo da impressora foi aberto.','<p>Confirme somente depois de verificar se a impressão realmente foi concluída.</p>',[{label:'Cancelar / não imprimiu',class:'secondary',onClick:()=>finishPrint('CANCELADO')},{label:'Impressão concluída',class:'primary',onClick:()=>finishPrint('IMPRESSO')}]);}
 async function finishPrint(result){if(!printOperation)return;const op=printOperation;printOperation=null;closeModal();if(result==='IMPRESSO'&&!op.reprint){const ids=new Set(op.records.map(x=>x.id));pendingNris=pendingNris.filter(x=>!ids.has(x.id));renderPending();$('badgePendentes').textContent=pendingNris.length;}try{const {error}=await sb.rpc('confirm_nri_print',{p_ids:op.records.map(x=>x.id),p_reprint:!!op.reprint,p_result:result});if(error)throw error;toast(result==='IMPRESSO'?'Impressão confirmada.':'Cancelamento registrado.',result==='IMPRESSO'?'success':'');}catch(e){toast(humanError(e),'error');loadPending(true);}}
-function htmlEtiqueta(r,print){const img=print?`<img alt="" onerror="imgFallback(this,'${jsEsc(r.codigoProduto)}',1)" src="${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/${encodeURIComponent(r.codigoProduto)}.png">`:`<img alt="" data-product="1">`;const semValidade=!r.validade;const validadeTexto=semValidade?'SEM VALIDADE':fmtDate(r.validade);const bloqueioTexto=semValidade?'--':fmtDate(r.bloqueio);return `<div class="nri-preview-label"><div class="nri-top"><div class="nri-code-label">CÓDIGO:</div><div class="nri-code-value">${esc(r.codigoProduto)}</div><div class="nri-id">${esc(r.nri)}</div></div><div class="nri-product-title">${img}<strong>${esc(r.nomeProduto)}</strong></div><div class="nri-mini-strip"><div class="nri-mini-cell"><b>UNIDADE:</b>${esc(r.unidade)} <b style="margin-left:12px">TIPO:</b>${esc(r.tipo||'AMBEV')}</div></div><div class="nri-validade"><span>VALIDADE:</span><strong class="${semValidade?'sem-validade':''}">${validadeTexto}</strong></div><div class="nri-dates"><div class="nri-date-cell"><b>RECEB:</b><strong>${fmtDate(r.recebimento)}</strong></div><div class="nri-date-cell"><b>BLOQUEIO:</b><strong>${bloqueioTexto}</strong></div></div><div class="nri-meta"><div class="nri-meta-cell"><b>Conferente</b><span>${esc(r.conferente)}</span></div><div class="nri-meta-cell"><b>Turno</b><span>${esc(r.turno)}</span></div><div class="nri-meta-cell"><b>Hora</b><span>${esc(r.hora)}</span></div><div class="nri-meta-cell"><b>Motorista</b><span>${esc(r.motorista)}</span></div><div class="nri-meta-cell"><b>Placa</b><span>${esc(r.placa)}</span></div></div><div class="nri-bottom"><div><b>Fábrica:</b>${esc(r.fabrica)}</div><div><b>Quantidade:</b>${esc(r.quantidade)}</div><div><b>NRI:</b>${esc(r.nri)}</div></div></div>`;}
-function printDocument(records){const pages=records.map(r=>`<section class="page">${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}</section>`).join('');return `<!doctype html><html><head><base href="${document.baseURI}"><meta charset="utf-8"><style>@page{size:A4 portrait;margin:5mm}*{box-sizing:border-box}body{margin:0;font-family:Arial;color:#686868}.page{height:287mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}.page:last-child{page-break-after:auto}.nri-preview-label{height:89mm;width:100%;border:1.2px solid #777;background:#fff;color:#686868;overflow:hidden}.nri-top{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;height:12mm;border-bottom:2px solid #777}.nri-code-label{display:flex;align-items:center;padding:0 2.2mm;font-size:18pt;font-weight:1000;border-right:2px solid #777}.nri-code-value{display:flex;align-items:center;padding:0 3mm;font-size:31pt;line-height:.82;font-weight:1000;color:#4b4f54}.nri-id{display:flex;align-items:center;padding:0 2mm;font-size:10pt;font-weight:900}.nri-product-title{height:18mm;border-bottom:1px solid #777;display:flex;align-items:center;justify-content:center;gap:3mm;padding:1mm 3mm;text-align:center}.nri-product-title img{width:14mm;height:14mm;object-fit:contain}.nri-product-title strong{font-size:24pt;line-height:.96;font-weight:1000}.nri-mini-strip{height:4.5mm;border-bottom:1px solid #777}.nri-mini-cell{display:flex;align-items:center;padding:.2mm 1.8mm;font-size:9pt;font-weight:700}.nri-mini-cell b{font-size:8.5pt;font-weight:1000;margin-right:1.3mm}.nri-validade{display:grid;grid-template-columns:31% 69%;height:28mm;border-bottom:1px solid #777;align-items:center}.nri-validade span{height:100%;display:flex;align-items:center;padding:1.5mm 2.5mm;border-right:1px solid #777;font-size:25pt;font-weight:1000}.nri-validade strong{font-size:58pt;line-height:.84;text-align:center;font-weight:1000;color:#4b4f54}.nri-validade strong.sem-validade{font-size:28pt;line-height:1}.nri-dates{display:grid;grid-template-columns:1fr 1fr;height:10mm;border-bottom:1px solid #777}.nri-date-cell{display:grid;grid-template-columns:auto 1fr;align-items:center}.nri-date-cell+.nri-date-cell{border-left:1px solid #777}.nri-date-cell b{padding:1mm 1.8mm;font-size:10.5pt}.nri-date-cell strong{text-align:center;padding:1mm 1.4mm;border-left:1px solid #777;font-size:13.5pt}.nri-meta{display:grid;grid-template-columns:1.55fr .85fr .8fr 1.15fr 1fr;height:7mm;border-bottom:1px solid #777}.nri-meta-cell{text-align:center;border-right:1px solid #777;overflow:hidden}.nri-meta-cell:last-child{border-right:0}.nri-meta-cell b{display:block;padding:.08mm .6mm 0;font-size:7.8pt;text-decoration:underline}.nri-meta-cell span{display:block;padding:.05mm .6mm 0;font-size:9.6pt;font-weight:700;white-space:nowrap}.nri-bottom{display:grid;grid-template-columns:1.8fr .75fr 1.1fr;height:5.5mm}.nri-bottom>div{display:flex;align-items:center;padding:.2mm 1.6mm;font-size:9.5pt;font-weight:700;border-right:1px solid #777}.nri-bottom>div:last-child{border-right:0}</style></head><body>${pages}<script>function imgFallback(img,code,i){var ex=['png','jpg','jpeg','webp'];i=i||0;if(i>=ex.length){img.style.display='none';return;}img.onerror=function(){imgFallback(img,code,i+1)};img.src='${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/'+encodeURIComponent(code)+'.'+ex[i];}<\/script></body></html>`;}
+function htmlEtiqueta(r,print){const img=print?`<img alt="" onerror="imgFallback(this,'${jsEsc(r.codigoProduto)}',1)" src="${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/${encodeURIComponent(r.codigoProduto)}.png">`:`<img alt="" data-product="1">`;const semValidade=!r.validade;const validadeTexto=semValidade?'SEM VALIDADE':fmtDate(r.validade);const bloqueioTexto=semValidade?'--':fmtDate(r.bloqueio);return `<div class="nri-preview-label"><div class="nri-top"><div class="nri-code-label">CÓDIGO:</div><div class="nri-code-value">${esc(r.codigoProduto)}</div><div class="nri-id">${esc(r.nri)}</div></div><div class="nri-product-title">${img}<strong>${esc(r.nomeProduto)}</strong></div><div class="nri-mini-strip"><div class="nri-mini-cell"><b>UNIDADE:</b>${esc(r.unidade)} <b style="margin-left:12px">TIPO:</b>${esc(r.tipo||'AMBEV')}</div></div><div class="nri-validade"><span>VALIDADE:</span><strong class="${semValidade?'sem-validade':''}">${validadeTexto}</strong></div><div class="nri-dates"><div class="nri-date-cell"><b>RECEB:</b><strong>${fmtDate(r.recebimento)}</strong></div><div class="nri-date-cell"><b>BLOQUEIO:</b><strong>${bloqueioTexto}</strong></div></div><div class="nri-meta"><div class="nri-meta-cell"><b>Conferente</b><span>${esc(r.conferente)}</span></div><div class="nri-meta-cell"><b>Hora</b><span>${esc(r.hora)}</span></div><div class="nri-meta-cell"><b>Motorista</b><span>${esc(r.motorista)}</span></div><div class="nri-meta-cell"><b>Placa</b><span>${esc(r.placa)}</span></div></div><div class="nri-bottom"><div><b>Fábrica:</b>${esc(r.fabrica)}</div><div><b>Quantidade:</b>${esc(r.quantidade)}</div><div><b>NRI:</b>${esc(r.nri)}</div></div></div>`;}
+function printDocument(records){const pages=records.map(r=>`<section class="page">${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}</section>`).join('');return `<!doctype html><html><head><base href="${document.baseURI}"><meta charset="utf-8"><style>@page{size:A4 portrait;margin:5mm}*{box-sizing:border-box}body{margin:0;font-family:Arial;color:#686868}.page{height:287mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}.page:last-child{page-break-after:auto}.nri-preview-label{height:89mm;width:100%;border:1.2px solid #777;background:#fff;color:#686868;overflow:hidden}.nri-top{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;height:12mm;border-bottom:2px solid #777}.nri-code-label{display:flex;align-items:center;padding:0 2.2mm;font-size:18pt;font-weight:1000;border-right:2px solid #777}.nri-code-value{display:flex;align-items:center;padding:0 3mm;font-size:31pt;line-height:.82;font-weight:1000;color:#4b4f54}.nri-id{display:flex;align-items:center;padding:0 2mm;font-size:10pt;font-weight:900}.nri-product-title{height:18mm;border-bottom:1px solid #777;display:flex;align-items:center;justify-content:center;gap:3mm;padding:1mm 3mm;text-align:center}.nri-product-title img{width:14mm;height:14mm;object-fit:contain}.nri-product-title strong{font-size:24pt;line-height:.96;font-weight:1000}.nri-mini-strip{height:4.5mm;border-bottom:1px solid #777}.nri-mini-cell{display:flex;align-items:center;padding:.2mm 1.8mm;font-size:9pt;font-weight:700}.nri-mini-cell b{font-size:8.5pt;font-weight:1000;margin-right:1.3mm}.nri-validade{display:grid;grid-template-columns:31% 69%;height:28mm;border-bottom:1px solid #777;align-items:center}.nri-validade span{height:100%;display:flex;align-items:center;padding:1.5mm 2.5mm;border-right:1px solid #777;font-size:25pt;font-weight:1000}.nri-validade strong{font-size:58pt;line-height:.84;text-align:center;font-weight:1000;color:#4b4f54}.nri-validade strong.sem-validade{font-size:28pt;line-height:1}.nri-dates{display:grid;grid-template-columns:1fr 1fr;height:10mm;border-bottom:1px solid #777}.nri-date-cell{display:grid;grid-template-columns:auto 1fr;align-items:center}.nri-date-cell+.nri-date-cell{border-left:1px solid #777}.nri-date-cell b{padding:1mm 1.8mm;font-size:10.5pt}.nri-date-cell strong{text-align:center;padding:1mm 1.4mm;border-left:1px solid #777;font-size:13.5pt}.nri-meta{display:grid;grid-template-columns:1.55fr .85fr 1.15fr 1fr;height:7mm;border-bottom:1px solid #777}.nri-meta-cell{text-align:center;border-right:1px solid #777;overflow:hidden}.nri-meta-cell:last-child{border-right:0}.nri-meta-cell b{display:block;padding:.08mm .6mm 0;font-size:7.8pt;text-decoration:underline}.nri-meta-cell span{display:block;padding:.05mm .6mm 0;font-size:9.6pt;font-weight:700;white-space:nowrap}.nri-bottom{display:grid;grid-template-columns:1.8fr .75fr 1.1fr;height:5.5mm}.nri-bottom>div{display:flex;align-items:center;padding:.2mm 1.6mm;font-size:9.5pt;font-weight:700;border-right:1px solid #777}.nri-bottom>div:last-child{border-right:0}</style></head><body>${pages}<script>function imgFallback(img,code,i){var ex=['png','jpg','jpeg','webp'];i=i||0;if(i>=ex.length){img.style.display='none';return;}img.onerror=function(){imgFallback(img,code,i+1)};img.src='${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/'+encodeURIComponent(code)+'.'+ex[i];}<\/script></body></html>`;}
 async function loadNriHistory(){if(!isAdmin())return;try{let q=sb.from('nris').select('*').order('created_at',{ascending:false}).limit(2000);const {data,error}=await q;if(error)throw error;historyNris=(data||[]).map(mapNri);renderNriHistory();}catch(e){toast(humanError(e),'error');}}
 function filteredNriHistory(){const q=norm($('histNriBusca').value),status=$('histNriStatus').value,u=$('histNriUnidade').value,de=$('histNriDe').value,ate=$('histNriAte').value;return historyNris.filter(x=>(!status||x.status===status)&&(!u||x.unidade===u)&&(!de||String(x.created_at).slice(0,10)>=de)&&(!ate||String(x.created_at).slice(0,10)<=ate)&&(!q||norm([x.nri,x.codigoProduto,x.nomeProduto,x.lote,x.placa,x.conferente,x.created_by_username,x.created_by_name].join(' ')).includes(q)));}
 function renderNriHistory(){const arr=filteredNriHistory();$('tbodyHistNri').innerHTML=arr.length?arr.map(x=>`<tr><td>${fmtDateTime(x.created_at)}</td><td><strong>${esc(x.nri)}</strong><small>${esc(x.codigoProduto)} • ${esc(x.nomeProduto)}</small></td><td>${esc(x.lote)}<small>${x.validade?fmtDate(x.validade):'Sem Validade'}</small></td><td>${esc(x.unidade)}<small>${esc(x.placa)} • ${esc(x.motorista)}</small></td><td>${esc(x.created_by_name||x.created_by_username||'—')}<small>${esc(x.conferente)}</small></td><td>${statusBadge(x.status)}</td><td><div class="mini-actions"><button class="mini-btn" data-act="preview" data-id="${x.id}">Ver</button><button class="mini-btn" data-act="reprint" data-id="${x.id}">Reimprimir</button></div></td></tr>`).join(''):'<tr><td colspan="7">Nenhum registro.</td></tr>';}
@@ -686,9 +701,9 @@ function humanUserAdminError(e){
 
 // IMPORT ---------------------------------------------------------------------
 async function importBaseCsv(){if(!isAdmin())return;const file=$('importFile').files?.[0];if(!file)return toast('Selecione um arquivo CSV.','error');const type=$('importTipo').value;const out=$('importResult');out.textContent='Lendo arquivo…';try{const text=await readCsvFileText(file);const rows=parseCsvObjects(text);if(!rows.length)throw new Error('O arquivo não possui registros.');const normalized=dedupeImport(type,normalizeImport(type,rows));out.textContent=`${normalized.length} linhas reconhecidas. Enviando…`;let done=0;for(const chunk of chunks(normalized,300)){let res;if(type==='maps')res=await sb.from('maps').upsert(chunk,{onConflict:'map_number,map_date'});else if(type==='nris')res=await sb.from('nris').upsert(chunk,{onConflict:'nri'});else if(type==='conferences')res=await sb.from('container_conferences').upsert(chunk,{onConflict:'map_number,conference_date'});else res=await sb.from(type).upsert(chunk,{onConflict:importConflict(type)});if(res.error)throw res.error;done+=chunk.length;out.textContent=`Importados ${done}/${normalized.length}…`;}
-    if(type==='nris'){const x=await sb.rpc('sync_nri_sequence');if(x.error)throw x.error;}out.textContent=`Concluído: ${done} registros importados.`;toast('Importação concluída.','success');localStorage.removeItem('ops_ref_cache');if(['products','units','shifts','drivers','factories','customers'].includes(type))await loadReferences(false);
+    if(type==='nris'){const x=await sb.rpc('sync_nri_sequence');if(x.error)throw x.error;}out.textContent=`Concluído: ${done} registros importados.`;toast('Importação concluída.','success');localStorage.removeItem('ops_ref_cache');if(['products','units','drivers','factories','customers'].includes(type))await loadReferences(false);
   }catch(e){out.textContent=`Erro: ${humanError(e)}`;toast(humanError(e),'error');}}
-function importConflict(type){return ({products:'code',units:'name',shifts:'name',drivers:'name',factories:'name',customers:'code,branch'})[type];}
+function importConflict(type){return ({products:'code',units:'name',drivers:'name',factories:'name',customers:'code,branch'})[type];}
 function dedupeImport(type,rows){
   const fields=String(importConflict(type)||'').split(',').filter(Boolean);
   if(!fields.length)return rows;
@@ -696,7 +711,341 @@ function dedupeImport(type,rows){
   rows.forEach(r=>{const k=fields.map(f=>String(r[f]??'').trim().toLowerCase()).join('||');m.set(k,r);});
   return [...m.values()];
 }
-function normalizeImport(type,rows){const h=(r,...aliases)=>{for(const a of aliases){const k=Object.keys(r).find(k=>normHeader(k)===normHeader(a));if(k!==undefined)return r[k];}return '';};if(type==='products')return rows.map(r=>({code:String(h(r,'Código','Codigo','Code')).trim(),name:sanitizeRefText(h(r,'Nome','Produto','Descrição','Descricao'))})).filter(x=>x.code&&x.name);if(type==='units')return rows.map(r=>({name:sanitizeRefText(h(r,'Unidade','Nome'))})).filter(x=>x.name);if(type==='shifts')return rows.map(r=>({name:sanitizeRefText(h(r,'Turno','Nome'))})).filter(x=>x.name);if(type==='drivers')return rows.map(r=>({name:sanitizeRefText(h(r,'Motorista','Nome'))})).filter(x=>x.name);if(type==='factories')return rows.map(r=>({name:sanitizeRefText(h(r,'Fábrica','Fabrica','Nome'))})).filter(x=>x.name);if(type==='customers')return rows.map(r=>({code:normalizeCode(h(r,'Código PDV','Cód PDV','Codigo PDV','Código','Codigo')),name:sanitizeRefText(h(r,'Nome','Nome Fantasia','Cliente','Razão Social','Razao Social')),city:sanitizeRefText(h(r,'Cidade')),branch:sanitizeRefText(h(r,'Filial'))})).filter(x=>x.code&&x.name);if(type==='maps')return rows.map(r=>({map_number:normalizeCode(h(r,'MAPAS','MAPA')),map_date:parseAnyDate(h(r,'DATA')),city:sanitizeRefText(h(r,'CIDADE')),driver:sanitizeRefText(h(r,'MOTORISTA')),helper1:sanitizeRefText(h(r,'AJUDANTE 1')),helper2:sanitizeRefText(h(r,'AJUDANTE 2')),g300:num(h(r,'GARRAFEIRAS DE 300ML')),g600_green:num(h(r,'GARRAFEIRAS DE 600 ML VERDE','GARRAFEIRAS DE 600ML VERDE')),g600_brown:num(h(r,'GARRAFEIRAS DE 600ML MARROM','GARRAFEIRAS DE 600 ML MARROM')),g_litrao:num(h(r,'GARRAFEIRAS DE LITRÃO','GARRAFEIRAS DE LITRAO')),keg30:num(h(r,'BARRIS DE CHOPP 30L')),keg50:num(h(r,'BARRIS DE CHOPP 50L'))})).filter(x=>x.map_number&&x.map_date);if(type==='nris')return rows.map(r=>({nri:String(h(r,'NRI')).trim(),request_id:null,product_code:String(h(r,'Código Produto','Codigo Produto')).trim(),product_name:sanitizeRefText(h(r,'Nome Produto','Produto')),unit:sanitizeRefText(h(r,'Unidade')),request_type:String(h(r,'Tipo')||'AMBEV').trim().toUpperCase()==='MARKETPLACE'?'MARKETPLACE':'AMBEV',validity_date:/sem\s*validade/i.test(String(h(r,'Validade')||''))?null:parseAnyDate(h(r,'Validade')),lot:String(h(r,'Lote')).trim().toUpperCase(),receipt_date:parseAnyDate(h(r,'Recebimento')),block_date:parseAnyDate(h(r,'Bloqueio')),checker_name:sanitizeRefText(h(r,'Conferente')),shift:sanitizeRefText(h(r,'Turno')),receipt_time:normalizeTime(h(r,'Hora')),driver:sanitizeRefText(h(r,'Motorista')),plate:String(h(r,'Placa')).trim().toUpperCase(),factory:sanitizeRefText(h(r,'Fábrica','Fabrica')),quantity:num(h(r,'Quantidade','Caixas')),status:String(h(r,'Status')||'PENDENTE').trim().toUpperCase(),created_by:null,created_by_username:sanitizeRefText(h(r,'Usuário Cadastro','Usuario Cadastro')),created_by_name:sanitizeRefText(h(r,'Nome Usuário Cadastro','Nome Usuario Cadastro')),created_at:parseAnyDateTime(h(r,'Criado em ISO','Criado em'))||new Date().toISOString(),printed_at:parseAnyDateTime(h(r,'Impresso em'))||null,removed_at:parseAnyDateTime(h(r,'Removido em'))||null})).filter(x=>x.nri&&x.product_code);if(type==='conferences')return rows.map(r=>({conference_date:parseAnyDate(h(r,'Data')),conference_time:normalizeTime(h(r,'Hora')),checker_id:null,checker_username:sanitizeRefText(h(r,'Conferente Usuário','Conferente Usuario')),checker_name:sanitizeRefText(h(r,'Conferente Nome','Conferente')),map_number:normalizeCode(h(r,'Mapa')),g300:num(h(r,'Garrafeiras de 300ml')),g600_green:num(h(r,'Garrafeiras de 600ml Verde')),g600_brown:num(h(r,'Garrafeiras de 600ml Marrom')),g_litrao:num(h(r,'Garrafeiras de Litrão','Garrafeiras de Litrao')),keg30:num(h(r,'Barris de Chopp 30L')),keg50:num(h(r,'Barris de Chopp 50L')),created_at:parseAnyDateTime(h(r,'Criado em ISO','Data/Hora'))||new Date().toISOString()})).filter(x=>x.conference_date&&x.map_number);return [];}
+function normalizeImport(type,rows){const h=(r,...aliases)=>{for(const a of aliases){const k=Object.keys(r).find(k=>normHeader(k)===normHeader(a));if(k!==undefined)return r[k];}return '';};if(type==='products')return rows.map(r=>({code:String(h(r,'Código','Codigo','Code')).trim(),name:sanitizeRefText(h(r,'Nome','Produto','Descrição','Descricao'))})).filter(x=>x.code&&x.name);if(type==='units')return rows.map(r=>({name:sanitizeRefText(h(r,'Unidade','Nome'))})).filter(x=>x.name);if(type==='drivers')return rows.map(r=>({name:sanitizeRefText(h(r,'Motorista','Nome'))})).filter(x=>x.name);if(type==='factories')return rows.map(r=>({name:sanitizeRefText(h(r,'Fábrica','Fabrica','Nome'))})).filter(x=>x.name);if(type==='customers')return rows.map(r=>({code:normalizeCode(h(r,'Código PDV','Cód PDV','Codigo PDV','Código','Codigo')),name:sanitizeRefText(h(r,'Nome','Nome Fantasia','Cliente','Razão Social','Razao Social')),city:sanitizeRefText(h(r,'Cidade')),branch:sanitizeRefText(h(r,'Filial'))})).filter(x=>x.code&&x.name);if(type==='maps')return rows.map(r=>({map_number:normalizeCode(h(r,'MAPAS','MAPA')),map_date:parseAnyDate(h(r,'DATA')),city:sanitizeRefText(h(r,'CIDADE')),driver:sanitizeRefText(h(r,'MOTORISTA')),helper1:sanitizeRefText(h(r,'AJUDANTE 1')),helper2:sanitizeRefText(h(r,'AJUDANTE 2')),g300:num(h(r,'GARRAFEIRAS DE 300ML')),g600_green:num(h(r,'GARRAFEIRAS DE 600 ML VERDE','GARRAFEIRAS DE 600ML VERDE')),g600_brown:num(h(r,'GARRAFEIRAS DE 600ML MARROM','GARRAFEIRAS DE 600 ML MARROM')),g_litrao:num(h(r,'GARRAFEIRAS DE LITRÃO','GARRAFEIRAS DE LITRAO')),keg30:num(h(r,'BARRIS DE CHOPP 30L')),keg50:num(h(r,'BARRIS DE CHOPP 50L'))})).filter(x=>x.map_number&&x.map_date);if(type==='nris')return rows.map(r=>({nri:String(h(r,'NRI')).trim(),request_id:null,product_code:String(h(r,'Código Produto','Codigo Produto')).trim(),product_name:sanitizeRefText(h(r,'Nome Produto','Produto')),unit:sanitizeRefText(h(r,'Unidade')),request_type:String(h(r,'Tipo')||'AMBEV').trim().toUpperCase()==='MARKETPLACE'?'MARKETPLACE':'AMBEV',validity_date:/sem\s*validade/i.test(String(h(r,'Validade')||''))?null:parseAnyDate(h(r,'Validade')),lot:String(h(r,'Lote')).trim().toUpperCase(),receipt_date:parseAnyDate(h(r,'Recebimento')),block_date:parseAnyDate(h(r,'Bloqueio')),checker_name:sanitizeRefText(h(r,'Conferente')),receipt_time:normalizeTime(h(r,'Hora')),driver:sanitizeRefText(h(r,'Motorista')),plate:String(h(r,'Placa')).trim().toUpperCase(),factory:sanitizeRefText(h(r,'Fábrica','Fabrica')),quantity:num(h(r,'Quantidade','Caixas')),status:String(h(r,'Status')||'PENDENTE').trim().toUpperCase(),created_by:null,created_by_username:sanitizeRefText(h(r,'Usuário Cadastro','Usuario Cadastro')),created_by_name:sanitizeRefText(h(r,'Nome Usuário Cadastro','Nome Usuario Cadastro')),created_at:parseAnyDateTime(h(r,'Criado em ISO','Criado em'))||new Date().toISOString(),printed_at:parseAnyDateTime(h(r,'Impresso em'))||null,removed_at:parseAnyDateTime(h(r,'Removido em'))||null})).filter(x=>x.nri&&x.product_code);if(type==='conferences')return rows.map(r=>({conference_date:parseAnyDate(h(r,'Data')),conference_time:normalizeTime(h(r,'Hora')),checker_id:null,checker_username:sanitizeRefText(h(r,'Conferente Usuário','Conferente Usuario')),checker_name:sanitizeRefText(h(r,'Conferente Nome','Conferente')),map_number:normalizeCode(h(r,'Mapa')),g300:num(h(r,'Garrafeiras de 300ml')),g600_green:num(h(r,'Garrafeiras de 600ml Verde')),g600_brown:num(h(r,'Garrafeiras de 600ml Marrom')),g_litrao:num(h(r,'Garrafeiras de Litrão','Garrafeiras de Litrao')),keg30:num(h(r,'Barris de Chopp 30L')),keg50:num(h(r,'Barris de Chopp 50L')),created_at:parseAnyDateTime(h(r,'Criado em ISO','Data/Hora'))||new Date().toISOString()})).filter(x=>x.conference_date&&x.map_number);return [];}
+
+// PUXADA v1.1.0 -------------------------------------------------------------
+let pullActiveTrip=null;
+let pullMainSteps=[];
+let pullOccurrenceTypes=[];
+let pullProfiles=[];
+let pullFactories=[];
+let pullVehicles=[];
+let pullSettings=null;
+let pullDriverEvents=[];
+let pullDriverOccurrences=[];
+let pullHistory=[];
+let pullDashTrips=[];
+let pullGoals=null;
+let pullMetric='TMV_OUT';
+let pullRealtimeChannel=null;
+let pullReloadTimer=null;
+let pullTrackWatch=null;
+let pullTrackLast=null;
+let pullClockTimer=null;
+let pullMapInstances=[];
+
+function bindPullEvents(){
+  $('formPullStart')?.addEventListener('submit',startPullTrip);
+  $('btnPullNextStep')?.addEventListener('click',recordPullNextStep);
+  $('pullOccurrenceButtons')?.addEventListener('click',onPullOccurrenceClick);
+  $('pullOpenOccurrence')?.addEventListener('click',onPullOpenOccurrenceClick);
+  $('btnAtualizarPullNri')?.addEventListener('click',()=>loadPullNriPending());
+  $('pullNriCards')?.addEventListener('click',onPullNriCardsClick);
+  $('btnPullFarolAtualizar')?.addEventListener('click',()=>loadPullFarol());
+  $('pullFarolBusca')?.addEventListener('input',renderPullFarol);
+  $('pullFarolCards')?.addEventListener('click',onPullFarolClick);
+  $('btnPullHistAtualizar')?.addEventListener('click',()=>loadPullHistory());
+  ['pullHistDe','pullHistAte','pullHistFactory'].forEach(id=>$(id)?.addEventListener('change',renderPullHistory));
+  $('pullHistBusca')?.addEventListener('input',renderPullHistory);
+  $('tbodyPullHistory')?.addEventListener('click',onPullHistoryClick);
+  $('pullMetricTabs')?.addEventListener('click',e=>{const b=e.target.closest('button[data-metric]');if(!b)return;pullMetric=b.dataset.metric;[...$('pullMetricTabs').querySelectorAll('button')].forEach(x=>x.classList.toggle('active',x===b));renderPullDashboard();});
+  $('btnPullDashAtualizar')?.addEventListener('click',()=>loadPullDashboard());
+  ['pullDashYear','pullDashMonth','pullDashCarrier','pullDashFactory','pullDashDriver'].forEach(id=>$(id)?.addEventListener('change',renderPullDashboard));
+  $('formPullGoals')?.addEventListener('submit',savePullGoals);
+  $('pullGoalYear')?.addEventListener('change',loadPullGoals);
+  $('formPullSettings')?.addEventListener('submit',savePullSettings);
+  $('formPullFactory')?.addEventListener('submit',savePullFactory);
+  $('btnPullFactoryGps')?.addEventListener('click',useGpsForPullFactory);
+  $('pullFactoryName')?.addEventListener('change',fillPullFactoryForm);
+  $('formPullVehicle')?.addEventListener('submit',savePullVehicle);
+  $('btnPullVehicleNew')?.addEventListener('click',clearPullVehicleForm);
+  $('pullVehicleRows')?.addEventListener('click',onPullVehicleRowsClick);
+  $('formPullStep')?.addEventListener('submit',savePullStep);
+  $('btnPullStepNew')?.addEventListener('click',clearPullStepForm);
+  $('tbodyPullSteps')?.addEventListener('click',onPullStepsClick);
+}
+
+async function initPullModule(){
+  if(!sb||!profile)return;
+  try{
+    if(canPull()||canNri()) await loadPullReferenceData();
+    if(isPullDriver()) await loadPullActiveTrip();
+    setupPullRealtime();
+  }catch(e){console.error('Puxada init',e);if(canPull())toast(`Puxada: ${humanPullError(e)}`,'error');}
+}
+
+function pullOnView(name){
+  if(name==='nri-carretas') return loadPullNriPending();
+  if(name==='puxada-viagem') return loadPullActiveTrip();
+  if(name==='puxada-farol') return loadPullFarol();
+  if(name==='puxada-historico') return loadPullHistory();
+  if(name==='puxada-dashboard') return loadPullDashboard();
+  if(name==='puxada-metas'){ const y=new Date().getFullYear();if(!$('pullGoalYear').value)$('pullGoalYear').value=y;return loadPullGoals(); }
+  if(name==='puxada-config') return loadPullConfig();
+}
+
+async function loadPullReferenceData(){
+  const promises=[
+    sb.from('pull_steps').select('*').order('step_type').order('sort_order'),
+    sb.from('pull_settings').select('*').eq('singleton',true).maybeSingle(),
+    sb.from('factories').select('name,active,latitude,longitude,radius_meters').eq('active',true).order('name'),
+    sb.from('pull_vehicles').select('*').order('plate')
+  ];
+  if(isPullDriver()||isAdmin()) promises.push(sb.from('profiles').select('id,username,name,role,active').eq('role','MOTORISTA_PUXADOR').eq('active',true).order('name'));
+  const rows=await Promise.all(promises);
+  const err=rows.find(x=>x.error)?.error;if(err)throw err;
+  const [steps,settings,factories,vehicles,profilesRes]=rows;
+  pullMainSteps=(steps.data||[]).filter(x=>x.step_type==='MAIN'&&x.active).sort((a,b)=>a.sort_order-b.sort_order);
+  pullOccurrenceTypes=(steps.data||[]).filter(x=>x.step_type==='OCCURRENCE'&&x.active).sort((a,b)=>a.sort_order-b.sort_order);
+  pullSettings=settings.data||{singleton:true,gps_max_accuracy_m:100,track_interval_seconds:60,track_min_distance_m:50};
+  pullFactories=factories.data||[];
+  pullVehicles=vehicles.data||[];
+  pullProfiles=profilesRes?.data||pullProfiles;
+  populatePullReferenceInputs();
+}
+
+function populatePullReferenceInputs(){
+  if($('pullStartFactory')){
+    const old=$('pullStartFactory').value;
+    $('pullStartFactory').innerHTML='<option value="">Selecione</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
+    if(pullFactories.some(x=>x.name===old))$('pullStartFactory').value=old;
+  }
+  if($('pullStartDriver2')){
+    const old=$('pullStartDriver2').value;
+    const others=pullProfiles.filter(x=>x.id!==authUser?.id);
+    $('pullStartDriver2').innerHTML='<option value="">Selecione</option>'+others.map(x=>`<option value="${x.id}">${esc(x.name)} (${esc(x.username)})</option>`).join('');
+    if(others.some(x=>x.id===old))$('pullStartDriver2').value=old;
+  }
+  if($('pullVehicleList')) $('pullVehicleList').innerHTML=pullVehicles.filter(x=>x.active).map(x=>`<option value="${esc(x.plate)}">${esc(x.carrier||'')}</option>`).join('');
+  const factoryOptions='<option value="">Todas</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
+  if($('pullHistFactory'))$('pullHistFactory').innerHTML=factoryOptions;
+  if($('pullFactoryName'))$('pullFactoryName').innerHTML='<option value="">Selecione</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
+  if($('pullDefaultUnit')){
+    const old=pullSettings?.default_unit||$('pullDefaultUnit').value;
+    $('pullDefaultUnit').innerHTML='<option value="">Selecione</option>'+refs.units.map(x=>`<option>${esc(x.name)}</option>`).join('');
+    $('pullDefaultUnit').value=old||'';
+  }
+}
+
+function setupPullRealtime(){
+  teardownPullRealtime();
+  if(!sb||(!canPull()&&!canNri()))return;
+  pullRealtimeChannel=sb.channel(`pull-${authUser.id}-${Date.now()}`);
+  ['pull_trips','pull_events','pull_occurrences','pull_track_points'].forEach(table=>{
+    pullRealtimeChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>schedulePullReload());
+  });
+  pullRealtimeChannel.subscribe();
+}
+function teardownPullRealtime(){if(pullRealtimeChannel&&sb){sb.removeChannel(pullRealtimeChannel).catch(()=>{});pullRealtimeChannel=null;}clearTimeout(pullReloadTimer);}
+function schedulePullReload(){clearTimeout(pullReloadTimer);pullReloadTimer=setTimeout(async()=>{try{if(isPullDriver())await loadPullActiveTrip(true);if(canNri())await loadPullNriPending(true);if(isAdmin()){if(activeView==='puxada-farol')await loadPullFarol(true);if(activeView==='puxada-historico')await loadPullHistory(true);if(activeView==='puxada-dashboard')await loadPullDashboard(true);}}catch(e){console.warn(e);}},350);}
+
+async function loadPullActiveTrip(silent=false){
+  if(!isPullDriver())return;
+  try{
+    await loadPullReferenceData();
+    const {data,error}=await sb.from('pull_trips').select('*').eq('status','IN_PROGRESS').or(`driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`).order('started_at',{ascending:false}).limit(1).maybeSingle();
+    if(error)throw error;
+    pullActiveTrip=data||null;
+    if(pullActiveTrip){
+      const [ev,oc]=await Promise.all([
+        sb.from('pull_events').select('*').eq('trip_id',pullActiveTrip.id).order('step_order'),
+        sb.from('pull_occurrences').select('*').eq('trip_id',pullActiveTrip.id).order('started_at')
+      ]);
+      if(ev.error)throw ev.error;if(oc.error)throw oc.error;
+      pullDriverEvents=ev.data||[];pullDriverOccurrences=oc.data||[];
+    }else{pullDriverEvents=[];pullDriverOccurrences=[];}
+    renderPullDriver();
+    syncPullTracking();
+  }catch(e){if(!silent)toast(humanPullError(e),'error');}
+}
+
+function pullNextStep(){
+  if(!pullActiveTrip)return null;
+  const max=pullDriverEvents.length?Math.max(...pullDriverEvents.map(x=>Number(x.step_order)||0)):-Infinity;
+  return pullMainSteps.find(x=>Number(x.sort_order)>max)||null;
+}
+function pullIsActiveDriver(){return !!pullActiveTrip&&pullActiveTrip.active_driver_id===authUser?.id;}
+function renderPullDriver(){
+  const active=!!pullActiveTrip;
+  $('pullDriverStartCard')?.classList.toggle('hidden',active);
+  $('pullDriverActive')?.classList.toggle('hidden',!active);
+  if(!active){stopPullTracking();stopPullClock();return;}
+  $('pullActiveCode').textContent=pullActiveTrip.trip_code||'Puxada';
+  $('pullActivePlate').textContent=pullActiveTrip.plate||'—';
+  $('pullActiveFactory').textContent=pullActiveTrip.factory||'—';
+  $('pullActiveDriver').textContent=pullActiveTrip.active_driver_name||'—';
+  $('pullActiveSummary').textContent=`${pullActiveTrip.driver1_name} + ${pullActiveTrip.driver2_name} • início ${fmtDateTime(pullActiveTrip.started_at)}`;
+  const next=pullNextStep();
+  $('pullNextStepName').textContent=next?.name||'Todas as etapas concluídas';
+  const canPoint=pullIsActiveDriver()&&!!next;
+  $('btnPullNextStep').disabled=!canPoint;
+  $('btnPullNextStep').textContent=!next?'Ciclo concluído':pullIsActiveDriver()?'Registrar próxima etapa':`Aguardando ${pullActiveTrip.active_driver_name}`;
+  let hint='O GPS será capturado no apontamento.';
+  if(next?.requires_factory_geofence){const f=pullFactories.find(x=>x.name===pullActiveTrip.factory);hint=f?.radius_meters?`GPS obrigatório. Raio da fábrica: ${f.radius_meters} m.`:'GPS obrigatório. A fábrica ainda não possui geofence configurada.';}
+  if(!pullIsActiveDriver())hint=`O ciclo está compartilhado com você. O motorista ativo no momento é ${pullActiveTrip.active_driver_name}.`;
+  $('pullNextStepHint').textContent=hint;
+  const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');
+  const occBox=$('pullOpenOccurrence');
+  if(openOcc){occBox.classList.remove('hidden');occBox.innerHTML=`<div><small>OCORRÊNCIA EM ANDAMENTO</small><strong>${esc(openOcc.occurrence_name)}</strong><span>Iniciada ${fmtDateTime(openOcc.started_at)} por ${esc(openOcc.started_by_name)}</span></div><button class="btn primary" data-end-occ="${openOcc.id}" ${pullIsActiveDriver()?'':'disabled'}>Encerrar ocorrência</button>`;}
+  else{occBox.classList.add('hidden');occBox.innerHTML='';}
+  $('pullOccurrenceButtons').innerHTML=pullOccurrenceTypes.map(x=>`<button class="btn secondary" data-occ="${x.id}" ${(!pullIsActiveDriver()||!!openOcc&&x.duration_mode==='INTERVAL')?'disabled':''}>+ ${esc(x.name)}</button>`).join('');
+  const timeline=[...pullDriverEvents.map(x=>({kind:'STEP',at:x.recorded_at,name:x.step_name,user:x.user_name,gps:`${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)}`,extra:x.geofence_status==='INSIDE'?`Dentro do raio • ${Math.round(x.distance_factory_m||0)} m`:x.geofence_status==='OUTSIDE'?`Fora do raio • ${Math.round(x.distance_factory_m||0)} m`:''})),...pullDriverOccurrences.map(x=>({kind:'OCC',at:x.started_at,name:x.occurrence_name,user:x.started_by_name,gps:`${Number(x.start_latitude).toFixed(5)}, ${Number(x.start_longitude).toFixed(5)}`,extra:x.status==='OPEN'?'Em andamento':`Encerrada ${fmtDateTime(x.ended_at)}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));
+  const tl=$('pullDriverTimeline');
+  if(!timeline.length){tl.className='pull-timeline empty-state';tl.textContent='Nenhuma etapa.';}else{tl.className='pull-timeline';tl.innerHTML=timeline.map(x=>`<div class="pull-timeline-item ${x.kind==='OCC'?'occurrence':''}"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.name)}</strong><span>${esc(x.user)} • ${esc(x.gps)}${x.extra?` • ${esc(x.extra)}`:''}</span></div></div>`).join('');}
+  startPullClock();
+}
+function startPullClock(){stopPullClock();const tick=()=>{if(!$('pullActiveElapsed')||!pullActiveTrip)return;const sec=Math.max(0,Math.floor((Date.now()-new Date(pullActiveTrip.started_at).getTime())/1000));$('pullActiveElapsed').textContent=fmtDurationSeconds(sec);};tick();pullClockTimer=setInterval(tick,1000);}
+function stopPullClock(){if(pullClockTimer){clearInterval(pullClockTimer);pullClockTimer=null;}}
+
+async function startPullTrip(e){
+  e.preventDefault();
+  const plate=String($('pullStartPlate').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const factory=$('pullStartFactory').value;const driver2=$('pullStartDriver2').value;
+  if(!plate||!factory||!driver2)return toast('Informe placa, fábrica e Motorista 2.','error');
+  const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Capturando GPS…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Obtendo localização exata…';
+  try{
+    const gps=await captureGps();
+    $('pullStartGps').className='gps-status ok';$('pullStartGps').textContent=`GPS capturado • precisão ±${Math.round(gps.accuracy||0)} m`;
+    btn.textContent='Iniciando…';
+    const {data,error}=await sb.rpc('start_pull_trip',{p_plate:plate,p_factory:factory,p_driver2:driver2,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt});
+    if(error)throw error;pullActiveTrip=data;toast('Puxada iniciada. O ciclo já está disponível para os dois motoristas.','success');await loadPullActiveTrip();
+  }catch(err){$('pullStartGps').className='gps-status error';$('pullStartGps').textContent=`Não foi possível iniciar: ${humanGpsOrPullError(err)}`;toast(humanGpsOrPullError(err),'error');}
+  finally{btn.disabled=false;btn.textContent='Iniciar viagem';}
+}
+
+async function recordPullNextStep(){
+  if(!pullActiveTrip||!pullIsActiveDriver())return;
+  const step=pullNextStep();if(!step)return;
+  const btn=$('btnPullNextStep');btn.disabled=true;btn.textContent='Capturando GPS…';
+  try{
+    const gps=await captureGps();
+    let reason='';
+    const maxAcc=Number(pullSettings?.gps_max_accuracy_m||100);
+    if(gps.accuracy&&gps.accuracy>maxAcc){reason=prompt(`A precisão atual do GPS é ±${Math.round(gps.accuracy)} m, acima do limite de ${maxAcc} m.\n\nSe precisar registrar mesmo assim, informe o motivo da exceção:`,'')||'';if(!reason)throw new Error('GPS_BAIXA_PRECISAO');}
+    if(step.requires_factory_geofence){
+      const f=pullFactories.find(x=>x.name===pullActiveTrip.factory);
+      if(f?.latitude!=null&&f?.longitude!=null&&f?.radius_meters){const d=distanceMeters(gps.latitude,gps.longitude,Number(f.latitude),Number(f.longitude));if(d>Number(f.radius_meters)&&!reason){reason=prompt(`Você está a aproximadamente ${Math.round(d)} m do ponto cadastrado da fábrica. O raio permitido é ${f.radius_meters} m.\n\nInforme o motivo para registrar a exceção:`,'')||'';if(!reason)throw new Error('FORA_RAIO_FABRICA');}}
+    }
+    btn.textContent='Registrando…';
+    const {data,error}=await sb.rpc('record_pull_step',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_exception_reason:reason,p_device_at:gps.capturedAt});
+    if(error)throw error;
+    const ended=data?.trip?.status==='ARRIVED';
+    toast(ended?'Ciclo encerrado na revenda. A carreta já foi enviada para NRIs.':'Etapa registrada com GPS.','success');
+    await loadPullActiveTrip();
+  }catch(err){toast(humanGpsOrPullError(err),'error');}
+  finally{btn.disabled=false;renderPullDriver();}
+}
+
+async function onPullOccurrenceClick(e){const b=e.target.closest('button[data-occ]');if(!b||b.disabled||!pullActiveTrip)return;const step=pullOccurrenceTypes.find(x=>x.id===b.dataset.occ);if(!step)return;const note=prompt(`Observação para ${step.name} (opcional):`,'')||'';b.disabled=true;try{const gps=await captureGps();const {error}=await sb.rpc('start_pull_occurrence',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_note:note});if(error)throw error;toast(step.duration_mode==='INTERVAL'?`${step.name} iniciado.`:`${step.name} registrado.`,'success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;}}
+async function onPullOpenOccurrenceClick(e){const b=e.target.closest('[data-end-occ]');if(!b||b.disabled)return;b.disabled=true;try{const gps=await captureGps();const {error}=await sb.rpc('end_pull_occurrence',{p_occurrence_id:b.dataset.endOcc,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy});if(error)throw error;toast('Ocorrência encerrada.','success');await loadPullActiveTrip();}catch(err){toast(humanGpsOrPullError(err),'error');}finally{b.disabled=false;}}
+
+function syncPullTracking(){
+  if(!isPullDriver()||!pullActiveTrip||!pullIsActiveDriver()||pullActiveTrip.status!=='IN_PROGRESS'){stopPullTracking();return;}
+  if(pullTrackWatch!==null)return;
+  const minInterval=Math.max(30,Number(pullSettings?.track_interval_seconds||60))*1000;
+  const minDistance=Math.max(0,Number(pullSettings?.track_min_distance_m||50));
+  const handle=async p=>{try{const point={latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy,capturedAt:new Date(p.timestamp||Date.now()).toISOString()};const now=Date.now();if(pullTrackLast){const elapsed=now-pullTrackLast.at;const d=distanceMeters(point.latitude,point.longitude,pullTrackLast.latitude,pullTrackLast.longitude);if(elapsed<minInterval&&d<minDistance)return;}pullTrackLast={...point,at:now};await sb.rpc('record_pull_track_point',{p_trip_id:pullActiveTrip.id,p_latitude:point.latitude,p_longitude:point.longitude,p_accuracy:point.accuracy,p_device_at:point.capturedAt});}catch(e){console.warn('Rastreio Puxada',e);}};
+  const capGeo=getCapacitorGeolocation();
+  if(capGeo&&isNativeCapacitor()&&typeof capGeo.watchPosition==='function'){
+    capGeo.watchPosition({enableHighAccuracy:true,timeout:30000,maximumAge:10000},(pos,err)=>{if(pos)handle(pos);else if(err)console.warn(err);}).then(id=>{pullTrackWatch={kind:'cap',id};}).catch(e=>console.warn(e));
+  }else if(navigator.geolocation){const id=navigator.geolocation.watchPosition(handle,e=>console.warn(e),{enableHighAccuracy:true,maximumAge:10000,timeout:30000});pullTrackWatch={kind:'web',id};}
+}
+function stopPullTracking(){if(pullTrackWatch){try{if(pullTrackWatch.kind==='cap'){const geo=getCapacitorGeolocation();geo?.clearWatch?.({id:pullTrackWatch.id});}else navigator.geolocation?.clearWatch(pullTrackWatch.id);}catch(_e){}pullTrackWatch=null;}pullTrackLast=null;}
+
+async function loadPullNriPending(silent=false){
+  if(!canNri())return;
+  try{const {data,error}=await sb.from('pull_trips').select('*').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200);if(error)throw error;const rows=data||[];$('badgePullNri').textContent=rows.length;const el=$('pullNriCards');if(!rows.length){el.className='pull-card-grid empty-state';el.textContent='Nenhuma carreta pendente.';return;}el.className='pull-card-grid';el.innerHTML=rows.map(t=>`<article class="pull-card"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fábrica:</b> ${esc(t.factory)}</span><span><b>Motorista:</b> ${esc(t.ended_by_name||'—')}</span><span><b>Recebida:</b> ${fmtDateTime(t.ended_at)}</span><span><b>Unidade:</b> ${esc(t.origin_unit)}</span></div><button class="btn primary wide" data-pull-nri="${t.id}">Cadastrar NRIs</button></article>`).join('');el._pullRows=rows;}catch(e){if(!silent)toast(humanPullError(e),'error');}
+}
+function onPullNriCardsClick(e){const b=e.target.closest('[data-pull-nri]');if(!b)return;const rows=$('pullNriCards')._pullRows||[];const t=rows.find(x=>x.id===b.dataset.pullNri);if(t)prefillNriFromPull(t);}
+function prefillNriFromPull(t){
+  clearNriRequest();nriPullLocked=true;$('nriPullTripId').value=t.id;
+  const end=new Date(t.ended_at);
+  setSelectFixedValue($('nriUnidade'),t.origin_unit,true);$('nriTipo').value='AMBEV';$('nriTipo').disabled=true;$('nriTipo').required=false;
+  $('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;
+  $('nriHora').value=localTime(end);$('nriHora').disabled=true;
+  setSelectFixedValue($('nriMotorista'),t.ended_by_name||t.active_driver_name||'—',true);
+  $('nriPlaca').value=t.plate;$('nriPlaca').disabled=true;$('nriPlaca').required=false;
+  setSelectFixedValue($('nriFabrica'),t.factory,true);
+  $('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados da carreta preenchidos automaticamente pela Puxada. Cadastre os produtos, lotes, validades e NRIs.</span>`;
+  openView('nri-cadastro',true);
+}
+function clearNriPullContext(){
+  nriPullLocked=false;if(!$('nriPullTripId'))return;$('nriPullTripId').value='';$('nriPullBanner').classList.add('hidden');$('nriPullBanner').innerHTML='';
+  [$('nriUnidade'),$('nriMotorista'),$('nriFabrica')].forEach(sel=>{if(!sel)return;[...sel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());sel.disabled=false;sel.required=true;});
+  $('nriTipo').disabled=false;$('nriTipo').required=true;$('nriRecebimento').disabled=false;$('nriHora').disabled=false;$('nriPlaca').disabled=false;$('nriPlaca').required=true;
+  populateReferenceInputs();
+}
+
+async function loadPullFarol(silent=false){
+  if(!isAdmin())return;
+  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('status','IN_PROGRESS').order('started_at');if(error)throw error;const trips=data||[];$('badgePullAtivos').textContent=trips.length;if(!trips.length){$('pullFarolCards')._rows=[];renderPullFarol();return;}const ids=trips.map(x=>x.id);const [ev,tp]=await Promise.all([sb.from('pull_events').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}),sb.from('pull_track_points').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}).limit(2000)]);if(ev.error)throw ev.error;if(tp.error)throw tp.error;const eventBy=new Map(),trackBy=new Map();(ev.data||[]).forEach(x=>{if(!eventBy.has(x.trip_id))eventBy.set(x.trip_id,x);});(tp.data||[]).forEach(x=>{if(!trackBy.has(x.trip_id))trackBy.set(x.trip_id,x);});$('pullFarolCards')._rows=trips.map(t=>({...t,last_event:eventBy.get(t.id)||null,last_track:trackBy.get(t.id)||null}));renderPullFarol();}catch(e){if(!silent)toast(humanPullError(e),'error');}
+}
+function renderPullFarol(){const box=$('pullFarolCards');const q=norm($('pullFarolBusca')?.value||'');const rows=(box?._rows||[]).filter(t=>!q||norm([t.plate,t.factory,t.driver1_name,t.driver2_name,t.active_driver_name].join(' ')).includes(q));if(!rows.length){box.className='pull-card-grid empty-state';box.textContent='Nenhuma Puxada em andamento.';return;}box.className='pull-card-grid';box.innerHTML=rows.map(t=>{const last=t.last_track||t.last_event;const age=last?Math.max(0,Math.round((Date.now()-new Date(last.recorded_at).getTime())/60000)):null;return `<article class="pull-card farol"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div>${pullFarolBadge(t,last)}</div><div class="pull-card-body"><span><b>Motorista atual:</b> ${esc(t.active_driver_name||'—')}</span><span><b>Etapa:</b> ${esc(t.last_event?.step_name||'Saída da revenda')}</span><span><b>Início:</b> ${fmtDateTime(t.started_at)}</span><span><b>Último GPS:</b> ${last?`${age} min atrás`:'Sem rastreio'}</span></div><button class="btn secondary wide" data-pull-detail="${t.id}">Ver mapa e linha do tempo</button></article>`;}).join('');}
+function pullFarolBadge(t,last){if(!last)return '<span class="status bad">Sem GPS</span>';const age=(Date.now()-new Date(last.recorded_at).getTime())/60000;if(age>10)return '<span class="status pending">GPS atrasado</span>';return '<span class="status ok">Em andamento</span>';}
+function onPullFarolClick(e){const b=e.target.closest('[data-pull-detail]');if(b)openPullTripDetail(b.dataset.pullDetail,true);}
+
+async function loadPullHistory(silent=false){
+  if(!isAdmin())return;
+  try{await loadPullReferenceData();let q=sb.from('pull_trips').select('*').order('started_at',{ascending:false}).limit(1500);const de=$('pullHistDe')?.value,ate=$('pullHistAte')?.value;if(de)q=q.gte('started_at',`${de}T00:00:00-03:00`);if(ate)q=q.lte('started_at',`${ate}T23:59:59-03:00`);const {data,error}=await q;if(error)throw error;pullHistory=data||[];renderPullHistory();}catch(e){if(!silent)toast(humanPullError(e),'error');}
+}
+function renderPullHistory(){if(!$('tbodyPullHistory'))return;const q=norm($('pullHistBusca').value),factory=$('pullHistFactory').value;const rows=pullHistory.filter(t=>(!factory||t.factory===factory)&&(!q||norm([t.trip_code,t.plate,t.factory,t.driver1_name,t.driver2_name,t.ended_by_name].join(' ')).includes(q)));$('tbodyPullHistory').innerHTML=rows.length?rows.map(t=>{const m=pullTripMetrics(t);return `<tr><td><strong>${esc(t.trip_code)}</strong><small>${pullTripStatusLabel(t)}</small></td><td>${esc(t.plate)}<small>${esc(t.factory)}</small></td><td>${esc(t.driver1_name)}<small>${esc(t.driver2_name)}</small></td><td>${fmtDateTime(t.started_at)}<small>${t.ended_at?fmtDateTime(t.ended_at):'Em andamento'}</small></td><td>${fmtMinutes(m.TMV_OUT)}</td><td>${fmtMinutes(m.FACTORY)}</td><td>${fmtMinutes(m.TMV_RETURN)}</td><td>${m.UNIT==null?'Aguardando':`${fmtMinutes(m.UNIT)}${Number(t.tma_adjust_minutes)>0?`<small>Bruto ${fmtMinutes(m.UNIT_RAW)} • -${fmtMinutes(t.tma_adjust_minutes)}</small>`:''}`}</td><td>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</td><td>${t.nri_status==='COMPLETED'?'<span class="status ok">Concluído</span>':t.nri_status==='PENDING'?'<span class="status pending">Pendente</span>':'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-hist-detail="${t.id}">Detalhar</button>${t.next_started_at?`<button class="mini-btn" data-tma-adjust="${t.id}">Ajustar TMA</button>`:''}</div></td></tr>`;}).join(''):'<tr><td colspan="11">Nenhuma viagem.</td></tr>';}
+function pullTripStatusLabel(t){return t.status==='IN_PROGRESS'?'Em andamento':t.kpi_status==='WAITING_NEXT_START'?'Viagem finalizada • aguardando próxima saída':t.kpi_status==='CLOSED'?'Ciclo KPI fechado':'Cancelado';}
+function onPullHistoryClick(e){const d=e.target.closest('[data-hist-detail]');if(d)return openPullTripDetail(d.dataset.histDetail,false);const a=e.target.closest('[data-tma-adjust]');if(a)return openPullTmaAdjust(a.dataset.tmaAdjust);}
+
+async function openPullTripDetail(id,live=false){
+  try{const t=(pullHistory.find(x=>x.id===id)||($('pullFarolCards')?._rows||[]).find(x=>x.id===id))||((await sb.from('pull_trips').select('*').eq('id',id).single()).data);if(!t)throw new Error('CICLO_NAO_ENCONTRADO');const [ev,oc,tp,aud,nri]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',id).order('recorded_at'),sb.from('pull_occurrences').select('*').eq('trip_id',id).order('started_at'),sb.from('pull_track_points').select('*').eq('trip_id',id).order('recorded_at').limit(5000),sb.from('pull_tma_adjust_audit').select('*').eq('trip_id',id).order('changed_at',{ascending:false}),sb.from('nri_requests').select('id,created_at').eq('pull_trip_id',id)]);[ev,oc,tp,aud,nri].forEach(r=>{if(r.error)throw r.error;});const m=pullTripMetrics(t);const mapId=`pullMap-${String(id).replace(/-/g,'')}`;const timeline=[...(ev.data||[]).map(x=>({at:x.recorded_at,title:x.step_name,detail:`${x.user_name} • ${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)} • precisão ±${Math.round(x.gps_accuracy||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio (${Math.round(x.distance_factory_m||0)} m)`:x.geofence_status==='OUTSIDE'?` • FORA DO RAIO (${Math.round(x.distance_factory_m||0)} m)${x.exception_reason?` • ${x.exception_reason}`:''}`:''}`})),...(oc.data||[]).map(x=>({at:x.started_at,title:`Ocorrência: ${x.occurrence_name}`,detail:`${x.started_by_name}${x.ended_at?` • ${fmtDurationMinutes(minutesBetween(x.started_at,x.ended_at))}`:' • em andamento'}${x.note?` • ${x.note}`:''}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));const body=`<div class="detail-grid"><div class="detail-card"><small>Placa / fábrica</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div><div class="detail-card"><small>Motoristas</small><strong>${esc(t.driver1_name)} / ${esc(t.driver2_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(t.started_at)}</strong></div><div class="detail-card"><small>Fim da viagem</small><strong>${fmtDateTime(t.ended_at)}</strong></div></div><div class="pull-metric-strip"><span>TMV Ida <b>${fmtMinutes(m.TMV_OUT)}</b></span><span>TMA Fábrica <b>${fmtMinutes(m.FACTORY)}</b></span><span>TMV Volta <b>${fmtMinutes(m.TMV_RETURN)}</b></span><span>TMA Revenda <b>${m.UNIT==null?'Aguardando':fmtMinutes(m.UNIT)}</b></span><span>Ciclo <b>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</b></span></div>${t.tma_adjust_minutes>0?`<div class="notice"><strong>TMA ajustado:</strong> bruto ${fmtMinutes(m.UNIT_RAW)} − ${fmtMinutes(t.tma_adjust_minutes)} = <b>${fmtMinutes(m.UNIT)}</b><br>${esc(t.tma_adjust_reason)} • por ${esc(t.tma_adjusted_by_name||'Admin')} em ${fmtDateTime(t.tma_adjusted_at)}</div>`:''}<div id="${mapId}" class="pull-map"></div><div class="section-title">Linha do tempo</div><div class="pull-timeline">${timeline.map(x=>`<div class="pull-timeline-item"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.title)}</strong><span>${esc(x.detail)}</span></div></div>`).join('')}</div><div class="notice"><strong>NRIs vinculados:</strong> ${(nri.data||[]).length}</div>${(aud.data||[]).length?`<details><summary>Auditoria de ajustes TMA (${aud.data.length})</summary>${aud.data.map(a=>`<div class="audit-row">${fmtDateTime(a.changed_at)} • ${esc(a.changed_by_name)} • ${fmtMinutes(a.old_minutes)} → ${fmtMinutes(a.new_minutes)} • ${esc(a.new_reason||'sem ajuste')}</div>`).join('')}</details>`:''}`;const actions=[];if(!live&&t.next_started_at)actions.push({label:'Ajustar TMA Revenda',class:'secondary',onClick:()=>{closeModal();openPullTmaAdjust(t.id);}});openModal(`${t.trip_code} • ${t.plate}`,pullTripStatusLabel(t),body,actions);setTimeout(()=>renderPullMap(mapId,t,tp.data||[],ev.data||[]),120);}catch(e){toast(humanPullError(e),'error');}
+}
+function renderPullMap(mapId,t,track,events){const el=$(mapId);if(!el||!window.L)return;try{const map=L.map(el);pullMapInstances.push(map);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);const pts=(track||[]).map(x=>[Number(x.latitude),Number(x.longitude)]).filter(x=>x.every(Number.isFinite));if(!pts.length)events.forEach(x=>{const p=[Number(x.latitude),Number(x.longitude)];if(p.every(Number.isFinite))pts.push(p);});if(pts.length){L.polyline(pts).addTo(map);L.marker(pts[0]).addTo(map).bindPopup('Início');L.marker(pts[pts.length-1]).addTo(map).bindPopup(t.status==='ARRIVED'?'Chegada à revenda':'Última posição');map.fitBounds(L.latLngBounds(pts).pad(.15));}else map.setView([-6.5,-36.5],6);const f=pullFactories.find(x=>x.name===t.factory);if(f?.latitude!=null&&f?.longitude!=null){L.marker([f.latitude,f.longitude]).addTo(map).bindPopup(`Fábrica ${f.name}`);if(f.radius_meters)L.circle([f.latitude,f.longitude],{radius:Number(f.radius_meters)}).addTo(map);}}catch(e){console.warn(e);}}
+
+function openPullTmaAdjust(id){const t=pullHistory.find(x=>x.id===id);if(!t||!t.ended_at||!t.next_started_at)return toast('O TMA Revenda ainda não está fechado.','error');const raw=minutesBetween(t.ended_at,t.next_started_at);const current=Number(t.tma_adjust_minutes||0);const suggested=current||pullSuggestedDiscountForTrip(id);const body=`<div class="notice">TMA bruto desta placa: <strong>${fmtMinutes(raw)}</strong>. O dashboard utilizará TMA bruto menos o desconto aprovado pelo ADMIN.</div><div class="field"><label>Horas a diminuir (HH:MM)</label><input id="modalTmaDiscount" value="${minutesToInput(suggested)}" placeholder="00:00"></div><div class="field"><label>Motivo do ajuste ${suggested?'*':''}</label><textarea id="modalTmaReason" rows="3" placeholder="Ex.: descanso regulamentar / ponto fechado">${esc(t.tma_adjust_reason||'')}</textarea></div>`;openModal(`Ajustar TMA • ${t.plate}`,t.trip_code,body,[{label:'Salvar ajuste',class:'primary',onClick:async()=>{const mins=parseDurationInput($('modalTmaDiscount').value);const reason=$('modalTmaReason').value.trim();if(mins==null)return toast('Informe o desconto em HH:MM.','error');if(mins>0&&!reason)return toast('Informe o motivo do ajuste.','error');try{const {error}=await sb.rpc('adjust_pull_tma',{p_trip_id:t.id,p_minutes:mins,p_reason:reason});if(error)throw error;closeModal();toast('TMA ajustado e auditado.','success');await loadPullHistory();}catch(e){toast(humanPullError(e),'error');}}}]);}
+function pullSuggestedDiscountForTrip(_id){return 0;}
+
+async function loadPullDashboard(silent=false){
+  if(!isAdmin())return;
+  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').neq('status','CANCELLED').order('started_at');if(error)throw error;pullDashTrips=data||[];populatePullDashboardFilters();await loadPullDashboardGoal();renderPullDashboard();}catch(e){if(!silent)toast(humanPullError(e),'error');}
+}
+function populatePullDashboardFilters(){const years=[...new Set(pullDashTrips.map(t=>new Date(t.started_at).getFullYear()))].sort((a,b)=>b-a);const cy=new Date().getFullYear();if(!years.includes(cy))years.unshift(cy);const oldY=$('pullDashYear').value;$('pullDashYear').innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');$('pullDashYear').value=years.includes(Number(oldY))?oldY:String(years[0]||cy);$('pullDashMonth').innerHTML='<option value="">Todos</option>'+Array.from({length:12},(_,i)=>`<option value="${i+1}">${new Intl.DateTimeFormat('pt-BR',{month:'long'}).format(new Date(2020,i,1))}</option>`).join('');const vals=(key)=>[...new Set(pullDashTrips.map(x=>String(x[key]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));fillPullDashSelect('pullDashCarrier',vals('carrier'),'Todas');fillPullDashSelect('pullDashFactory',vals('factory'),'Todas');const drivers=[...new Set(pullDashTrips.flatMap(x=>[x.driver1_name,x.driver2_name]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));fillPullDashSelect('pullDashDriver',drivers,'Todos');}
+function fillPullDashSelect(id,values,label){const el=$(id),old=el.value;el.innerHTML=`<option value="">${label}</option>`+values.map(v=>`<option>${esc(v)}</option>`).join('');if(values.includes(old))el.value=old;}
+async function loadPullDashboardGoal(){const y=Number($('pullDashYear').value||new Date().getFullYear());const {data,error}=await sb.from('pull_goals').select('*').eq('year',y).maybeSingle();if(error)throw error;pullGoals=data||null;}
+function filteredPullDashTrips(){const y=Number($('pullDashYear').value),m=Number($('pullDashMonth').value||0),carrier=$('pullDashCarrier').value,factory=$('pullDashFactory').value,driver=$('pullDashDriver').value;return pullDashTrips.filter(t=>{const d=new Date(t.started_at);return d.getFullYear()===y&&(!m||d.getMonth()+1===m)&&(!carrier||t.carrier===carrier)&&(!factory||t.factory===factory)&&(!driver||t.driver1_name===driver||t.driver2_name===driver);});}
+function renderPullDashboard(){if(!isAdmin()||!$('pullDashYear'))return;loadPullDashboardGoal().then(()=>renderPullDashboardCore()).catch(e=>toast(humanPullError(e),'error'));}
+function renderPullDashboardCore(){const rows=filteredPullDashTrips();const planner=pullMetric==='PLANNER';$('pullDashKpis').classList.toggle('hidden',planner);$('pullPlannerWrap').classList.toggle('hidden',!planner);$('pullMetricBreakdowns').classList.toggle('hidden',planner);$('pullDashBars').closest('.card').classList.toggle('hidden',planner);if(planner){renderPullPlanner(rows);return;}const vals=rows.map(t=>({trip:t,val:pullTripMetrics(t)[pullMetric]})).filter(x=>x.val!=null);const target=pullTargetForMetric(pullMetric),adhTarget=pullAdherenceTargetForMetric(pullMetric);const avg=vals.length?vals.reduce((s,x)=>s+x.val,0)/vals.length:null;const within=target?vals.filter(x=>x.val<=target).length:0;const adh=vals.length&&target?within/vals.length*100:null;$('pullKpiTrips').textContent=vals.length;$('pullKpiAvg').textContent=fmtMinutes(avg);$('pullKpiTarget').textContent=fmtMinutes(target);$('pullKpiWithin').textContent=within;$('pullKpiAdherence').textContent=adh==null?'—':`${adh.toFixed(1).replace('.',',')}%`;$('pullKpiAdhTarget').textContent=adhTarget==null?'—':`${Number(adhTarget).toFixed(1).replace('.',',')}%`;$('pullKpiFactories').textContent=new Set(vals.map(x=>x.trip.factory)).size;$('pullKpiPlates').textContent=new Set(vals.map(x=>x.trip.plate)).size;renderPullBars(vals,target);renderPullBreakdowns(vals,target);}
+function pullTargetForMetric(metric){const g=pullGoals;if(!g)return null;return Number({TMV_OUT:g.tmv_out_target_minutes,FACTORY:g.factory_target_minutes,TMV_RETURN:g.tmv_return_target_minutes,UNIT:g.unit_target_minutes,CYCLE:g.cycle_target_minutes}[metric]||0)||null;}
+function pullAdherenceTargetForMetric(metric){const g=pullGoals;if(!g)return null;return Number({TMV_OUT:g.tmv_out_adherence,FACTORY:g.factory_adherence,TMV_RETURN:g.tmv_return_adherence,UNIT:g.unit_adherence,CYCLE:g.cycle_adherence}[metric]);}
+function renderPullBars(vals,target){const by=new Map();vals.forEach(x=>{const d=new Date(x.trip.started_at),k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;if(!by.has(k))by.set(k,[]);by.get(k).push(x.val);});const arr=[...by].map(([k,v])=>({k,avg:v.reduce((a,b)=>a+b,0)/v.length}));$('pullDashChartTitle').textContent='Evolução por mês';if(!arr.length){$('pullDashBars').className='pull-bars empty-state';$('pullDashBars').textContent='Sem dados.';return;}const max=Math.max(...arr.map(x=>x.avg),target||0,1);$('pullDashBars').className='pull-bars';$('pullDashBars').innerHTML=arr.map(x=>`<div class="pull-bar-row"><span>${fmtMonthKey(x.k)}</span><div class="pull-bar-track"><i style="width:${Math.max(2,x.avg/max*100)}%" class="${target&&x.avg<=target?'ok':'bad'}"></i></div><strong>${fmtMinutes(x.avg)}</strong></div>`).join('');}
+function renderPullBreakdowns(vals,target){const group=(title,keyFn)=>{const m=new Map();vals.forEach(x=>{let keys=keyFn(x.trip);if(!Array.isArray(keys))keys=[keys];keys.filter(Boolean).forEach(k=>{if(!m.has(k))m.set(k,[]);m.get(k).push(x.val);});});const rows=[...m].map(([k,a])=>{const avg=a.reduce((s,v)=>s+v,0)/a.length,within=target?a.filter(v=>v<=target).length:0,adh=target?a.length?within/a.length*100:0:null;return {k,avg,n:a.length,adh};}).sort((a,b)=>a.avg-b.avg);return `<div class="pull-break-card"><h3>${esc(title)}</h3><div class="table-wrap"><table><thead><tr><th>${esc(title)}</th><th>Viagens</th><th>Tempo médio</th><th>Aderência</th></tr></thead><tbody>${rows.length?rows.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.n}</td><td>${fmtMinutes(r.avg)}</td><td>${r.adh==null?'—':`${r.adh.toFixed(1).replace('.',',')}%`}</td></tr>`).join(''):'<tr><td colspan="4">Sem dados</td></tr>'}</tbody></table></div></div>`;};$('pullDashBreakdownTables').innerHTML=group('Dia',t=>fmtDate(t.started_at))+group('Fábrica',t=>t.factory)+group('Transportadora',t=>t.carrier||'Sem transportadora')+group('Placa',t=>t.plate)+group('Motorista',t=>[t.driver1_name,t.driver2_name]);}
+function renderPullPlanner(rows){const by=new Map();rows.forEach(t=>{const d=new Date(t.started_at),k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;if(!by.has(k))by.set(k,[]);by.get(k).push(t);});const metrics=['TMV_OUT','FACTORY','TMV_RETURN','UNIT','CYCLE'];$('tbodyPullPlanner').innerHTML=[...by].map(([k,ts])=>{let cells='';metrics.forEach(metric=>{const vals=ts.map(t=>pullTripMetrics(t)[metric]).filter(v=>v!=null),avg=vals.length?vals.reduce((s,v)=>s+v,0)/vals.length:null,target=pullTargetForMetric(metric),adh=target&&vals.length?vals.filter(v=>v<=target).length/vals.length*100:null;cells+=`<td>${fmtMinutes(avg)}</td><td>${fmtMinutes(target)}</td><td>${adh==null?'—':adh.toFixed(1).replace('.',',')+'%'}</td>`;});return `<tr><td><strong>${fmtMonthKey(k)}</strong></td>${cells}</tr>`;}).join('')||'<tr><td colspan="16">Sem dados.</td></tr>';}
+
+async function loadPullGoals(){if(!isAdmin())return;const y=Number($('pullGoalYear').value||new Date().getFullYear());$('pullGoalYear').value=y;try{const {data,error}=await sb.from('pull_goals').select('*').eq('year',y).maybeSingle();if(error)throw error;const g=data||{};$('goalTmvOut').value=minutesToInput(g.tmv_out_target_minutes||0);$('goalFactory').value=minutesToInput(g.factory_target_minutes||0);$('goalTmvReturn').value=minutesToInput(g.tmv_return_target_minutes||0);$('goalUnit').value=minutesToInput(g.unit_target_minutes||0);$('goalCycle').value=minutesToInput(g.cycle_target_minutes||0);$('goalTmvOutAdh').value=g.tmv_out_adherence??85;$('goalFactoryAdh').value=g.factory_adherence??85;$('goalTmvReturnAdh').value=g.tmv_return_adherence??85;$('goalUnitAdh').value=g.unit_adherence??85;$('goalCycleAdh').value=g.cycle_adherence??85;}catch(e){toast(humanPullError(e),'error');}}
+async function savePullGoals(e){e.preventDefault();const parse=id=>{const v=parseDurationInput($(id).value);if(v==null)throw new Error(`Tempo inválido em ${id}. Use HH:MM.`);return v;};try{const row={year:Number($('pullGoalYear').value),tmv_out_target_minutes:parse('goalTmvOut'),factory_target_minutes:parse('goalFactory'),tmv_return_target_minutes:parse('goalTmvReturn'),unit_target_minutes:parse('goalUnit'),cycle_target_minutes:parse('goalCycle'),tmv_out_adherence:num($('goalTmvOutAdh').value),factory_adherence:num($('goalFactoryAdh').value),tmv_return_adherence:num($('goalTmvReturnAdh').value),unit_adherence:num($('goalUnitAdh').value),cycle_adherence:num($('goalCycleAdh').value),updated_by:authUser.id,updated_at:new Date().toISOString()};const {error}=await sb.from('pull_goals').upsert(row,{onConflict:'year'});if(error)throw error;toast('Metas salvas.','success');}catch(err){toast(humanPullError(err),'error');}}
+
+async function loadPullConfig(){if(!isAdmin())return;try{await loadPullReferenceData();$('pullGpsAccuracy').value=pullSettings?.gps_max_accuracy_m??100;$('pullTrackInterval').value=pullSettings?.track_interval_seconds??60;$('pullTrackDistance').value=pullSettings?.track_min_distance_m??50;renderPullFactoryList();renderPullVehicleRows();renderPullSteps();}catch(e){toast(humanPullError(e),'error');}}
+async function savePullSettings(e){e.preventDefault();try{const row={singleton:true,default_unit:$('pullDefaultUnit').value,gps_max_accuracy_m:intVal('pullGpsAccuracy'),track_interval_seconds:intVal('pullTrackInterval'),track_min_distance_m:intVal('pullTrackDistance'),updated_by:authUser.id,updated_at:new Date().toISOString()};if(!row.default_unit)return toast('Selecione a unidade padrão.','error');const {error}=await sb.from('pull_settings').upsert(row,{onConflict:'singleton'});if(error)throw error;pullSettings=row;toast('Configuração da Puxada salva.','success');}catch(err){toast(humanPullError(err),'error');}}
+function renderPullFactoryList(){$('pullFactoryList').innerHTML=pullFactories.map(f=>`<button type="button" class="compact-row" data-factory-edit="${esc(f.name)}"><span><strong>${esc(f.name)}</strong><small>${f.latitude==null?'Geofence não configurada':`${Number(f.latitude).toFixed(5)}, ${Number(f.longitude).toFixed(5)} • raio ${f.radius_meters||'—'} m`}</small></span><span>Editar</span></button>`).join('')||'<div class="empty-state">Nenhuma fábrica.</div>';$('pullFactoryList').onclick=e=>{const b=e.target.closest('[data-factory-edit]');if(!b)return;$('pullFactoryName').value=b.dataset.factoryEdit;fillPullFactoryForm();};}
+function fillPullFactoryForm(){const f=pullFactories.find(x=>x.name===$('pullFactoryName').value);$('pullFactoryOriginal').value=f?.name||'';$('pullFactoryLat').value=f?.latitude??'';$('pullFactoryLon').value=f?.longitude??'';$('pullFactoryRadius').value=f?.radius_meters??'';}
+async function useGpsForPullFactory(){const b=$('btnPullFactoryGps');b.disabled=true;b.textContent='Capturando…';try{const g=await captureGps();$('pullFactoryLat').value=g.latitude.toFixed(7);$('pullFactoryLon').value=g.longitude.toFixed(7);toast(`Localização capturada com precisão ±${Math.round(g.accuracy||0)} m.`,'success');}catch(e){toast(humanGpsOrPullError(e),'error');}finally{b.disabled=false;b.textContent='Usar minha localização';}}
+async function savePullFactory(e){e.preventDefault();const name=$('pullFactoryName').value;if(!name)return toast('Selecione a fábrica.','error');try{const {error}=await sb.from('factories').update({latitude:num($('pullFactoryLat').value),longitude:num($('pullFactoryLon').value),radius_meters:intVal('pullFactoryRadius')}).eq('name',name);if(error)throw error;toast('Geofence da fábrica salva.','success');await loadPullReferenceData();fillPullFactoryForm();renderPullFactoryList();}catch(err){toast(humanPullError(err),'error');}}
+function clearPullVehicleForm(){$('pullVehicleId').value='';$('pullVehiclePlate').value='';$('pullVehicleCarrier').value='';$('pullVehicleActive').checked=true;}
+function renderPullVehicleRows(){$('pullVehicleRows').innerHTML=pullVehicles.map(v=>`<button type="button" class="compact-row" data-vehicle-edit="${v.id}"><span><strong>${esc(v.plate)}</strong><small>${esc(v.carrier||'Sem transportadora')} • ${v.active?'ativo':'inativo'}</small></span><span>Editar</span></button>`).join('')||'<div class="empty-state">Nenhum veículo cadastrado.</div>';}
+function onPullVehicleRowsClick(e){const b=e.target.closest('[data-vehicle-edit]');if(!b)return;const v=pullVehicles.find(x=>x.id===b.dataset.vehicleEdit);if(!v)return;$('pullVehicleId').value=v.id;$('pullVehiclePlate').value=v.plate;$('pullVehicleCarrier').value=v.carrier||'';$('pullVehicleActive').checked=v.active;}
+async function savePullVehicle(e){e.preventDefault();const id=$('pullVehicleId').value,row={plate:String($('pullVehiclePlate').value||'').toUpperCase().replace(/[^A-Z0-9]/g,''),carrier:$('pullVehicleCarrier').value.trim(),active:$('pullVehicleActive').checked,updated_at:new Date().toISOString()};if(!row.plate)return toast('Informe a placa.','error');try{const r=id?await sb.from('pull_vehicles').update(row).eq('id',id):await sb.from('pull_vehicles').insert(row);if(r.error)throw r.error;toast('Veículo salvo.','success');clearPullVehicleForm();await loadPullReferenceData();renderPullVehicleRows();}catch(err){toast(humanPullError(err),'error');}}
+function clearPullStepForm(){$('pullStepId').value='';$('pullStepName').value='';$('pullStepType').value='MAIN';$('pullStepCode').disabled=false;$('pullStepCode').value='';$('pullStepOrder').value=100;$('pullStepDuration').value='POINT';$('pullStepGeofence').checked=false;$('pullStepDiscount').checked=false;$('pullStepActive').checked=true;}
+function renderPullSteps(){const all=[...pullMainSteps,...pullOccurrenceTypes].sort((a,b)=>a.step_type.localeCompare(b.step_type)||a.sort_order-b.sort_order);$('tbodyPullSteps').innerHTML=all.map(s=>`<tr><td>${s.sort_order}</td><td><strong>${esc(s.name)}</strong></td><td>${s.step_type==='MAIN'?'Principal':'Ocorrência'}</td><td><code>${esc(s.action_code)}</code></td><td>${s.requires_factory_geofence?'Geofence ':''}${s.duration_mode==='INTERVAL'?'Intervalo ':''}${s.suggest_tma_discount?'Sugere desconto':''}</td><td>${s.active?'<span class="status ok">Ativa</span>':'<span class="status bad">Inativa</span>'}</td><td><button class="mini-btn" data-step-edit="${s.id}">Editar</button></td></tr>`).join('');}
+function onPullStepsClick(e){const b=e.target.closest('[data-step-edit]');if(!b)return;const s=[...pullMainSteps,...pullOccurrenceTypes].find(x=>x.id===b.dataset.stepEdit);if(!s)return;$('pullStepId').value=s.id;$('pullStepName').value=s.name;$('pullStepType').value=s.step_type;$('pullStepCode').value=s.action_code;$('pullStepCode').disabled=['START_TRIP','ARRIVE_FACTORY','LEAVE_FACTORY','DRIVER_SWAP_OUT','DRIVER_SWAP_RETURN','ARRIVE_UNIT'].includes(s.action_code);$('pullStepOrder').value=s.sort_order;$('pullStepDuration').value=s.duration_mode;$('pullStepGeofence').checked=s.requires_factory_geofence;$('pullStepDiscount').checked=s.suggest_tma_discount;$('pullStepActive').checked=s.active;}
+async function savePullStep(e){e.preventDefault();const id=$('pullStepId').value,row={name:$('pullStepName').value.trim(),step_type:$('pullStepType').value,action_code:$('pullStepCode').value.trim().toUpperCase().replace(/[^A-Z0-9_]/g,'_'),sort_order:Number($('pullStepOrder').value),duration_mode:$('pullStepDuration').value,requires_factory_geofence:$('pullStepGeofence').checked,suggest_tma_discount:$('pullStepDiscount').checked,active:$('pullStepActive').checked,required:$('pullStepType').value==='MAIN'};if(!row.name||!row.action_code)return toast('Informe nome e código da etapa.','error');try{const r=id?await sb.from('pull_steps').update(row).eq('id',id):await sb.from('pull_steps').insert(row);if(r.error)throw r.error;toast('Etapa/ocorrência salva.','success');clearPullStepForm();await loadPullReferenceData();renderPullSteps();}catch(err){toast(humanPullError(err),'error');}}
+
+function pullTripMetrics(t){const adj=Math.max(0,Number(t.tma_adjust_minutes||0));const unitRaw=t.ended_at&&t.next_started_at?Math.max(0,minutesBetween(t.ended_at,t.next_started_at)):null;return {TMV_OUT:t.started_at&&t.arrived_factory_at?minutesBetween(t.started_at,t.arrived_factory_at):null,FACTORY:t.arrived_factory_at&&t.left_factory_at?minutesBetween(t.arrived_factory_at,t.left_factory_at):null,TMV_RETURN:t.left_factory_at&&t.ended_at?minutesBetween(t.left_factory_at,t.ended_at):null,UNIT_RAW:unitRaw,UNIT:unitRaw==null?null:Math.max(0,unitRaw-adj),CYCLE:t.started_at&&t.next_started_at?Math.max(0,minutesBetween(t.started_at,t.next_started_at)-adj):null};}
+function minutesBetween(a,b){if(!a||!b)return null;const n=(new Date(b)-new Date(a))/60000;return Number.isFinite(n)?Math.max(0,n):null;}
+function fmtMinutes(v){if(v==null||!Number.isFinite(Number(v)))return '—';const m=Math.max(0,Math.round(Number(v))),h=Math.floor(m/60),mm=m%60;return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;}
+function fmtDurationMinutes(v){return fmtMinutes(v);}
+function fmtDurationSeconds(sec){const s=Math.max(0,Math.floor(sec||0)),h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;}
+function minutesToInput(v){return fmtMinutes(Number(v)||0);}
+function parseDurationInput(v){const s=String(v||'').trim();if(!s)return 0;const m=s.match(/^(\d{1,4}):([0-5]\d)$/);if(!m)return null;return Number(m[1])*60+Number(m[2]);}
+function distanceMeters(a,b,c,d){const R=6371000,p=x=>x*Math.PI/180,dp=p(c-a),dl=p(d-b),q=Math.sin(dp/2)**2+Math.cos(p(a))*Math.cos(p(c))*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(q));}
+function fmtMonthKey(k){const [y,m]=String(k).split('-');return new Intl.DateTimeFormat('pt-BR',{month:'short',year:'numeric'}).format(new Date(Number(y),Number(m)-1,1)).replace('.','');}
+function humanPullError(e){const m=String(e?.message||e||'Erro na Puxada');const map={MOTORISTA_2_INVALIDO:'Motorista 2 inválido ou inativo.',MOTORISTA_2_DEVE_SER_OUTRO_USUARIO:'O Motorista 2 precisa ser outro usuário.',MOTORISTA_COM_CICLO_EM_ANDAMENTO:'Um dos motoristas já possui uma Puxada em andamento.',PLACA_COM_CICLO_EM_ANDAMENTO:'Esta placa já possui uma Puxada em andamento.',MOTORISTA_NAO_ESTA_ATIVO:'A etapa deve ser apontada pelo motorista que está conduzindo neste trecho.',FABRICA_INVALIDA:'Fábrica inválida.',UNIDADE_PADRAO_PUXADA_NAO_CONFIGURADA:'O ADMIN precisa configurar a Unidade padrão da Puxada.',ETAPA_INICIO_NAO_CONFIGURADA:'A etapa inicial da Puxada não está configurada.',CICLO_NAO_ENCONTRADO:'Ciclo não encontrado.',CICLO_NAO_ESTA_EM_ANDAMENTO:'Este ciclo não está mais em andamento.',ETAPA_FORA_DE_SEQUENCIA:'Essa não é a próxima etapa esperada.',SEM_PROXIMA_ETAPA:'Não há próxima etapa.',GPS_BAIXA_PRECISAO:'O GPS está com baixa precisão. Aguarde melhorar ou informe uma justificativa.',FORA_RAIO_FABRICA:'Você está fora do raio cadastrado da fábrica. Atualize o GPS ou informe uma justificativa.',JA_EXISTE_OCORRENCIA_ABERTA:'Já existe uma ocorrência com duração em andamento.',OCORRENCIA_NAO_ESTA_ABERTA:'A ocorrência já foi encerrada.',MOTIVO_AJUSTE_OBRIGATORIO:'Informe o motivo do ajuste de TMA.',AJUSTE_MAIOR_QUE_TMA_BRUTO:'As horas a diminuir não podem ser maiores que o TMA bruto.',PUXADA_NAO_DISPONIVEL_PARA_NRI:'Esta carreta não está mais disponível para cadastro de NRI.'};const key=Object.keys(map).find(k=>m.includes(k));return key?map[key]:humanError(e);}
+function humanGpsOrPullError(e){const m=String(e?.message||e||'');return /PERMISSAO_LOCALIZACAO|permission|GPS|location|geolocation|PositionError/i.test(m)?humanGpsError(e):humanPullError(e);}
+
 
 // MODAL / HELPERS ------------------------------------------------------------
 function openModal(title,subtitle,body,actions=[]){$('modalTitle').textContent=title;$('modalSubtitle').textContent=subtitle||'';$('modalBody').innerHTML=body||'';const a=$('modalActions');a.innerHTML='';actions.forEach(x=>{const b=document.createElement('button');b.className=`btn ${x.class||'secondary'}`;b.textContent=x.label;b.addEventListener('click',x.onClick);a.appendChild(b);});$('modal').classList.add('open');}

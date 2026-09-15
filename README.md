@@ -125,7 +125,6 @@ Exporte as abas atuais do Google Sheets como CSV e importe no aplicativo. Estão
 
 - PRODUTOS
 - UNIDADES
-- TURNOS
 - MOTORISTAS
 - FABRICAS
 - CLIENTES
@@ -184,7 +183,6 @@ O APK usa exatamente o mesmo banco Supabase da versão web.
 - `profiles`
 - `products`
 - `units`
-- `shifts`
 - `drivers`
 - `factories`
 - `customers`
@@ -212,3 +210,14 @@ Para atualizar um banco criado em versões anteriores, execute `supabase/04_clie
 - O filtro de data do dashboard filtra a data da conferência; a base `MAPAS` continua disponível para localizar o mesmo número em qualquer data.
 - A tela de usuários mostra uma mensagem específica quando a Edge Function `admin-users` não está publicada/acessível.
 - Consulte `supabase/DEPLOY_ADMIN_USERS.md` para publicar a função.
+
+
+## v1.1.0 - Módulo Puxada
+
+A v1.1.0 adiciona o perfil **Motorista Puxador** e o módulo **Puxada**. O motorista inicia um ciclo informando placa, fábrica e Motorista 2; os dois usuários compartilham a mesma viagem, enquanto cada etapa é registrada com horário do servidor, GPS e usuário responsável.
+
+O ADMIN possui Farol de andamento, Histórico, Dashboards, Metas e Configurações. As fábricas podem receber latitude, longitude e raio de geofence. O TMA Revenda é calculado entre a chegada da placa à revenda e a próxima saída da mesma placa, com ajuste manual auditado de horas a diminuir.
+
+Na chegada à revenda, a carreta entra automaticamente em **NRI > Carretas pendentes**. Ao iniciar a conferência, unidade, tipo Ambev, data/hora, motorista que encerrou o ciclo, placa e fábrica são preenchidos automaticamente.
+
+Antes de publicar esta versão execute `supabase/08_v1_1_0_modulo_puxada.sql` no SQL Editor e republique a Edge Function `admin-users`, pois ela passa a aceitar o perfil `MOTORISTA_PUXADOR`.
