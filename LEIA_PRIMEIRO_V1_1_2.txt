@@ -1,5 +1,0 @@
-DISB GESTAO v1.1.2
-
-Se o Supabase ja recebeu a atualizacao 09_v1_1_1_origem_gps_auditoria.sql, nao ha novo SQL obrigatorio nesta versao.
-
-Atualize os arquivos web, execute npm install se necessario, depois npm run android:sync para atualizar o projeto Android antes de gerar o APK.

@@ -1,0 +1,9 @@
+DISB GESTAO v1.1.6
+
+1. Confirme no Supabase que public.pull_settings.gps_max_accuracy_m esta no valor desejado (ex.: 200).
+2. Aplique o PATCH na raiz do projeto.
+3. Rode npm run android:sync.
+4. Gere novamente o APK com gradlew clean e assembleDebug.
+5. Instale o novo APK. A versao exibida no login/menu deve ser v1.1.6.
+
+Nao ha SQL novo nesta versao.

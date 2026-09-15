@@ -1,1 +1,1 @@
-v1.1.5 - tolerancia GPS configuravel de 5 a 500 m, padrao 200 m
+v1.1.6 - corrige cache do APK e garante leitura da tolerancia GPS configurada

@@ -1,7 +1,0 @@
-DISB GESTAO v1.1.5
-
-1. Execute no Supabase: supabase/11_v1_1_5_gps_tolerancia_flexivel.sql
-2. Publique os arquivos desta versao.
-3. Em Puxada > Configuracoes, ajuste a tolerancia do GPS.
-4. Recomendacao inicial para os aparelhos atuais: 200 m.
-5. Gere novamente o APK com npm run android:sync e Gradle.

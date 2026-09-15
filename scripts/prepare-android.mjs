@@ -34,3 +34,21 @@ if (stillMissing.length) {
 }
 
 console.log('GPS Android OK: ACCESS_COARSE_LOCATION e ACCESS_FINE_LOCATION presentes no AndroidManifest.xml.');
+
+
+// Mantem a versao nativa alinhada com a versao web para que o Android reconheca a atualizacao.
+const gradleGroovy = path.join(root, 'android', 'app', 'build.gradle');
+const gradleKts = path.join(root, 'android', 'app', 'build.gradle.kts');
+if (fs.existsSync(gradleGroovy)) {
+  let g = fs.readFileSync(gradleGroovy, 'utf8');
+  g = g.replace(/versionCode\s+\d+/, 'versionCode 116');
+  g = g.replace(/versionName\s+["'][^"']+["']/, 'versionName "1.1.6"');
+  fs.writeFileSync(gradleGroovy, g, 'utf8');
+  console.log('Versao Android OK: versionCode 116 / versionName 1.1.6.');
+} else if (fs.existsSync(gradleKts)) {
+  let g = fs.readFileSync(gradleKts, 'utf8');
+  g = g.replace(/versionCode\s*=\s*\d+/, 'versionCode = 116');
+  g = g.replace(/versionName\s*=\s*["'][^"']+["']/, 'versionName = "1.1.6"');
+  fs.writeFileSync(gradleKts, g, 'utf8');
+  console.log('Versao Android OK: versionCode 116 / versionName 1.1.6.');
+}
