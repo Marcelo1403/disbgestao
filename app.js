@@ -31,9 +31,7 @@ let printOperation = null;
 let historyNris = [];
 let avariaItems = [];
 let avariaEditingId = null;
-let avPhotoBlob = null;
-let avPhotoPreviewUrl = '';
-let avGps = null;
+let avPhotos = [];
 let signatureDirty = false;
 let drawingSignature = false;
 let currentAvariaDetail = null;
@@ -105,6 +103,7 @@ function bindBaseEvents(){
   $('btnSair').addEventListener('click', logout); $('btnSairMobile').addEventListener('click',logout);
   $('menuBtn').addEventListener('click',()=>toggleSidebar(true)); $('overlay').addEventListener('click',()=>toggleSidebar(false));
   document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>openView(b.dataset.view)));
+  document.querySelectorAll('.nav-module-toggle').forEach(b=>b.addEventListener('click',()=>toggleNavModule(b.closest('.nav-module'))));
   $('modalClose').addEventListener('click',closeModal); $('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal();});
 
   // NRI
@@ -133,12 +132,14 @@ function bindBaseEvents(){
   // Avarias
   $('avData').addEventListener('change',()=>{});
   $('avPdv').addEventListener('input',onPdvInput);
+  $('avMapa').addEventListener('input',()=>{$('avMapaResumo').textContent=$('avMapa').value.trim()||'—';});
   $('avClienteEscolha').addEventListener('change',onCustomerChoiceChange);
   $('avLote').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
   $('btnAvCamera').addEventListener('click',()=>$('avFotoCamera').click());
   $('btnAvArquivo').addEventListener('click',()=>$('avFotoArquivo').click());
   $('avFotoCamera').addEventListener('change',onAvariaPhoto);
   $('avFotoArquivo').addEventListener('change',onAvariaPhoto);
+  $('avPhotoGallery').addEventListener('click',onAvariaPhotoGalleryClick);
   $('btnAdicionarAvItem').addEventListener('click',addAvariaItem);
   $('btnCancelarAvItem').addEventListener('click',clearAvariaItemEditor);
   $('avItemList').addEventListener('click',onAvariaItemListClick);
@@ -161,6 +162,8 @@ function bindBaseEvents(){
   ['histConfMapa','histConfConferente','histConfDe','histConfAte'].forEach(id=>$(id).addEventListener(id.includes('De')||id.includes('Ate')?'change':'input',renderConferenceHistory));
   $('btnExportarHistConf').addEventListener('click',exportConferenceCsv);
   $('btnAtualizarDashboard').addEventListener('click',loadDashboard);
+  $('btnLimparDashboard').addEventListener('click',clearDashboardFilters);
+  $('dashPeriodo').addEventListener('change',()=>{updateDashboardPeriod();renderDashboard();});
   ['dashData','dashMapa','dashCidade'].forEach(id=>$(id).addEventListener(id==='dashData'?'change':'input',renderDashboard));
   $('tbodyDashboard').addEventListener('click',onDashboardClick);
 
@@ -205,7 +208,7 @@ async function startApp(){
   $('loginScreen').classList.add('hidden'); $('appShell').classList.remove('hidden');
   document.title='Disb Gestão';
   $('userNome').textContent=profile.name; $('userPerfil').textContent=ROLE_LABELS[profile.role]||profile.role; $('userAvatar').textContent=initials(profile.name);
-  applyRole(); fillDefaultDates();
+  applyRole(); restoreNavModules(); fillDefaultDates(); updateDashboardPeriod();
   await loadReferences(true);
   setupRealtime();
   if(canNri()) { await loadPending(); }
@@ -223,11 +226,38 @@ function applyRole(){
   document.querySelectorAll('.role-conferencia').forEach(x=>x.classList.toggle('hidden',!canConference()));
   document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',!isAdmin()));
 }
+function toggleNavModule(module){
+  if(!module)return;
+  setNavModuleOpen(module,!module.classList.contains('open'));
+  saveNavModules();
+}
+function setNavModuleOpen(module,open){
+  if(!module)return;
+  module.classList.toggle('open',!!open);
+  const btn=module.querySelector('.nav-module-toggle');
+  if(btn)btn.setAttribute('aria-expanded',open?'true':'false');
+}
+function saveNavModules(){
+  const state={};
+  document.querySelectorAll('.nav-module').forEach(m=>state[m.dataset.module]=m.classList.contains('open'));
+  try{localStorage.setItem('disb_nav_modules',JSON.stringify(state));}catch(_e){}
+}
+function restoreNavModules(){
+  let state={};
+  try{state=JSON.parse(localStorage.getItem('disb_nav_modules')||'{}')||{};}catch(_e){}
+  document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,state[m.dataset.module]===true));
+}
+function openModuleForView(name){
+  const item=document.querySelector(`.nav-item[data-view="${name}"]`);
+  const module=item?.closest('.nav-module');
+  if(module){setNavModuleOpen(module,true);saveNavModules();}
+}
 function openView(name,force=false){
   const v=$(`view-${name}`); if(!v||v.classList.contains('hidden'))return;
   if(!force&&activeView===name){toggleSidebar(false);return;}
   activeView=name; document.querySelectorAll('.view').forEach(x=>x.classList.remove('active')); v.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===name));
+  openModuleForView(name);
   const meta=viewMeta[name]||['Disb Gestão','']; $('topbarTitulo').textContent=meta[0];$('topbarSubtitulo').textContent=meta[1]; toggleSidebar(false);
   if(name==='nri-pendentes')loadPending();
   if(name==='avaria-cadastro')ensureAvariaLocationPermission();
@@ -297,7 +327,7 @@ function sanitizeRefs(data){return {products:(data.products||[]).map(x=>({code:n
 function fillDefaultDates(){
   const now=new Date(); const iso=localIsoDate(now); const time=localTime(now);
   if(!$('nriRecebimento').value)$('nriRecebimento').value=iso; if(!$('nriHora').value)$('nriHora').value=time; $('nriConferente').value=profile?.name||'';
-  if(!$('avData').value)$('avData').value=iso; $('avEntregador').value=profile?.name||''; $('dashData').value=$('dashData').value||iso;
+  if(!$('avData').value)$('avData').value=iso; $('avEntregador').value=profile?.name||'';
   $('confConferente').textContent=profile?.name||'—'; updateConfClock();
 }
 setInterval(updateConfClock,1000); function updateConfClock(){if(!$('confAgora'))return;$('confAgora').textContent=new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,dateStyle:'short',timeStyle:'medium'}).format(new Date());}
@@ -378,8 +408,11 @@ function selectedCustomer(){
   return matches.find(c=>customerKey(c)===selectedCustomerKey)||null;
 }
 function showCustomer(c){
-  $('avClienteNome').textContent=c?.name||'Cliente não localizado';
+  const typed=normalizeCode($('avPdv').value);
+  $('avClienteNome').textContent=c?.name||(typed?'Cliente não localizado':'Digite um código');
+  $('avClienteCodigo').textContent=c?.code||typed||'—';
   $('avCidade').textContent=c?.city||'—';
+  $('avMapaResumo').textContent=$('avMapa').value.trim()||'—';
 }
 function onPdvInput(){
   selectedCustomerKey='';
@@ -398,20 +431,140 @@ function onCustomerChoiceChange(){
   selectedCustomerKey=$('avClienteEscolha').value||'';
   showCustomer(selectedCustomer());
 }
-async function onAvariaPhoto(e){const file=e.target.files?.[0];if(!file)return;try{avPhotoBlob=await compressImage(file,1280,.76);if(avPhotoPreviewUrl)URL.revokeObjectURL(avPhotoPreviewUrl);avPhotoPreviewUrl=URL.createObjectURL(avPhotoBlob);$('avFotoPreview').src=avPhotoPreviewUrl;$('avFotoPreview').classList.remove('hidden');$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='Obtendo localização…';avGps=await captureGps();$('avGpsStatus').className='gps-status ok';$('avGpsStatus').textContent=`GPS capturado: ${avGps.latitude.toFixed(6)}, ${avGps.longitude.toFixed(6)} • ±${Math.round(avGps.accuracy||0)} m`;}catch(err){avGps=null;$('avGpsStatus').className='gps-status error';$('avGpsStatus').textContent=`GPS não capturado: ${humanGpsError(err)}`;}}
-function addAvariaItem(){const product=sanitizeRefText($('avProduto').value.trim()),lot=$('avLote').value.trim().toUpperCase(),quantity=num($('avQuantidade').value),unit=$('avUnidade').value,reason=$('avMotivo').value;if(!product||!lot||quantity<=0||!unit||!reason)return toast('Preencha produto, lote, quantidade, unidade e motivo.','error');if(!avPhotoBlob)return toast('A foto é obrigatória.','error');if(!avGps)return toast('A localização GPS da foto é obrigatória.','error');const id=avariaEditingId||uuid();const old=avariaItems.find(x=>x.id===id);const item={id,product,lot,quantity,unit,reason,photoBlob:avPhotoBlob,previewUrl:avPhotoPreviewUrl,gps:avGps};const idx=avariaItems.findIndex(x=>x.id===id);if(idx>=0){if(old?.previewUrl&&old.previewUrl!==item.previewUrl)URL.revokeObjectURL(old.previewUrl);avariaItems[idx]=item;}else avariaItems.push(item);renderAvariaItems();clearAvariaItemEditor(false);}
-function renderAvariaItems(){$('avItemCounter').textContent=`${avariaItems.length} produto(s)`;const el=$('avItemList');if(!avariaItems.length){el.className='item-list empty-state';el.textContent='Nenhum produto adicionado.';return;}el.className='item-list';el.innerHTML=avariaItems.map(x=>`<div class="item-row" data-id="${x.id}"><div class="info"><small>Produto</small><strong>${esc(x.product)}</strong></div><div class="info"><small>Lote</small><strong>${esc(x.lot)}</strong></div><div class="info"><small>Quantidade</small><strong>${fmtNum(x.quantity)} ${esc(x.unit)}</strong></div><div class="info"><small>Motivo</small><strong>${esc(x.reason)}</strong></div><div class="info"><small>GPS</small><strong>${x.gps.latitude.toFixed(5)}, ${x.gps.longitude.toFixed(5)}</strong></div><div class="mini-actions"><button class="mini-btn" data-act="edit">Editar</button><button class="mini-btn danger" data-act="del">Excluir</button></div></div>`).join('');}
-function onAvariaItemListClick(e){const b=e.target.closest('button[data-act]');if(!b)return;const item=avariaItems.find(x=>x.id===b.closest('[data-id]').dataset.id);if(!item)return;if(b.dataset.act==='del'){if(item.previewUrl)URL.revokeObjectURL(item.previewUrl);avariaItems=avariaItems.filter(x=>x.id!==item.id);renderAvariaItems();return;}avariaEditingId=item.id;$('avProduto').value=item.product;$('avLote').value=item.lot;$('avQuantidade').value=item.quantity;$('avUnidade').value=item.unit;$('avMotivo').value=item.reason;avPhotoBlob=item.photoBlob;avPhotoPreviewUrl=item.previewUrl;avGps=item.gps;$('avFotoPreview').src=item.previewUrl;$('avFotoPreview').classList.remove('hidden');$('avGpsStatus').className='gps-status ok';$('avGpsStatus').textContent=`GPS capturado: ${item.gps.latitude.toFixed(6)}, ${item.gps.longitude.toFixed(6)}`;$('btnAdicionarAvItem').textContent='Salvar alteração';$('btnCancelarAvItem').classList.remove('hidden');}
-function clearAvariaItemEditor(revoke=true){avariaEditingId=null;if(revoke&&avPhotoPreviewUrl&&!avariaItems.some(x=>x.previewUrl===avPhotoPreviewUrl))URL.revokeObjectURL(avPhotoPreviewUrl);avPhotoBlob=null;avPhotoPreviewUrl='';avGps=null;['avProduto','avLote','avQuantidade','avMotivo'].forEach(id=>$(id).value='');$('avUnidade').value='UNIDADE';$('avFotoCamera').value='';$('avFotoArquivo').value='';$('avFotoPreview').classList.add('hidden');$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='GPS ainda não capturado.';$('btnAdicionarAvItem').textContent='+ Adicionar produto';$('btnCancelarAvItem').classList.add('hidden');}
-function clearAvariaRequest(){avariaItems.forEach(x=>{if(x.previewUrl)URL.revokeObjectURL(x.previewUrl);});avariaItems=[];renderAvariaItems();clearAvariaItemEditor();$('avData').value=localIsoDate(new Date());$('avEntregador').value=profile?.name||'';['avPdv','avMapa'].forEach(id=>$(id).value='');$('avClienteNome').textContent='Digite um PDV';$('avCidade').textContent='—';selectedCustomerKey='';$('avClienteEscolha').innerHTML='';$('avClienteDuplicado').classList.add('hidden');clearSignature();}
-async function submitAvaria(e){e.preventDefault();const customer=selectedCustomer();if(!customer)return toast(currentCustomerMatches().length>1?'Selecione qual cliente corresponde ao PDV informado.':'Informe um PDV válido.','error');if(!$('avMapa').value.trim())return toast('Informe o mapa.','error');if(!avariaItems.length)return toast('Adicione ao menos um produto avariado.','error');if(!signatureDirty)return toast('A assinatura do cliente é obrigatória.','error');const btn=$('btnSalvarAvaria');btn.disabled=true;btn.textContent='Enviando…';try{const reqKey=uuid();const sigBlob=await canvasBlob($('signatureCanvas'),.82);const signaturePath=`${authUser.id}/${reqKey}/assinatura.jpg`;await uploadStorage(signaturePath,sigBlob);const uploaded=await Promise.all(avariaItems.map(async(x,i)=>{const path=`${authUser.id}/${reqKey}/foto_${String(i+1).padStart(2,'0')}.jpg`;await uploadStorage(path,x.photoBlob);return {...x,photo_path:path};}));const payload={date:$('avData').value,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:$('avMapa').value.trim(),signature_path:signaturePath,items:uploaded.map(x=>({product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photo_path:x.photo_path,latitude:x.gps.latitude,longitude:x.gps.longitude,accuracy:x.gps.accuracy||'',gps_at:x.gps.capturedAt}))};const {error}=await sb.rpc('create_damage_request',{p_payload:payload});if(error)throw error;toast('Avaria registrada com sucesso.','success');clearAvariaRequest();}catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;btn.textContent='Registrar requisição';}}
+async function onAvariaPhoto(e){
+  const files=[...(e.target.files||[])];
+  e.target.value='';
+  if(!files.length)return;
+  const remaining=5-avPhotos.length;
+  if(remaining<=0)return toast('Cada produto aceita no máximo 5 fotos.','error');
+  const chosen=files.slice(0,remaining);
+  if(files.length>remaining)toast(`Somente ${remaining} foto(s) foram adicionadas. O limite é 5.`,'');
+  for(const file of chosen){
+    const sourceKey=`${file.name}|${file.size}|${file.lastModified}`;
+    if(avPhotos.some(p=>p.sourceKey===sourceKey)){toast('Esta foto já foi adicionada.','error');continue;}
+    let previewUrl='';
+    try{
+      $('avGpsStatus').className='gps-status';
+      $('avGpsStatus').textContent=`Preparando foto ${avPhotos.length+1} e obtendo localização…`;
+      const blob=await compressImage(file,1280,.76);
+      previewUrl=URL.createObjectURL(blob);
+      const gps=await captureGps();
+      avPhotos.push({id:uuid(),blob,previewUrl,gps,sourceKey});
+      renderAvariaPhotoGallery();
+    }catch(err){
+      if(previewUrl)URL.revokeObjectURL(previewUrl);
+      $('avGpsStatus').className='gps-status error';
+      $('avGpsStatus').textContent=`Foto não adicionada: ${humanGpsError(err)}`;
+    }
+  }
+}
+function renderAvariaPhotoGallery(){
+  const el=$('avPhotoGallery');
+  $('avFotoCounter').textContent=`${avPhotos.length}/5 fotos`;
+  if(!avPhotos.length){el.className='photo-gallery empty';el.innerHTML='<span>Nenhuma foto adicionada.</span>';$('avGpsStatus').className='gps-status';$('avGpsStatus').textContent='Adicione uma foto para capturar a localização.';return;}
+  el.className='photo-gallery';
+  el.innerHTML=avPhotos.map((p,i)=>`<div class="photo-thumb" data-photo-id="${esc(p.id)}"><img src="${esc(p.previewUrl)}" alt="Foto ${i+1}"><div><strong>Foto ${i+1}</strong><small>✓ GPS capturado • ±${Math.round(p.gps.accuracy||0)} m</small></div><button type="button" class="photo-remove" data-remove-photo="${esc(p.id)}" aria-label="Remover foto">×</button></div>`).join('');
+  $('avGpsStatus').className='gps-status ok';
+  $('avGpsStatus').textContent=`${avPhotos.length} foto(s) com localização capturada.`;
+}
+function onAvariaPhotoGalleryClick(e){
+  const b=e.target.closest('[data-remove-photo]');if(!b)return;
+  const id=b.dataset.removePhoto;const photo=avPhotos.find(p=>p.id===id);
+  if(photo?.previewUrl&&!avariaEditingId)URL.revokeObjectURL(photo.previewUrl);
+  avPhotos=avPhotos.filter(p=>p.id!==id);renderAvariaPhotoGallery();
+}
+function addAvariaItem(){
+  const product=sanitizeRefText($('avProduto').value.trim()),lot=$('avLote').value.trim().toUpperCase(),quantity=num($('avQuantidade').value),unit=$('avUnidade').value,reason=$('avMotivo').value;
+  if(!product||!lot||quantity<=0||!unit||!reason)return toast('Preencha produto, lote, quantidade, unidade e motivo.','error');
+  if(!avPhotos.length)return toast('Adicione ao menos uma foto da avaria.','error');
+  if(avPhotos.some(p=>!p.gps))return toast('Todas as fotos precisam ter localização GPS.','error');
+  const id=avariaEditingId||uuid();
+  const item={id,product,lot,quantity,unit,reason,photos:avPhotos.map(p=>({...p}))};
+  const idx=avariaItems.findIndex(x=>x.id===id);
+  if(idx>=0){
+    const keep=new Set(item.photos.map(p=>p.previewUrl));
+    (avariaItems[idx].photos||[]).forEach(p=>{if(p.previewUrl&&!keep.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);});
+    avariaItems[idx]=item;
+  }else avariaItems.push(item);
+  renderAvariaItems();clearAvariaItemEditor(false);
+}
+function renderAvariaItems(){
+  $('avItemCounter').textContent=`${avariaItems.length} produto(s)`;const el=$('avItemList');
+  if(!avariaItems.length){el.className='item-list empty-state';el.textContent='Nenhum produto adicionado.';return;}
+  el.className='item-list';
+  el.innerHTML=avariaItems.map(x=>`<div class="item-row" data-id="${x.id}"><div class="info"><small>Produto</small><strong>${esc(x.product)}</strong></div><div class="info"><small>Lote</small><strong>${esc(x.lot)}</strong></div><div class="info"><small>Quantidade</small><strong>${fmtNum(x.quantity)} ${esc(x.unit)}</strong></div><div class="info"><small>Motivo</small><strong>${esc(x.reason)}</strong></div><div class="info"><small>Evidências</small><strong>${x.photos.length} foto(s) • GPS ✓</strong></div><div class="mini-actions"><button class="mini-btn" data-act="edit">Editar</button><button class="mini-btn danger" data-act="del">Excluir</button></div></div>`).join('');
+}
+function onAvariaItemListClick(e){
+  const b=e.target.closest('button[data-act]');if(!b)return;const item=avariaItems.find(x=>x.id===b.closest('[data-id]').dataset.id);if(!item)return;
+  if(b.dataset.act==='del'){(item.photos||[]).forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);});avariaItems=avariaItems.filter(x=>x.id!==item.id);renderAvariaItems();return;}
+  avariaEditingId=item.id;$('avProduto').value=item.product;$('avLote').value=item.lot;$('avQuantidade').value=item.quantity;$('avUnidade').value=item.unit;$('avMotivo').value=item.reason;
+  avPhotos=(item.photos||[]).map(p=>({...p}));renderAvariaPhotoGallery();$('btnAdicionarAvItem').textContent='Salvar alteração';$('btnCancelarAvItem').classList.remove('hidden');
+}
+function clearAvariaItemEditor(revoke=true){
+  avariaEditingId=null;
+  if(revoke){const used=new Set(avariaItems.flatMap(x=>(x.photos||[]).map(p=>p.previewUrl)));avPhotos.forEach(p=>{if(p.previewUrl&&!used.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);});}
+  avPhotos=[];['avProduto','avLote','avQuantidade','avMotivo'].forEach(id=>$(id).value='');$('avUnidade').value='UNIDADE';$('avFotoCamera').value='';$('avFotoArquivo').value='';renderAvariaPhotoGallery();$('btnAdicionarAvItem').textContent='+ Adicionar produto';$('btnCancelarAvItem').classList.add('hidden');
+}
+function clearAvariaRequest(){
+  avariaItems.forEach(x=>(x.photos||[]).forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);}));avariaItems=[];renderAvariaItems();clearAvariaItemEditor(false);$('avData').value=localIsoDate(new Date());$('avEntregador').value=profile?.name||'';['avPdv','avMapa'].forEach(id=>$(id).value='');$('avClienteNome').textContent='Digite um código';$('avClienteCodigo').textContent='—';$('avCidade').textContent='—';$('avMapaResumo').textContent='—';selectedCustomerKey='';$('avClienteEscolha').innerHTML='';$('avClienteDuplicado').classList.add('hidden');clearSignature();
+}
+async function submitAvaria(e){
+  e.preventDefault();const customer=selectedCustomer();if(!customer)return toast(currentCustomerMatches().length>1?'Selecione qual cliente corresponde ao PDV informado.':'Informe um PDV válido.','error');if(!$('avMapa').value.trim())return toast('Informe o mapa.','error');if(!avariaItems.length)return toast('Adicione ao menos um produto avariado.','error');if(!signatureDirty)return toast('A assinatura do cliente é obrigatória.','error');const btn=$('btnSalvarAvaria');btn.disabled=true;btn.textContent='Enviando…';
+  try{
+    const reqKey=uuid();const sigBlob=await canvasBlob($('signatureCanvas'),.82);const signaturePath=`${authUser.id}/${reqKey}/assinatura.jpg`;await uploadStorage(signaturePath,sigBlob);
+    const uploaded=[];
+    for(let i=0;i<avariaItems.length;i++){
+      const x=avariaItems[i],photos=[];
+      for(let j=0;j<x.photos.length;j++){
+        const p=x.photos[j],path=`${authUser.id}/${reqKey}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;
+        await uploadStorage(path,p.blob);
+        photos.push({photo_path:path,latitude:p.gps.latitude,longitude:p.gps.longitude,accuracy:p.gps.accuracy||'',gps_at:p.gps.capturedAt});
+      }
+      uploaded.push({...x,photos});
+    }
+    const payload={date:$('avData').value,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:$('avMapa').value.trim(),signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first.photo_path,latitude:first.latitude,longitude:first.longitude,accuracy:first.accuracy,gps_at:first.gps_at};})};
+    const {error}=await sb.rpc('create_damage_request',{p_payload:payload});if(error)throw error;toast('Avaria registrada com sucesso.','success');clearAvariaRequest();
+  }catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;btn.textContent='Registrar requisição';}
+}
 async function uploadStorage(path,blob){const {error}=await sb.storage.from('avarias').upload(path,blob,{contentType:'image/jpeg',upsert:false});if(error)throw error;}
 let adminAvarias=[];let lotNriMap=new Map();
-async function loadAdminAvarias(silent=false){if(!isAdmin())return;try{const {data,error}=await sb.from('damage_requests').select('*,damage_items(*)').order('created_at',{ascending:false}).limit(1000);if(error)throw error;adminAvarias=data||[];const lots=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(i=>String(i.lot||'').toUpperCase()).filter(Boolean))];lotNriMap=new Map();if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}renderAdminAvarias();$('badgeAvarias').textContent=adminAvarias.filter(r=>['PENDENTE','PARCIAL'].includes(r.status)).length;}catch(e){if(!silent)toast(humanError(e),'error');}}
-function filteredAdminAvarias(){const q=norm($('avAdminBusca').value),s=$('avAdminStatus').value;return adminAvarias.filter(r=>(!s||r.status===s)&&(!q||norm([r.customer_code,r.customer_name,r.delivery_name,r.map_number,...(r.damage_items||[]).flatMap(i=>[i.product_text,i.lot])].join(' ')).includes(q)));}
-function renderAdminAvarias(){const arr=filteredAdminAvarias();$('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[];const matches=items.filter(i=>lotNriMap.has(String(i.lot).toUpperCase())).length;return `<tr><td>${fmtDate(r.occurrence_date)}<strong>${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td>${items.length} produto(s)</td><td>${matches===items.length&&items.length?'<span class="status ok">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status bad">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';}
+async function loadAdminAvarias(silent=false){
+  if(!isAdmin())return;
+  try{
+    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').order('created_at',{ascending:false}).limit(1000);
+    if(error)throw error;adminAvarias=data||[];
+    const lots=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(i=>String(i.lot||'').toUpperCase()).filter(Boolean))];lotNriMap=new Map();
+    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
+    renderAdminAvarias();$('badgeAvarias').textContent=adminAvarias.filter(r=>['PENDENTE','PARCIAL'].includes(r.status)).length;
+  }catch(e){if(!silent)toast(humanError(e),'error');}
+}
+function itemEvidencePhotos(i){
+  const photos=[...(i.damage_item_photos||[])].sort((a,b)=>num(a.photo_order)-num(b.photo_order));
+  if(photos.length)return photos;
+  return i.photo_path?[{photo_order:1,photo_path:i.photo_path,latitude:i.latitude,longitude:i.longitude,gps_accuracy:i.gps_accuracy,gps_captured_at:i.gps_captured_at}]:[];
+}
+function filteredAdminAvarias(){const q=norm($('avAdminBusca').value),s=$('avAdminStatus').value;return adminAvarias.filter(r=>(!s||r.status===s)&&(!q||norm([r.customer_code,r.customer_name,r.city,r.delivery_name,r.map_number,...(r.damage_items||[]).flatMap(i=>[i.product_text,i.lot,i.reason])].join(' ')).includes(q)));}
+function renderAdminAvarias(){
+  const arr=filteredAdminAvarias();
+  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(String(i.lot).toUpperCase())).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status ok">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status bad">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
+}
 function onAdminAvariaClick(e){const b=e.target.closest('button[data-id]');if(!b)return;showAvariaDetail(b.dataset.id);}
-async function showAvariaDetail(id){const r=adminAvarias.find(x=>x.id===id);if(!r)return;currentAvariaDetail=r;const items=r.damage_items||[];const signed=await Promise.all([r.signature_path,...items.map(i=>i.photo_path)].map(async path=>{const {data}=await sb.storage.from('avarias').createSignedUrl(path,3600);return data?.signedUrl||'';}));const signatureUrl=signed[0];const body=`<div class="detail-grid"><div class="detail-card"><small>PDV</small><strong>${esc(r.customer_code)} • ${esc(r.customer_name)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(r.city)}</strong></div><div class="detail-card"><small>Mapa</small><strong>${esc(r.map_number)}</strong></div><div class="detail-card"><small>Motorista</small><strong>${esc(r.delivery_name)}</strong></div></div>${items.map((i,idx)=>{const match=lotNriMap.get(String(i.lot).toUpperCase())||[];return `<div class="damage-admin-item" data-item="${i.id}"><label><input type="checkbox" class="review-check" value="${i.id}" ${i.status==='PENDENTE'?'':'disabled'}> <strong>Produto ${idx+1}: ${esc(i.product_text)}</strong></label><div class="detail-grid"><div class="detail-card"><small>Lote</small><strong>${esc(i.lot)}</strong></div><div class="detail-card"><small>Quantidade</small><strong>${fmtNum(i.quantity)} ${esc(i.quantity_unit)}</strong></div><div class="detail-card"><small>Motivo</small><strong>${esc(i.reason)}</strong></div><div class="detail-card"><small>Status</small><strong>${esc(i.status)}</strong></div></div><div class="damage-admin-grid"><div><img src="${esc(signed[idx+1])}" alt="Foto da avaria"></div><div><iframe class="map-frame" src="https://www.google.com/maps?q=${encodeURIComponent(i.latitude+','+i.longitude)}&output=embed" loading="lazy"></iframe><small>GPS: ${i.latitude}, ${i.longitude} • ±${Math.round(i.gps_accuracy||0)}m</small></div></div><p>${match.length?`<span class="status ok">Lote compatível</span> ${match.slice(0,4).map(n=>esc(n.nri)).join(', ')}`:'<span class="status bad">Lote não encontrado</span>'}</p></div>`;}).join('')}<div class="section-title">Assinatura</div><img src="${esc(signatureUrl)}" alt="Assinatura" style="max-width:100%;max-height:220px;border:1px solid #dce5ed;border-radius:10px">`;openModal(`Avaria • PDV ${r.customer_code}`,`${fmtDate(r.occurrence_date)} • ${r.delivery_name}`,body,[{label:'Reprovar selecionados',class:'danger',onClick:()=>reviewAvaria('REPROVADO',false)},{label:'Aprovar selecionados',class:'success',onClick:()=>reviewAvaria('APROVADO',false)},{label:'Aprovar todos pendentes',class:'primary',onClick:()=>reviewAvaria('APROVADO',true)}]);}
+async function showAvariaDetail(id){
+  const r=adminAvarias.find(x=>x.id===id);if(!r)return;currentAvariaDetail=r;const items=r.damage_items||[];
+  const paths=[r.signature_path,...items.flatMap(i=>itemEvidencePhotos(i).map(p=>p.photo_path))].filter(Boolean);
+  const signedPairs=await Promise.all(paths.map(async path=>{const {data}=await sb.storage.from('avarias').createSignedUrl(path,3600);return [path,data?.signedUrl||''];}));
+  const signed=new Map(signedPairs),signatureUrl=signed.get(r.signature_path)||'';
+  const pending=items.filter(i=>i.status==='PENDENTE').length;
+  const productsHtml=items.map((i,idx)=>{
+    const match=lotNriMap.get(String(i.lot).toUpperCase())||[],photos=itemEvidencePhotos(i);
+    const photoHtml=photos.map((p,pidx)=>`<div class="damage-photo-card"><div class="damage-photo-title"><strong>Foto ${pidx+1}</strong><span class="status ok">GPS ✓</span></div><img src="${esc(signed.get(p.photo_path)||'')}" alt="Foto ${pidx+1} da avaria"><iframe class="map-frame" src="https://www.google.com/maps?q=${encodeURIComponent(p.latitude+','+p.longitude)}&output=embed" loading="lazy"></iframe><small>GPS: ${p.latitude}, ${p.longitude} • ±${Math.round(p.gps_accuracy||0)} m</small></div>`).join('');
+    return `<div class="damage-admin-item" data-item="${i.id}"><div class="damage-product-head"><label class="damage-check"><input type="checkbox" class="review-check" value="${i.id}" ${i.status==='PENDENTE'?'':'disabled'}><span></span></label><div><small>PRODUTO ${idx+1}</small><strong>${esc(i.product_text)}</strong></div>${statusBadge(i.status)}</div><div class="damage-summary-grid"><div><small>LOTE</small><strong>${esc(i.lot)}</strong></div><div><small>QUANTIDADE</small><strong>${fmtNum(i.quantity)} ${esc(i.quantity_unit)}</strong></div><div><small>MOTIVO</small><strong>${esc(i.reason)}</strong></div><div><small>EVIDÊNCIAS</small><strong>${photos.length} foto(s)</strong></div></div><div class="damage-lot-row">${match.length?`<span class="status ok">Lote compatível</span><span>${match.slice(0,4).map(n=>esc(n.nri)).join(', ')}</span>`:'<span class="status bad">Lote não encontrado</span>'}</div><details class="damage-evidence"><summary><span>Ver evidências</span><small>${photos.length} foto(s) • localização por foto</small></summary><div class="damage-photo-grid">${photoHtml||'<div class="empty-state">Sem foto disponível.</div>'}</div></details></div>`;
+  }).join('');
+  const body=`<div class="damage-request-hero"><div><small>OCORRÊNCIA</small><strong>PDV ${esc(r.customer_code)} · ${esc(r.customer_name)}</strong><span>${esc(r.city)} • Mapa ${esc(r.map_number)} • ${esc(r.delivery_name)}</span></div><div class="damage-counts"><b>${items.length}</b><span>produtos</span><b>${pending}</b><span>pendentes</span></div></div><div class="detail-grid damage-request-grid"><div class="detail-card"><small>PDV</small><strong>${esc(r.customer_name)}</strong></div><div class="detail-card"><small>Código</small><strong>${esc(r.customer_code)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(r.city)}</strong></div><div class="detail-card"><small>Mapa</small><strong>${esc(r.map_number)}</strong></div><div class="detail-card"><small>Motorista</small><strong>${esc(r.delivery_name)}</strong></div></div><div class="damage-selection-bar"><span id="avariaSelectionSummary">0 selecionados</span><small>Marque os produtos pendentes para aprovar ou reprovar.</small></div>${productsHtml}<details class="signature-details"><summary>Ver assinatura do cliente</summary><img src="${esc(signatureUrl)}" alt="Assinatura"></details>`;
+  openModal(`Avaria • PDV ${r.customer_code}`,`${fmtDate(r.occurrence_date)} • ${r.delivery_name}`,body,[{label:'Reprovar selecionados',class:'danger',onClick:()=>reviewAvaria('REPROVADO',false)},{label:'Aprovar selecionados',class:'success',onClick:()=>reviewAvaria('APROVADO',false)},{label:'Aprovar todos pendentes',class:'primary',onClick:()=>reviewAvaria('APROVADO',true)}]);
+  const updateSelection=()=>{const n=$('modalBody').querySelectorAll('.review-check:checked').length;const el=$('avariaSelectionSummary');if(el)el.textContent=`${n} selecionado${n===1?'':'s'}`;};
+  $('modalBody').querySelectorAll('.review-check').forEach(c=>c.addEventListener('change',updateSelection));
+}
 async function reviewAvaria(status,all){if(!currentAvariaDetail)return;let ids;if(all)ids=(currentAvariaDetail.damage_items||[]).filter(i=>i.status==='PENDENTE').map(i=>i.id);else ids=[...$('modalBody').querySelectorAll('.review-check:checked')].map(x=>x.value);if(!ids.length)return toast('Selecione ao menos um produto pendente.','error');let note='';if(status==='REPROVADO'){const x=prompt('Observação da reprovação (opcional):','');if(x===null)return;note=x;}try{const {error}=await sb.rpc('review_damage_items',{p_item_ids:ids,p_status:status,p_note:note});if(error)throw error;toast(`${ids.length} produto(s) atualizado(s).`,'success');closeModal();await loadAdminAvarias(true);}catch(e){toast(humanError(e),'error');}}
 
 // CONFERENCIA ----------------------------------------------------------------
@@ -428,16 +581,63 @@ function filteredConferenceHistory(){const map=normalizeCode($('histConfMapa').v
 function renderConferenceHistory(){const arr=filteredConferenceHistory();$('tbodyHistConf').innerHTML=arr.length?arr.map(x=>`<tr><td>${fmtDate(x.conference_date)}</td><td>${fmtTime(x.conference_time)}</td><td>${esc(x.checker_name)}</td><td>${esc(x.map_number)}</td><td>${esc(x.map?.city||'—')}</td><td>${esc(x.map?.driver||'—')}</td><td>${esc(x.map?.helper1||'—')}</td><td>${esc(x.map?.helper2||'—')}</td><td>${x.g300}</td><td>${x.g600_green}</td><td>${x.g600_brown}</td><td>${x.g_litrao}</td><td>${x.keg30}</td><td>${x.keg50}</td></tr>`).join(''):'<tr><td colspan="14">Nenhum registro.</td></tr>';}
 function exportConferenceCsv(){const arr=filteredConferenceHistory();const headers=['Data','Hora','Conferente','Mapa','Cidade','Motorista','Ajudante 1','Ajudante 2','Garrafeiras de 300ml','Garrafeiras de 600ml Verde','Garrafeiras de 600ml Marrom','Garrafeiras de Litrão','Barris de Chopp 30L','Barris de Chopp 50L'];const rows=arr.map(x=>[fmtDate(x.conference_date),fmtTime(x.conference_time),x.checker_name,x.map_number,x.map?.city||'',x.map?.driver||'',x.map?.helper1||'',x.map?.helper2||'',x.g300,x.g600_green,x.g600_brown,x.g_litrao,x.keg30,x.keg50]);downloadCsv('historico_conferencias.csv',[headers,...rows]);}
 
-let dashboardRows=[];async function loadDashboard(silent=false){if(!isAdmin())return;try{let mq=sb.from('maps').select('*').order('map_date',{ascending:false}).limit(5000);let cq=sb.from('container_conferences').select('*').order('conference_date',{ascending:false}).limit(5000);const date=$('dashData').value;if(date)cq=cq.eq('conference_date',date);const [m,c]=await Promise.all([mq,cq]);if(m.error)throw m.error;if(c.error)throw c.error;allMaps=m.data||[];allConferences=c.data||[];buildDashboardRows();renderDashboard();}catch(e){if(!silent)toast(humanError(e),'error');}}
-function buildDashboardRows(){const selectedDate=$('dashData').value;const mapIndex=latestMapIndexByNumber(allMaps);const confIndex=latestConferenceIndexByNumber(allConferences);const used=new Set();const rows=[];for(const [k,c] of confIndex){rows.push(compareMap(mapIndex.get(k)||null,c));used.add(k);}const plannedMaps=selectedDate?allMaps.filter(m=>String(m.map_date||'').slice(0,10)===selectedDate):[...mapIndex.values()];for(const m of plannedMaps){const k=mapNumberKey(m.map_number);if(!k||used.has(k))continue;rows.push(compareMap(m,null));used.add(k);}dashboardRows=rows.sort((a,b)=>String(b.conference_date||b.source_map_date||'').localeCompare(String(a.conference_date||a.source_map_date||''))||String(a.map_number).localeCompare(String(b.map_number),undefined,{numeric:true}));}
-function compareMap(m,c){const diffs={};let pos=0,neg=0,divCount=0;for(const t of VALUE_TYPES){const plan=m?num(m[t.key]):0,actual=c?num(c[t.key]):0,diff=actual-plan,value=Math.abs(diff)*t.value;diffs[t.key]={...t,plan,actual,diff,value};if(diff>0)pos+=value;if(diff<0)neg+=value;if(diff!==0)divCount++;}const mapNumber=m?.map_number||c?.map_number||'';return {key:mapNumberKey(mapNumber),map_number:mapNumber,map_date:c?.conference_date||m?.map_date||'',source_map_date:m?.map_date||'',conference_date:c?.conference_date||'',city:m?.city||'',driver:m?.driver||'',helper1:m?.helper1||'',helper2:m?.helper2||'',conference:c,diffs,pos,neg,divCount,status:!m?'FORA_BASE':!c?'SEM_CONFERENCIA':divCount?'DIVERGENTE':'OK'};}
-function filteredDashboard(){const map=normalizeCode($('dashMapa').value),city=norm($('dashCidade').value);return dashboardRows.filter(x=>(!map||x.map_number.includes(map))&&(!city||norm(x.city).includes(city)));}
-function renderDashboard(){const arr=filteredDashboard();const planned=arr.filter(x=>x.status!=='FORA_BASE').length,conf=arr.filter(x=>x.conference).length,pend=arr.filter(x=>x.status==='SEM_CONFERENCIA').length,div=arr.filter(x=>x.status==='DIVERGENTE').length,pos=arr.reduce((s,x)=>s+x.pos,0),neg=arr.reduce((s,x)=>s+x.neg,0);$('kpiPlanejados').textContent=planned;$('kpiConferidos').textContent=conf;$('kpiPendentes').textContent=pend;$('kpiDivergentes').textContent=div;$('kpiPositivo').textContent=money(pos);$('kpiNegativo').textContent=money(neg);$('tbodyDashboard').innerHTML=arr.length?arr.map(x=>`<tr><td>${fmtDate(x.conference_date||x.map_date)}<strong>Mapa ${esc(x.map_number)}</strong>${x.source_map_date&&x.conference_date&&x.source_map_date!==x.conference_date?`<small>Base MAPAS: ${fmtDate(x.source_map_date)}</small>`:''}</td><td>${esc(x.city||'—')}</td><td>${esc(x.driver||'—')}<small>${esc([x.helper1,x.helper2].filter(Boolean).join(' • ')||'—')}</small></td><td>${esc(x.conference?.checker_name||'—')}</td><td>${dashStatus(x.status)}</td><td>${x.divCount}</td><td><button class="mini-btn" data-key="${esc(x.key)}">Detalhar</button></td></tr>`).join(''):'<tr><td colspan="7">Sem dados.</td></tr>';renderRanking(arr);}
+let dashboardRows=[];
+async function loadDashboard(silent=false){
+  if(!isAdmin())return;
+  try{
+    const [m,c]=await Promise.all([
+      sb.from('maps').select('*').order('map_date',{ascending:false}).limit(5000),
+      sb.from('container_conferences').select('*').order('created_at',{ascending:false}).limit(5000)
+    ]);
+    if(m.error)throw m.error;if(c.error)throw c.error;allMaps=m.data||[];allConferences=c.data||[];buildDashboardRows();renderDashboard();
+  }catch(e){if(!silent)toast(humanError(e),'error');}
+}
+function updateDashboardPeriod(){
+  const specific=$('dashPeriodo').value==='DATA';$('dashData').disabled=!specific;
+  if(!specific)$('dashData').value='';
+}
+function clearDashboardFilters(){
+  $('dashPeriodo').value='TODAS';$('dashData').value='';$('dashMapa').value='';$('dashCidade').value='';updateDashboardPeriod();renderDashboard();
+}
+function buildDashboardRows(){
+  const mapIndex=latestMapIndexByNumber(allMaps);
+  dashboardRows=allConferences.map(c=>compareMap(mapIndex.get(mapNumberKey(c.map_number))||null,c)).sort((a,b)=>String(b.display_date||'').localeCompare(String(a.display_date||''))||String(b.conference?.created_at||'').localeCompare(String(a.conference?.created_at||'')));
+}
+function compareMap(m,c){
+  const comparable=!!(m&&c),diffs={};let pos=0,neg=0,divCount=0;
+  for(const t of VALUE_TYPES){
+    const plan=m?num(m[t.key]):null,actual=c?num(c[t.key]):null,diff=comparable?actual-plan:0,value=comparable?Math.abs(diff)*t.value:0;
+    diffs[t.key]={...t,plan,actual,diff,value};if(comparable&&diff>0)pos+=value;if(comparable&&diff<0)neg+=value;if(comparable&&diff!==0)divCount++;
+  }
+  const mapNumber=m?.map_number||c?.map_number||'';
+  return {key:String(c?.id||mapKey(mapNumber,c?.conference_date||m?.map_date||'')),map_number:mapNumber,map_date:m?.map_date||'',source_map_date:m?.map_date||'',conference_date:c?.conference_date||'',display_date:m?.map_date||c?.conference_date||'',city:m?.city||'',driver:m?.driver||'',helper1:m?.helper1||'',helper2:m?.helper2||'',conference:c,diffs,pos,neg,divCount,status:!m?'SEM_BASE':divCount?'DIVERGENTE':'OK'};
+}
+function filteredDashboard(){
+  const map=normalizeCode($('dashMapa').value),city=norm($('dashCidade').value),dateMode=$('dashPeriodo').value,date=$('dashData').value;
+  return dashboardRows.filter(x=>(dateMode!=='DATA'||!date||x.display_date===date)&&(!map||x.map_number.includes(map))&&(!city||norm(x.city).includes(city)));
+}
+function shortCityLabel(city){const parts=String(city||'').split(',').map(x=>x.trim()).filter(Boolean);if(!parts.length)return '—';return parts.length===1?parts[0]:`${parts[0]} +${parts.length-1} cidade${parts.length-1===1?'':'s'}`;}
+function renderDashboard(){
+  const arr=filteredDashboard(),ok=arr.filter(x=>x.status==='OK').length,div=arr.filter(x=>x.status==='DIVERGENTE').length,noBase=arr.filter(x=>x.status==='SEM_BASE').length,pos=arr.reduce((s,x)=>s+(x.status==='DIVERGENTE'?x.pos:0),0),neg=arr.reduce((s,x)=>s+(x.status==='DIVERGENTE'?x.neg:0),0);
+  $('kpiConferencias').textContent=arr.length;$('kpiSemDiferenca').textContent=ok;$('kpiDivergentes').textContent=div;$('kpiSemBase').textContent=noBase;$('kpiPositivo').textContent=money(pos);$('kpiNegativo').textContent=money(neg);
+  $('tbodyDashboard').innerHTML=arr.length?arr.map(x=>`<tr class="dashboard-row" data-key="${esc(x.key)}"><td>${fmtDate(x.display_date)}<strong>Mapa ${esc(x.map_number)}</strong><small>${x.status==='SEM_BASE'?'Sem data de rota na base':`Data da rota${x.conference_date&&x.conference_date!==x.display_date?` • conferido em ${fmtDate(x.conference_date)}`:''}`}</small></td><td title="${esc(x.city||'')}">${esc(shortCityLabel(x.city))}</td><td>${esc(x.driver||'—')}<small>${esc([x.helper1,x.helper2].filter(Boolean).join(' • ')||'—')}</small></td><td>${esc(x.conference?.checker_name||'—')}</td><td>${dashStatus(x.status)}</td><td>${x.status==='SEM_BASE'?'—':x.divCount}</td><td><button class="mini-btn" data-key="${esc(x.key)}">Detalhar</button></td></tr>`).join(''):'<tr><td colspan="7">Nenhuma conferência encontrada.</td></tr>';
+  renderRanking(arr);
+}
 function renderRanking(arr){const drivers=new Map(),helpers=new Map();arr.filter(x=>x.status==='DIVERGENTE').forEach(x=>{accRank(drivers,x.driver,x);const unique=new Set([x.helper1,x.helper2].map(s=>String(s||'').trim()).filter(Boolean));unique.forEach(h=>accRank(helpers,h,x));});renderRankTable('rankMotoristas',drivers);renderRankTable('rankAjudantes',helpers);}
 function accRank(map,name,row){name=String(name||'').trim();if(!name)return;const x=map.get(name)||{name,maps:new Set(),pos:0,neg:0};x.maps.add(row.key);x.pos+=row.pos;x.neg+=row.neg;map.set(name,x);}
 function renderRankTable(id,map){const arr=[...map.values()].sort((a,b)=>(b.neg-a.neg)||(b.maps.size-a.maps.size)||(b.pos-a.pos));$(id).innerHTML=arr.length?arr.map((x,i)=>`<tr><td>${i+1}</td><td><strong>${esc(x.name)}</strong></td><td>${x.maps.size}</td><td class="value-positive">${money(x.pos)}</td><td class="value-negative">${money(x.neg)}</td></tr>`).join(''):'<tr><td colspan="5">Sem divergências.</td></tr>';}
-function onDashboardClick(e){const b=e.target.closest('button[data-key]');if(!b)return;const row=dashboardRows.find(x=>x.key===b.dataset.key);if(row)showDashboardDetail(row);}
-function showDashboardDetail(r){const rows=VALUE_TYPES.map(t=>{const d=r.diffs[t.key],cls=d.diff>0?'value-positive':d.diff<0?'value-negative':'value-zero';return `<tr><td><strong>${esc(t.label)}</strong></td><td>${d.plan}</td><td>${d.actual}</td><td class="${cls}">${d.diff>0?'+':''}${d.diff}</td><td class="${cls}">${money(d.value)}</td></tr>`;}).join('');const dateInfo=r.conference_date&&r.source_map_date&&r.conference_date!==r.source_map_date?`Conferência: ${fmtDate(r.conference_date)} • Base MAPAS: ${fmtDate(r.source_map_date)}`:`${fmtDate(r.conference_date||r.source_map_date)} • ${r.city||'—'}`;const body=`<div class="detail-grid"><div class="detail-card"><small>Motorista</small><strong>${esc(r.driver||'—')}</strong></div><div class="detail-card"><small>Ajudante 1</small><strong>${esc(r.helper1||'—')}</strong></div><div class="detail-card"><small>Ajudante 2</small><strong>${esc(r.helper2||'—')}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(r.conference?.checker_name||'—')}</strong></div></div><table class="detail-table"><thead><tr><th>Vasilhame</th><th>Planilha</th><th>Conferido</th><th>Diferença</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table><div class="detail-grid" style="margin-top:12px"><div class="detail-card"><small>Valor total em divergências positivas</small><strong class="value-positive">${money(r.pos)}</strong></div><div class="detail-card"><small>Valor total em divergências negativas</small><strong class="value-negative">${money(r.neg)}</strong></div></div>`;openModal(`Mapa ${r.map_number}`,dateInfo,body,[]);}
+function onDashboardClick(e){const target=e.target.closest('[data-key]');if(!target)return;const row=dashboardRows.find(x=>x.key===target.dataset.key);if(row)showDashboardDetail(row);}
+function showDashboardDetail(r){
+  if(r.status==='SEM_BASE'){
+    const actualRows=VALUE_TYPES.map(t=>`<tr><td><strong>${esc(t.label)}</strong></td><td>${r.diffs[t.key].actual??0}</td></tr>`).join('');
+    const body=`<div class="notice"><strong>Conferência sem base MAPAS.</strong> Não existe cálculo de diferença até que o mapa esteja cadastrado na base. Os valores abaixo são apenas o que foi conferido.</div><div class="detail-grid" style="margin-top:12px"><div class="detail-card"><small>Conferente</small><strong>${esc(r.conference?.checker_name||'—')}</strong></div><div class="detail-card"><small>Data da conferência</small><strong>${fmtDate(r.conference_date)}</strong></div></div><table class="detail-table"><thead><tr><th>Vasilhame</th><th>Conferido</th></tr></thead><tbody>${actualRows}</tbody></table>`;
+    return openModal(`Mapa ${r.map_number}`,'Sem base MAPAS',body,[]);
+  }
+  const rows=VALUE_TYPES.map(t=>{const d=r.diffs[t.key],cls=d.diff>0?'value-positive':d.diff<0?'value-negative':'value-zero';return `<tr><td><strong>${esc(t.label)}</strong></td><td>${d.plan}</td><td>${d.actual}</td><td class="${cls}">${d.diff>0?'+':''}${d.diff}</td><td class="${cls}">${money(d.value)}</td></tr>`;}).join('');
+  const dateInfo=`Data da rota: ${fmtDate(r.source_map_date)}${r.conference_date?` • Conferido em: ${fmtDate(r.conference_date)}`:''} • ${r.city||'—'}`;
+  const body=`<div class="detail-grid"><div class="detail-card"><small>Motorista</small><strong>${esc(r.driver||'—')}</strong></div><div class="detail-card"><small>Ajudante 1</small><strong>${esc(r.helper1||'—')}</strong></div><div class="detail-card"><small>Ajudante 2</small><strong>${esc(r.helper2||'—')}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(r.conference?.checker_name||'—')}</strong></div></div><table class="detail-table"><thead><tr><th>Vasilhame</th><th>Planilha</th><th>Conferido</th><th>Diferença</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table><div class="detail-grid" style="margin-top:12px"><div class="detail-card"><small>Valor total em divergências positivas</small><strong class="value-positive">${money(r.pos)}</strong></div><div class="detail-card"><small>Valor total em divergências negativas</small><strong class="value-negative">${money(r.neg)}</strong></div></div>`;
+  openModal(`Mapa ${r.map_number}`,dateInfo,body,[]);
+}
 
 // USERS ----------------------------------------------------------------------
 let users=[];async function loadUsers(){if(!isAdmin())return;try{const {data,error}=await sb.from('profiles').select('*').order('name');if(error)throw error;users=data||[];renderUsers();}catch(e){toast(humanError(e),'error');}}
@@ -500,9 +700,9 @@ function normalizeImport(type,rows){const h=(r,...aliases)=>{for(const a of alia
 
 // MODAL / HELPERS ------------------------------------------------------------
 function openModal(title,subtitle,body,actions=[]){$('modalTitle').textContent=title;$('modalSubtitle').textContent=subtitle||'';$('modalBody').innerHTML=body||'';const a=$('modalActions');a.innerHTML='';actions.forEach(x=>{const b=document.createElement('button');b.className=`btn ${x.class||'secondary'}`;b.textContent=x.label;b.addEventListener('click',x.onClick);a.appendChild(b);});$('modal').classList.add('open');}
-function closeModal(){$('modal').classList.remove('open');$('modalBody').innerHTML='';$('modalActions').innerHTML='';}
+function closeModal(){$('modal').classList.remove('open');$('modalBody').onchange=null;$('modalBody').innerHTML='';$('modalActions').innerHTML='';}
 function statusBadge(s){const cls=s==='IMPRESSO'||s==='APROVADO'?'ok':s==='REPROVADO'||s==='REMOVIDO'?'bad':s==='PARCIAL'?'partial':'pending';return `<span class="status ${cls}">${esc(s)}</span>`;}
-function dashStatus(s){return s==='OK'?'<span class="status ok">Sem diferença</span>':s==='DIVERGENTE'?'<span class="status bad">Divergente</span>':s==='SEM_CONFERENCIA'?'<span class="status pending">Sem conferência</span>':'<span class="status partial">Fora da base</span>';}
+function dashStatus(s){return s==='OK'?'<span class="status ok">Sem diferença</span>':s==='DIVERGENTE'?'<span class="status bad">Com diferença</span>':'<span class="status pending">Sem base MAPAS</span>';}
 function toast(msg,type=''){const t=$('toast');t.textContent=msg;t.className=`toast show ${type}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='toast',3600);}
 function humanError(e){const m=String(e?.message||e?.error_description||e||'Erro desconhecido');if(m.includes('FORBIDDEN'))return 'Seu perfil não possui permissão para esta ação.';if(m.includes('JWT'))return 'Sua sessão expirou. Entre novamente.';if(m.includes('Failed to fetch'))return 'Falha de conexão. Verifique a internet.';return m;}
 function humanGpsError(e){const code=e?.code;const msg=String(e?.message||e||'erro ao obter localização.');if(code===1||/PERMISSAO_LOCALIZACAO_NEGADA|permission denied|permission/i.test(msg))return 'permissão de localização não concedida. No Android, abra Configurações > Apps > Disb Gestão > Permissões > Localização e permita durante o uso.';if(code===2)return 'localização indisponível no aparelho.';if(code===3)return 'tempo esgotado ao obter GPS.';return msg;}

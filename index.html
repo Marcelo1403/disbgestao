@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#073b6f">
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=1.0.11">
+  <link rel="stylesheet" href="styles.css?v=1.0.12">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -15,7 +15,7 @@
         <div class="login-logo"><img src="assets/icon-192.png" alt="Disb Gestão"></div>
         <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
         <h1>Disb Gestão</h1>
-        <p>NRI, avarias e conferência de vasilhames em um único aplicativo.</p><div class="login-version">v1.0.11</div>
+        <p>NRI, avarias e conferência de vasilhames em um único aplicativo.</p><div class="login-version">v1.0.12</div>
         <div class="feature-list">
           <span>✓ Cadastro por carreta e impressão de NRIs</span>
           <span>✓ Avarias com foto, GPS e assinatura</span>
@@ -39,22 +39,38 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.0.11</div>
-      <div class="nav-group-label">NRI</div>
-      <button class="nav-item role-nri" data-view="nri-cadastro"><span>＋</span>Cadastro por carreta</button>
-      <button class="nav-item role-nri" data-view="nri-pendentes"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
-      <div class="nav-group-label role-avaria">Motorista</div>
-      <button class="nav-item role-avaria" data-view="avaria-cadastro"><span>!</span>Registrar avaria</button>
-      <div class="nav-group-label role-conferencia">Conferência</div>
-      <button class="nav-item role-conferencia" data-view="conf-cadastro"><span>✓</span>Conferência de vasilhames</button>
-      <button class="nav-item role-conferencia" data-view="conf-minhas"><span>↺</span>Minhas conferências</button>
-      <div class="nav-group-label admin-only">Administração</div>
-      <button class="nav-item admin-only" data-view="avaria-admin"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
-      <button class="nav-item admin-only" data-view="nri-historico"><span>⌕</span>Histórico NRI</button>
-      <button class="nav-item admin-only" data-view="conf-historico"><span>▤</span>Histórico conferências</button>
-      <button class="nav-item admin-only" data-view="conf-dashboard"><span>◫</span>Dashboard conferência</button>
-      <button class="nav-item admin-only" data-view="usuarios"><span>♙</span>Usuários</button>
-      <button class="nav-item admin-only" data-view="bases"><span>⇅</span>Bases / importação</button>
+      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.0.12</div>
+      <div class="nav-module role-nri open" data-module="nri">
+        <button type="button" class="nav-module-toggle" aria-expanded="true"><span class="module-icon">▣</span><span class="module-name">NRI</span><span class="module-chevron">⌄</span></button>
+        <div class="nav-module-items">
+          <button class="nav-item role-nri" data-view="nri-cadastro"><span>＋</span>Cadastro por carreta</button>
+          <button class="nav-item role-nri" data-view="nri-pendentes"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
+          <button class="nav-item admin-only" data-view="nri-historico"><span>⌕</span>Histórico NRI</button>
+        </div>
+      </div>
+      <div class="nav-module role-avaria" data-module="avarias">
+        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias</span><span class="module-chevron">⌄</span></button>
+        <div class="nav-module-items">
+          <button class="nav-item role-avaria" data-view="avaria-cadastro"><span>＋</span>Registrar avaria</button>
+          <button class="nav-item admin-only" data-view="avaria-admin"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
+        </div>
+      </div>
+      <div class="nav-module role-conferencia" data-module="conferencia">
+        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">✓</span><span class="module-name">Conferência</span><span class="module-chevron">⌄</span></button>
+        <div class="nav-module-items">
+          <button class="nav-item role-conferencia" data-view="conf-cadastro"><span>✓</span>Conferência de vasilhames</button>
+          <button class="nav-item role-conferencia" data-view="conf-minhas"><span>↺</span>Minhas conferências</button>
+          <button class="nav-item admin-only" data-view="conf-historico"><span>▤</span>Histórico conferências</button>
+          <button class="nav-item admin-only" data-view="conf-dashboard"><span>◫</span>Dashboard conferência</button>
+        </div>
+      </div>
+      <div class="nav-module admin-only" data-module="administracao">
+        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">⚙</span><span class="module-name">Administração</span><span class="module-chevron">⌄</span></button>
+        <div class="nav-module-items">
+          <button class="nav-item admin-only" data-view="usuarios"><span>♙</span>Usuários</button>
+          <button class="nav-item admin-only" data-view="bases"><span>⇅</span>Bases / importação</button>
+        </div>
+      </div>
       <button id="btnSairMobile" class="sidebar-logout">Sair</button>
     </aside>
 
@@ -122,10 +138,15 @@
             <div class="grid grid-4">
               <div class="field"><label>Data *</label><input id="avData" type="date" required></div>
               <div class="field"><label>Motorista</label><input id="avEntregador" readonly></div>
-              <div class="field"><label>PDV *</label><input id="avPdv" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" required placeholder="Código do cliente"><small class="field-help">Digite o código completo. O sistema não exibirá sugestões de clientes.</small></div>
+              <div class="field"><label>Código PDV *</label><input id="avPdv" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" required placeholder="Código do cliente"><small class="field-help">Digite o código completo. O sistema não exibirá sugestões de clientes.</small></div>
               <div class="field"><label>Mapa *</label><input id="avMapa" inputmode="numeric" required></div>
             </div>
-            <div id="avClienteCard" class="customer-card"><div><small>CLIENTE</small><strong id="avClienteNome">Digite um PDV</strong></div><div><small>CIDADE</small><strong id="avCidade">—</strong></div></div><div id="avClienteDuplicado" class="field hidden" style="margin-top:10px"><label>Cliente / filial *</label><select id="avClienteEscolha"><option value="">Selecione o cliente</option></select><small>Este código existe em mais de uma filial. Selecione o cliente correto.</small></div>
+            <div id="avClienteCard" class="customer-card customer-card-4">
+              <div><small>PDV</small><strong id="avClienteNome">Digite um código</strong></div>
+              <div><small>CÓDIGO</small><strong id="avClienteCodigo">—</strong></div>
+              <div><small>CIDADE</small><strong id="avCidade">—</strong></div>
+              <div><small>MAPA</small><strong id="avMapaResumo">—</strong></div>
+            </div><div id="avClienteDuplicado" class="field hidden" style="margin-top:10px"><label>Cliente / filial *</label><select id="avClienteEscolha"><option value="">Selecione o cliente</option></select><small>Este código existe em mais de uma filial. Selecione o cliente correto.</small></div>
             <div class="form-block accent">
               <div class="block-head"><span class="step">+</span><div><strong>Produto avariado</strong><small>Foto e GPS são obrigatórios por produto.</small></div></div>
               <div class="grid grid-4">
@@ -136,7 +157,7 @@
                 <div class="field span-2"><label>Motivo *</label><select id="avMotivo"><option value="">Selecione</option><option>Quebrado</option><option>Embalagem amassada/rasgada</option><option>Faltando na Grade</option><option>Não foi no caminhão</option><option>Furada</option><option>Sem Tampa</option><option>Mal cheia</option></select></div>
               </div>
               <div class="evidence-grid">
-                <div class="evidence-card"><strong>Foto obrigatória</strong><div class="actions"><button type="button" id="btnAvCamera" class="btn secondary">Abrir câmera</button><button type="button" id="btnAvArquivo" class="btn secondary">Enviar foto</button></div><input id="avFotoCamera" type="file" accept="image/*" capture="environment" class="hidden"><input id="avFotoArquivo" type="file" accept="image/*" class="hidden"><img id="avFotoPreview" class="photo-preview hidden" alt=""><div id="avGpsStatus" class="gps-status">GPS ainda não capturado.</div></div>
+                <div class="evidence-card"><div class="evidence-card-head"><div><strong>Fotos da avaria *</strong><small>Adicione de 1 a 5 fotos. Cada foto registra seu próprio GPS.</small></div><span id="avFotoCounter" class="counter">0/5 fotos</span></div><div class="actions"><button type="button" id="btnAvCamera" class="btn secondary">Abrir câmera</button><button type="button" id="btnAvArquivo" class="btn secondary">Adicionar fotos</button></div><input id="avFotoCamera" type="file" accept="image/*" capture="environment" class="hidden"><input id="avFotoArquivo" type="file" accept="image/*" multiple class="hidden"><div id="avPhotoGallery" class="photo-gallery empty"><span>Nenhuma foto adicionada.</span></div><div id="avGpsStatus" class="gps-status">Adicione uma foto para capturar a localização.</div></div>
               </div>
               <div class="actions right"><button type="button" id="btnCancelarAvItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarAvItem" class="btn primary">+ Adicionar produto</button></div>
             </div>
@@ -195,9 +216,9 @@
       <!-- DASHBOARD -->
       <section id="view-conf-dashboard" class="view admin-only">
         <div class="page-head"><div><div class="breadcrumb">Admin / Conferência</div><h1>Dashboard comparativo</h1><p>Planejado x conferido, impacto financeiro e rankings.</p></div><span class="page-chip admin">DASHBOARD</span></div>
-        <div class="card"><div class="filters grid grid-4"><div class="field"><label>Data</label><input id="dashData" type="date"></div><div class="field"><label>Mapa</label><input id="dashMapa"></div><div class="field"><label>Cidade</label><input id="dashCidade"></div><div class="actions end"><button id="btnAtualizarDashboard" class="btn primary">Atualizar</button></div></div></div>
-        <div class="kpi-grid"><div class="kpi"><span>Mapas planejados</span><strong id="kpiPlanejados">0</strong></div><div class="kpi"><span>Conferidos</span><strong id="kpiConferidos">0</strong></div><div class="kpi"><span>Sem conferência</span><strong id="kpiPendentes">0</strong></div><div class="kpi warning"><span>Mapas divergentes</span><strong id="kpiDivergentes">0</strong></div><div class="kpi positive"><span>Divergências positivas</span><strong id="kpiPositivo">R$ 0,00</strong></div><div class="kpi negative"><span>Divergências negativas</span><strong id="kpiNegativo">R$ 0,00</strong></div></div>
-        <div class="card"><div class="table-wrap"><table><thead><tr><th>Data / mapa</th><th>Cidade</th><th>Equipe</th><th>Conferente</th><th>Status</th><th>Itens divergentes</th><th>Ações</th></tr></thead><tbody id="tbodyDashboard"></tbody></table></div></div>
+        <div class="card"><div class="dashboard-filters"><div class="field"><label>Período</label><select id="dashPeriodo"><option value="TODAS">Todas as conferências</option><option value="DATA">Data específica</option></select></div><div class="field"><label>Data da rota</label><input id="dashData" type="date" disabled></div><div class="field"><label>Mapa</label><input id="dashMapa" placeholder="Todos"></div><div class="field"><label>Cidade</label><input id="dashCidade" placeholder="Todas"></div><div class="actions end"><button id="btnLimparDashboard" class="btn secondary">Limpar filtros</button><button id="btnAtualizarDashboard" class="btn primary">Atualizar</button></div></div><div class="filter-help">A data usada é a data da rota existente na base MAPAS. A data em que a conferência foi realizada não interfere na conciliação.</div></div>
+        <div class="kpi-grid"><div class="kpi"><span>Conferências analisadas</span><strong id="kpiConferencias">0</strong></div><div class="kpi"><span>Sem diferença</span><strong id="kpiSemDiferenca">0</strong></div><div class="kpi warning"><span>Com diferença</span><strong id="kpiDivergentes">0</strong></div><div class="kpi warning"><span>Sem base MAPAS</span><strong id="kpiSemBase">0</strong></div><div class="kpi positive"><span>Divergências positivas</span><strong id="kpiPositivo">R$ 0,00</strong></div><div class="kpi negative"><span>Divergências negativas</span><strong id="kpiNegativo">R$ 0,00</strong></div></div>
+        <div class="card"><div class="table-wrap"><table><thead><tr><th>Data da rota / mapa</th><th>Cidade</th><th>Equipe</th><th>Conferente</th><th>Status</th><th>Itens divergentes</th><th>Ações</th></tr></thead><tbody id="tbodyDashboard"></tbody></table></div></div>
         <div class="ranking-grid"><div class="card"><div class="section-title">Ranking de motoristas</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Motorista</th><th>Mapas divergentes</th><th>Valor positivo</th><th>Valor negativo</th></tr></thead><tbody id="rankMotoristas"></tbody></table></div></div><div class="card"><div class="section-title">Ranking de ajudantes</div><div class="table-wrap"><table><thead><tr><th>#</th><th>Ajudante</th><th>Mapas divergentes</th><th>Valor positivo</th><th>Valor negativo</th></tr></thead><tbody id="rankAjudantes"></tbody></table></div></div></div>
       </section>
 
@@ -225,7 +246,7 @@
   <div id="toast" class="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=1.0.11"></script>
-  <script src="app.js?v=1.0.11"></script>
+  <script src="config.js?v=1.0.12"></script>
+  <script src="app.js?v=1.0.12"></script>
 </body>
 </html>

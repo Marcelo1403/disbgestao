@@ -9,7 +9,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique,
   name text not null,
-  role text not null default 'CONFERENTE' check (role in ('ADMIN','COLABORADOR_ARMAZEM','COLABORADOR_ENTREGA','CONFERENTE')),
+  role text not null default 'COLABORADOR_ARMAZEM' check (role in ('ADMIN','COLABORADOR_ARMAZEM','COLABORADOR_ENTREGA','CONFERENTE')),
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -40,7 +40,7 @@ begin
   v_username := lower(regexp_replace(coalesce(new.raw_user_meta_data->>'username', split_part(coalesce(new.email,''),'@',1)), E'\\s+', '.', 'g'));
   v_name := coalesce(nullif(new.raw_user_meta_data->>'name',''), initcap(replace(v_username,'.',' ')));
   insert into public.profiles(id,username,name,role,active)
-  values(new.id,v_username,v_name,'CONFERENTE',true)
+  values(new.id,v_username,v_name,'COLABORADOR_ARMAZEM',true)
   on conflict (id) do nothing;
   return new;
 end;
@@ -103,12 +103,15 @@ create table if not exists public.factories (
   active boolean not null default true
 );
 create table if not exists public.customers (
-  code text primary key,
+  id uuid primary key default gen_random_uuid(),
+  code text not null,
   name text not null,
   city text not null default '',
   branch text not null default '',
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique(code,branch)
 );
+create index if not exists idx_customers_code on public.customers(code);
 
 -- NRI ------------------------------------------------------------------------
 create sequence if not exists public.nri_number_seq start 1;
@@ -116,6 +119,7 @@ create sequence if not exists public.nri_number_seq start 1;
 create table if not exists public.nri_requests (
   id uuid primary key default gen_random_uuid(),
   unit text not null,
+  request_type text not null default 'AMBEV' check (request_type in ('AMBEV','MARKETPLACE')),
   receipt_date date not null,
   checker_id uuid references auth.users(id),
   checker_name text not null,
@@ -135,10 +139,11 @@ create table if not exists public.nris (
   product_code text not null,
   product_name text not null,
   unit text not null,
-  validity_date date not null,
+  request_type text not null default 'AMBEV' check (request_type in ('AMBEV','MARKETPLACE')),
+  validity_date date,
   lot text not null,
   receipt_date date not null,
-  block_date date not null,
+  block_date date,
   checker_name text not null,
   shift text not null,
   receipt_time time not null,
@@ -201,34 +206,57 @@ declare
   v_count integer;
   v_i integer;
   v_rows jsonb;
+  v_type text;
+  v_driver text;
+  v_plate text;
+  v_factory text;
+  v_validity date;
 begin
-  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]) then
+  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]) then
     raise exception 'FORBIDDEN';
   end if;
+
   select * into v_profile from public.profiles where id=auth.uid() and active=true;
   if v_profile.id is null then raise exception 'UNAUTHORIZED'; end if;
 
-  insert into public.nri_requests(unit,receipt_date,checker_id,checker_name,shift,receipt_time,driver,plate,factory,created_by)
-  values(
-    btrim(p_payload->>'unit'),
-    (p_payload->>'receipt_date')::date,
-    auth.uid(), v_profile.name,
-    btrim(p_payload->>'shift'),
-    (p_payload->>'receipt_time')::time,
-    btrim(p_payload->>'driver'), upper(btrim(p_payload->>'plate')), btrim(p_payload->>'factory'), auth.uid()
+  v_type := upper(coalesce(nullif(btrim(p_payload->>'request_type'),''),'AMBEV'));
+  if v_type not in ('AMBEV','MARKETPLACE') then raise exception 'TIPO_NRI_INVALIDO'; end if;
+
+  if v_type = 'MARKETPLACE' then
+    v_driver := '--';
+    v_plate := '--';
+    v_factory := '--';
+  else
+    v_driver := btrim(p_payload->>'driver');
+    v_plate := upper(btrim(p_payload->>'plate'));
+    v_factory := btrim(p_payload->>'factory');
+    if coalesce(v_driver,'')='' or coalesce(v_plate,'')='' or coalesce(v_factory,'')='' then
+      raise exception 'DADOS_TRANSPORTE_OBRIGATORIOS';
+    end if;
+  end if;
+
+  insert into public.nri_requests(
+    unit,request_type,receipt_date,checker_id,checker_name,shift,receipt_time,driver,plate,factory,created_by
+  ) values(
+    btrim(p_payload->>'unit'),v_type,(p_payload->>'receipt_date')::date,
+    auth.uid(),v_profile.name,btrim(p_payload->>'shift'),(p_payload->>'receipt_time')::time,
+    v_driver,v_plate,v_factory,auth.uid()
   ) returning id into v_req;
 
   for v_item in select value from jsonb_array_elements(coalesce(p_payload->'items','[]'::jsonb)) loop
     v_count := greatest(1, coalesce((v_item->>'pallets')::integer,1));
+    v_validity := nullif(btrim(coalesce(v_item->>'validity_date','')),'')::date;
+
     for v_i in 1..v_count loop
       insert into public.nris(
-        nri,request_id,product_code,product_name,unit,validity_date,lot,receipt_date,block_date,
+        nri,request_id,product_code,product_name,unit,request_type,validity_date,lot,receipt_date,block_date,
         checker_name,shift,receipt_time,driver,plate,factory,quantity,status,created_by,created_by_username,created_by_name
       ) values(
-        null,v_req,btrim(v_item->>'product_code'),btrim(v_item->>'product_name'),btrim(p_payload->>'unit'),
-        (v_item->>'validity_date')::date,upper(btrim(v_item->>'lot')),(p_payload->>'receipt_date')::date,
-        ((v_item->>'validity_date')::date - 30),v_profile.name,btrim(p_payload->>'shift'),(p_payload->>'receipt_time')::time,
-        btrim(p_payload->>'driver'),upper(btrim(p_payload->>'plate')),btrim(p_payload->>'factory'),
+        null,v_req,btrim(v_item->>'product_code'),btrim(v_item->>'product_name'),btrim(p_payload->>'unit'),v_type,
+        v_validity,upper(btrim(v_item->>'lot')),(p_payload->>'receipt_date')::date,
+        case when v_validity is null then null else (v_validity - 30) end,
+        v_profile.name,btrim(p_payload->>'shift'),(p_payload->>'receipt_time')::time,
+        v_driver,v_plate,v_factory,
         greatest(0,(v_item->>'quantity')::integer),'PENDENTE',auth.uid(),v_profile.username,v_profile.name
       );
     end loop;
@@ -252,7 +280,7 @@ declare
   v_profile public.profiles%rowtype;
   v_codes text[];
 begin
-  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]) then raise exception 'FORBIDDEN'; end if;
+  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]) then raise exception 'FORBIDDEN'; end if;
   select * into v_profile from public.profiles where id=auth.uid() and active=true;
   select coalesce(array_agg(nri order by nri),'{}') into v_codes from public.nris where id=any(p_ids);
 
@@ -275,7 +303,7 @@ set search_path = public
 as $$
 declare v_count integer;
 begin
-  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]) then raise exception 'FORBIDDEN'; end if;
+  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]) then raise exception 'FORBIDDEN'; end if;
   update public.nris set status='REMOVIDO',removed_at=now() where id=any(p_ids) and status='PENDENTE';
   get diagnostics v_count = row_count;
   return v_count;
@@ -343,6 +371,20 @@ create table if not exists public.damage_items (
 create index if not exists idx_damage_items_lot on public.damage_items(upper(lot));
 create index if not exists idx_damage_requests_status on public.damage_requests(status);
 
+create table if not exists public.damage_item_photos (
+  id uuid primary key default gen_random_uuid(),
+  item_id uuid not null references public.damage_items(id) on delete cascade,
+  photo_order integer not null check (photo_order between 1 and 5),
+  photo_path text not null,
+  latitude double precision not null,
+  longitude double precision not null,
+  gps_accuracy double precision,
+  gps_captured_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique(item_id, photo_order)
+);
+create index if not exists idx_damage_item_photos_item on public.damage_item_photos(item_id);
+
 create or replace function public.create_damage_request(p_payload jsonb)
 returns uuid
 language plpgsql
@@ -353,10 +395,19 @@ declare
   v_profile public.profiles%rowtype;
   v_req uuid;
   v_item jsonb;
+  v_item_id uuid;
   v_order integer := 0;
+  v_photos jsonb;
+  v_photo jsonb;
+  v_first_photo jsonb;
+  v_photo_order integer;
 begin
-  if not public.has_role(array['ADMIN','COLABORADOR_ENTREGA']::text[]) then raise exception 'FORBIDDEN'; end if;
+  if not public.has_role(array['ADMIN','COLABORADOR_ENTREGA']::text[]) then
+    raise exception 'FORBIDDEN';
+  end if;
+
   select * into v_profile from public.profiles where id=auth.uid() and active=true;
+  if v_profile.id is null then raise exception 'UNAUTHORIZED'; end if;
 
   insert into public.damage_requests(
     occurrence_date,delivery_user_id,delivery_username,delivery_name,customer_code,customer_name,city,map_number,
@@ -369,15 +420,48 @@ begin
 
   for v_item in select value from jsonb_array_elements(coalesce(p_payload->'items','[]'::jsonb)) loop
     v_order := v_order + 1;
+    v_photos := case when jsonb_typeof(v_item->'photos')='array' then v_item->'photos' else '[]'::jsonb end;
+
+    -- Compatibilidade: se o cliente antigo mandar somente photo_path/GPS no item,
+    -- converte para um array de uma foto.
+    if jsonb_array_length(v_photos)=0 and coalesce(v_item->>'photo_path','')<>'' then
+      v_photos := jsonb_build_array(jsonb_build_object(
+        'photo_path',v_item->>'photo_path',
+        'latitude',v_item->>'latitude',
+        'longitude',v_item->>'longitude',
+        'accuracy',v_item->>'accuracy',
+        'gps_at',v_item->>'gps_at'
+      ));
+    end if;
+
+    if jsonb_array_length(v_photos)=0 then raise exception 'FOTO_OBRIGATORIA'; end if;
+    if jsonb_array_length(v_photos)>5 then raise exception 'MAXIMO_5_FOTOS'; end if;
+
+    v_first_photo := v_photos->0;
+
     insert into public.damage_items(
-      request_id,item_order,product_text,lot,quantity,quantity_unit,reason,photo_path,latitude,longitude,gps_accuracy,gps_captured_at
+      request_id,item_order,product_text,lot,quantity,quantity_unit,reason,
+      photo_path,latitude,longitude,gps_accuracy,gps_captured_at
     ) values(
       v_req,v_order,btrim(v_item->>'product'),upper(btrim(v_item->>'lot')),(v_item->>'quantity')::numeric,
-      upper(v_item->>'unit'),btrim(v_item->>'reason'),btrim(v_item->>'photo_path'),
-      (v_item->>'latitude')::double precision,(v_item->>'longitude')::double precision,
-      nullif(v_item->>'accuracy','')::double precision,nullif(v_item->>'gps_at','')::timestamptz
-    );
+      upper(v_item->>'unit'),btrim(v_item->>'reason'),btrim(v_first_photo->>'photo_path'),
+      (v_first_photo->>'latitude')::double precision,(v_first_photo->>'longitude')::double precision,
+      nullif(v_first_photo->>'accuracy','')::double precision,nullif(v_first_photo->>'gps_at','')::timestamptz
+    ) returning id into v_item_id;
+
+    v_photo_order := 0;
+    for v_photo in select value from jsonb_array_elements(v_photos) loop
+      v_photo_order := v_photo_order + 1;
+      insert into public.damage_item_photos(
+        item_id,photo_order,photo_path,latitude,longitude,gps_accuracy,gps_captured_at
+      ) values(
+        v_item_id,v_photo_order,btrim(v_photo->>'photo_path'),
+        (v_photo->>'latitude')::double precision,(v_photo->>'longitude')::double precision,
+        nullif(v_photo->>'accuracy','')::double precision,nullif(v_photo->>'gps_at','')::timestamptz
+      );
+    end loop;
   end loop;
+
   return v_req;
 end;
 $$;
@@ -469,7 +553,7 @@ declare
   v_now timestamp;
   v_row public.container_conferences%rowtype;
 begin
-  if not public.has_role(array['ADMIN','CONFERENTE']::text[]) then raise exception 'FORBIDDEN'; end if;
+  if not public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]) then raise exception 'FORBIDDEN'; end if;
   select * into v_profile from public.profiles where id=auth.uid() and active=true;
   v_now := timezone('America/Fortaleza', now());
   insert into public.container_conferences(
@@ -495,6 +579,7 @@ alter table public.nris enable row level security;
 alter table public.print_events enable row level security;
 alter table public.damage_requests enable row level security;
 alter table public.damage_items enable row level security;
+alter table public.damage_item_photos enable row level security;
 alter table public.container_conferences enable row level security;
 alter table public.maps enable row level security;
 
@@ -520,6 +605,7 @@ drop policy if exists "nris_nri_roles_update" on public.nris;
 drop policy if exists "print_events_admin_read" on public.print_events;
 drop policy if exists "damage_requests_read" on public.damage_requests;
 drop policy if exists "damage_items_read" on public.damage_items;
+drop policy if exists "damage_item_photos_read" on public.damage_item_photos;
 drop policy if exists "conference_read" on public.container_conferences;
 drop policy if exists "conference_admin_insert_migration" on public.container_conferences;
 drop policy if exists "maps_admin_read" on public.maps;
@@ -547,14 +633,14 @@ create policy "customers_admin_all" on public.customers for all to authenticated
 
 -- NRI
 create policy "nri_requests_read" on public.nri_requests for select to authenticated
-using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]));
+using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]));
 create policy "nris_read" on public.nris for select to authenticated
-using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]));
+using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]));
 create policy "nris_admin_insert_migration" on public.nris for insert to authenticated
 with check (public.is_admin());
 create policy "nris_nri_roles_update" on public.nris for update to authenticated
-using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]))
-with check (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM']::text[]));
+using (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]))
+with check (public.has_role(array['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE']::text[]));
 create policy "print_events_admin_read" on public.print_events for select to authenticated using (public.is_admin());
 
 -- Avarias
@@ -562,6 +648,11 @@ create policy "damage_requests_read" on public.damage_requests for select to aut
 using (public.is_admin() or created_by=auth.uid());
 create policy "damage_items_read" on public.damage_items for select to authenticated
 using (public.is_admin() or exists(select 1 from public.damage_requests r where r.id=request_id and r.created_by=auth.uid()));
+create policy "damage_item_photos_read" on public.damage_item_photos for select to authenticated
+using (public.is_admin() or exists(
+  select 1 from public.damage_items i join public.damage_requests r on r.id=i.request_id
+  where i.id=item_id and r.created_by=auth.uid()
+));
 
 -- Conferencias
 create policy "conference_read" on public.container_conferences for select to authenticated
@@ -573,8 +664,10 @@ create policy "maps_admin_all" on public.maps for all to authenticated using (pu
 
 -- Grants. RLS continua controlando as linhas.
 grant usage on schema public to authenticated;
+grant usage on schema public to service_role;
+grant select,insert,update,delete on table public.profiles to service_role;
 grant select,insert,update,delete on public.profiles,public.products,public.units,public.shifts,public.drivers,public.factories,public.customers,
-  public.nri_requests,public.nris,public.print_events,public.damage_requests,public.damage_items,public.container_conferences,public.maps to authenticated;
+  public.nri_requests,public.nris,public.print_events,public.damage_requests,public.damage_items,public.damage_item_photos,public.container_conferences,public.maps to authenticated;
 grant execute on function public.current_role() to authenticated;
 grant execute on function public.has_role(text[]) to authenticated;
 grant execute on function public.is_admin() to authenticated;
@@ -616,6 +709,9 @@ begin
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='damage_items') then
     execute 'alter publication supabase_realtime add table public.damage_items';
+  end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='damage_item_photos') then
+    execute 'alter publication supabase_realtime add table public.damage_item_photos';
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='container_conferences') then
     execute 'alter publication supabase_realtime add table public.container_conferences';

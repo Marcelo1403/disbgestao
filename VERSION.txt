@@ -1,1 +1,1 @@
-v1.0.11 - perfis unificados, Motorista, NRI Ambev/Marketplace, Sem Validade, sem sugestoes e GPS Android
+v1.0.12 - menu modular, avarias multifotos, evidencias recolhiveis e dashboard por data da rota
