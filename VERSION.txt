@@ -1,1 +1,1 @@
-v1.1.3 - linha do tempo com Ver no mapa e foco direto no marcador da etapa
+v1.1.4 - GPS ate 30 m, responsavel por etapa e histogramas de chegada a fabrica
