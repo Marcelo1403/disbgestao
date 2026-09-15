@@ -1,1 +1,1 @@
-v1.1.6 - corrige cache do APK e garante leitura da tolerancia GPS configurada
+v1.1.7 - recarrega tolerancia GPS do Supabase imediatamente antes de cada apontamento

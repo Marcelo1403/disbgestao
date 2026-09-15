@@ -1,0 +1,5 @@
+DISB GESTAO v1.1.7
+
+Correcao: a tolerancia GPS e recarregada diretamente do Supabase antes de cada apontamento.
+Nao ha SQL novo.
+Aplique o PATCH na raiz do projeto, rode npm run android:sync, faca commit/push e gere o APK.
