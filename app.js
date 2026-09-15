@@ -724,6 +724,7 @@ let pullSettings=null;
 let pullDriverEvents=[];
 let pullDriverOccurrences=[];
 let pullHistory=[];
+let pullHistoryEvents=[];
 let pullDashTrips=[];
 let pullGoals=null;
 let pullMetric='TMV_OUT';
@@ -736,8 +737,6 @@ let pullMapInstances=[];
 
 function bindPullEvents(){
   $('formPullStart')?.addEventListener('submit',startPullTrip);
-  $('pullStartPlate')?.addEventListener('input',syncPullStartPartnerFromPlate);
-  $('pullStartPlate')?.addEventListener('change',syncPullStartPartnerFromPlate);
   $('btnPullNextStep')?.addEventListener('click',recordPullNextStep);
   $('pullOccurrenceButtons')?.addEventListener('click',onPullOccurrenceClick);
   $('pullOpenOccurrence')?.addEventListener('click',onPullOpenOccurrenceClick);
@@ -747,6 +746,7 @@ function bindPullEvents(){
   $('pullFarolBusca')?.addEventListener('input',renderPullFarol);
   $('pullFarolCards')?.addEventListener('click',onPullFarolClick);
   $('btnPullHistAtualizar')?.addEventListener('click',()=>loadPullHistory());
+  $('btnPullHistCsv')?.addEventListener('click',exportPullHistoryCsv);
   ['pullHistDe','pullHistAte','pullHistFactory'].forEach(id=>$(id)?.addEventListener('change',renderPullHistory));
   $('pullHistBusca')?.addEventListener('input',renderPullHistory);
   $('tbodyPullHistory')?.addEventListener('click',onPullHistoryClick);
@@ -818,12 +818,6 @@ function populatePullReferenceInputs(){
     $('pullStartFactory').innerHTML='<option value="">Selecione</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
     if(pullFactories.some(x=>x.name===old))$('pullStartFactory').value=old;
   }
-  if($('pullStartPartner')){
-    const old=$('pullStartPartner').value;
-    const partners=[...new Set(pullVehicles.filter(x=>x.active).map(x=>String(x.carrier||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-    $('pullStartPartner').innerHTML='<option value="">Selecione</option>'+partners.map(x=>`<option>${esc(x)}</option>`).join('');
-    if(partners.includes(old))$('pullStartPartner').value=old;
-  }
   if($('pullStartDriver2')){
     const old=$('pullStartDriver2').value;
     const others=pullProfiles.filter(x=>x.id!==authUser?.id);
@@ -883,14 +877,15 @@ function renderPullDriver(){
   $('pullActivePlate').textContent=pullActiveTrip.plate||'—';
   $('pullActiveFactory').textContent=pullActiveTrip.factory||'—';
   $('pullActiveDriver').textContent=pullActiveTrip.active_driver_name||'—';
-  $('pullActiveSummary').textContent=`${pullActiveTrip.origin_unit} → ${pullActiveTrip.factory} • ${pullActiveTrip.carrier||'Sem parceiro'} • ${pullActiveTrip.driver1_name} + ${pullActiveTrip.driver2_name} • início ${fmtDateTime(pullActiveTrip.started_at)}`;
+  $('pullActiveSummary').textContent=`${pullActiveTrip.origin_unit} → ${pullActiveTrip.factory} • ${pullActiveTrip.carrier||'Ambev'} • ${pullActiveTrip.driver1_name} + ${pullActiveTrip.driver2_name} • início ${fmtDateTime(pullActiveTrip.started_at)}`;
   const next=pullNextStep();
-  $('pullNextStepName').textContent=next?.name||'Todas as etapas concluídas';
+  const nextNo=next?pullMainStepNumber(next):null;
+  $('pullNextStepName').textContent=next?`${nextNo}. ${next.name}`:'Todas as etapas concluídas';
   const canPoint=pullIsActiveDriver()&&!!next;
   $('btnPullNextStep').disabled=!canPoint;
   $('btnPullNextStep').textContent=!next?'Ciclo concluído':pullIsActiveDriver()?'Registrar próxima etapa':`Aguardando ${pullActiveTrip.active_driver_name}`;
-  let hint='O GPS será capturado no apontamento.';
-  if(next?.requires_factory_geofence){const f=pullFactories.find(x=>x.name===pullActiveTrip.factory);hint=f?.radius_meters?`GPS em alta precisão. Raio de auditoria: ${f.radius_meters} m. Estar fora do raio não impede o registro.`:'GPS em alta precisão. A fábrica ainda não possui raio de auditoria configurado; o registro continuará permitido.';}
+  let hint=nextNo?`Etapa ${nextNo} de ${pullMainSteps.length}. O GPS será capturado no apontamento.`:'O GPS será capturado no apontamento.';
+  if(next?.requires_factory_geofence){const f=pullFactories.find(x=>x.name===pullActiveTrip.factory);hint=f?.radius_meters?`Etapa ${nextNo} de ${pullMainSteps.length}. GPS em alta precisão. Raio de auditoria: ${f.radius_meters} m. Estar fora do raio não impede o registro.`:`Etapa ${nextNo} de ${pullMainSteps.length}. GPS em alta precisão. A fábrica ainda não possui raio de auditoria configurado; o registro continuará permitido.`;}
   if(!pullIsActiveDriver())hint=`O ciclo está compartilhado com você. O motorista ativo no momento é ${pullActiveTrip.active_driver_name}.`;
   $('pullNextStepHint').textContent=hint;
   const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');
@@ -898,7 +893,7 @@ function renderPullDriver(){
   if(openOcc){occBox.classList.remove('hidden');occBox.innerHTML=`<div><small>OCORRÊNCIA EM ANDAMENTO</small><strong>${esc(openOcc.occurrence_name)}</strong><span>Iniciada ${fmtDateTime(openOcc.started_at)} por ${esc(openOcc.started_by_name)}</span></div><button class="btn primary" data-end-occ="${openOcc.id}" ${pullIsActiveDriver()?'':'disabled'}>Encerrar ocorrência</button>`;}
   else{occBox.classList.add('hidden');occBox.innerHTML='';}
   $('pullOccurrenceButtons').innerHTML=pullOccurrenceTypes.map(x=>`<button class="btn secondary" data-occ="${x.id}" ${(!pullIsActiveDriver()||!!openOcc&&x.duration_mode==='INTERVAL')?'disabled':''}>+ ${esc(x.name)}</button>`).join('');
-  const timeline=[...pullDriverEvents.map(x=>({kind:'STEP',at:x.recorded_at,name:x.step_name,user:x.user_name,gps:`${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)}`,extra:x.geofence_status==='INSIDE'?`Dentro do raio de auditoria • ${Math.round(x.distance_factory_m||0)} m`:x.geofence_status==='OUTSIDE'?`Fora do raio de auditoria • ${Math.round(x.distance_factory_m||0)} m • registro permitido`:''})),...pullDriverOccurrences.map(x=>({kind:'OCC',at:x.started_at,name:x.occurrence_name,user:x.started_by_name,gps:`${Number(x.start_latitude).toFixed(5)}, ${Number(x.start_longitude).toFixed(5)}`,extra:x.status==='OPEN'?'Em andamento':`Encerrada ${fmtDateTime(x.ended_at)}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));
+  const timeline=[...pullDriverEvents.map(x=>({kind:'STEP',at:x.recorded_at,name:pullNumberedStepName(x),user:x.user_name,gps:`${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)}`,extra:x.geofence_status==='INSIDE'?`Dentro do raio de auditoria • ${Math.round(x.distance_factory_m||0)} m`:x.geofence_status==='OUTSIDE'?`Fora do raio de auditoria • ${Math.round(x.distance_factory_m||0)} m • registro permitido`:''})),...pullDriverOccurrences.map(x=>({kind:'OCC',at:x.started_at,name:x.occurrence_name,user:x.started_by_name,gps:`${Number(x.start_latitude).toFixed(5)}, ${Number(x.start_longitude).toFixed(5)}`,extra:x.status==='OPEN'?'Em andamento':`Encerrada ${fmtDateTime(x.ended_at)}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));
   const tl=$('pullDriverTimeline');
   if(!timeline.length){tl.className='pull-timeline empty-state';tl.textContent='Nenhuma etapa.';}else{tl.className='pull-timeline';tl.innerHTML=timeline.map(x=>`<div class="pull-timeline-item ${x.kind==='OCC'?'occurrence':''}"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.name)}</strong><span>${esc(x.user)} • ${esc(x.gps)}${x.extra?` • ${esc(x.extra)}`:''}</span></div></div>`).join('');}
   startPullClock();
@@ -906,21 +901,14 @@ function renderPullDriver(){
 function startPullClock(){stopPullClock();const tick=()=>{if(!$('pullActiveElapsed')||!pullActiveTrip)return;const sec=Math.max(0,Math.floor((Date.now()-new Date(pullActiveTrip.started_at).getTime())/1000));$('pullActiveElapsed').textContent=fmtDurationSeconds(sec);};tick();pullClockTimer=setInterval(tick,1000);}
 function stopPullClock(){if(pullClockTimer){clearInterval(pullClockTimer);pullClockTimer=null;}}
 
-function syncPullStartPartnerFromPlate(){
-  const plate=String($('pullStartPlate')?.value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  if(!plate||!$('pullStartPartner'))return;
-  const vehicle=pullVehicles.find(x=>x.active&&String(x.plate||'').toUpperCase().replace(/[^A-Z0-9]/g,'')===plate);
-  if(vehicle?.carrier&&[...$('pullStartPartner').options].some(o=>o.value===vehicle.carrier))$('pullStartPartner').value=vehicle.carrier;
-}
-
 async function startPullTrip(e){
   e.preventDefault();
   const origin=$('pullStartOrigin').value;
   const plate=String($('pullStartPlate').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const factory=$('pullStartFactory').value;
-  const partner=$('pullStartPartner').value;
+  const partner='Ambev';
   const driver2=$('pullStartDriver2').value;
-  if(!origin||!plate||!factory||!partner||!driver2)return toast('Informe origem, placa, fábrica, parceiro e Motorista 2.','error');
+  if(!origin||!plate||!factory||!driver2)return toast('Informe origem, placa, fábrica e Motorista 2.','error');
   const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Capturando GPS…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Obtendo localização em alta precisão…';
   try{
     const gps=await captureGps();
@@ -978,13 +966,19 @@ function onPullNriCardsClick(e){const b=e.target.closest('[data-pull-nri]');if(!
 function prefillNriFromPull(t){
   clearNriRequest();nriPullLocked=true;$('nriPullTripId').value=t.id;
   const end=new Date(t.ended_at);
-  setSelectFixedValue($('nriUnidade'),t.origin_unit,true);$('nriTipo').value='AMBEV';$('nriTipo').disabled=true;$('nriTipo').required=false;
+  const unitSel=$('nriUnidade');
+  if(unitSel){
+    [...unitSel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());
+    if(![...unitSel.options].some(o=>o.value===t.origin_unit)){const o=document.createElement('option');o.value=t.origin_unit;o.textContent=t.origin_unit;unitSel.appendChild(o);}
+    unitSel.value=t.origin_unit;unitSel.disabled=false;unitSel.required=true;
+  }
+  $('nriTipo').value='AMBEV';$('nriTipo').disabled=true;$('nriTipo').required=false;
   $('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;
   $('nriHora').value=localTime(end);$('nriHora').disabled=true;
   setSelectFixedValue($('nriMotorista'),t.ended_by_name||t.active_driver_name||'—',true);
   $('nriPlaca').value=t.plate;$('nriPlaca').disabled=true;$('nriPlaca').required=false;
   setSelectFixedValue($('nriFabrica'),t.factory,true);
-  $('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados da carreta preenchidos automaticamente pela Puxada. Cadastre os produtos, lotes, validades e NRIs.</span>`;
+  $('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados da carreta preenchidos automaticamente pela Puxada. A unidade pode ser ajustada antes do cadastro dos produtos, lotes, validades e NRIs.</span>`;
   openView('nri-cadastro',true);
 }
 function clearNriPullContext(){
@@ -998,22 +992,101 @@ async function loadPullFarol(silent=false){
   if(!isAdmin())return;
   try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('status','IN_PROGRESS').order('started_at');if(error)throw error;const trips=data||[];$('badgePullAtivos').textContent=trips.length;if(!trips.length){$('pullFarolCards')._rows=[];renderPullFarol();return;}const ids=trips.map(x=>x.id);const [ev,tp]=await Promise.all([sb.from('pull_events').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}),sb.from('pull_track_points').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}).limit(2000)]);if(ev.error)throw ev.error;if(tp.error)throw tp.error;const eventBy=new Map(),trackBy=new Map();(ev.data||[]).forEach(x=>{if(!eventBy.has(x.trip_id))eventBy.set(x.trip_id,x);});(tp.data||[]).forEach(x=>{if(!trackBy.has(x.trip_id))trackBy.set(x.trip_id,x);});$('pullFarolCards')._rows=trips.map(t=>({...t,last_event:eventBy.get(t.id)||null,last_track:trackBy.get(t.id)||null}));renderPullFarol();}catch(e){if(!silent)toast(humanPullError(e),'error');}
 }
-function renderPullFarol(){const box=$('pullFarolCards');const q=norm($('pullFarolBusca')?.value||'');const rows=(box?._rows||[]).filter(t=>!q||norm([t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.active_driver_name].join(' ')).includes(q));if(!rows.length){box.className='pull-card-grid empty-state';box.textContent='Nenhuma Puxada em andamento.';return;}box.className='pull-card-grid';box.innerHTML=rows.map(t=>{const last=t.last_track||t.last_event;const age=last?Math.max(0,Math.round((Date.now()-new Date(last.recorded_at).getTime())/60000)):null;return `<article class="pull-card farol"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div>${pullFarolBadge(t,last)}</div><div class="pull-card-body"><span><b>Origem:</b> ${esc(t.origin_unit||'—')}</span><span><b>Parceiro:</b> ${esc(t.carrier||'—')}</span><span><b>Motorista atual:</b> ${esc(t.active_driver_name||'—')}</span><span><b>Etapa:</b> ${esc(t.last_event?.step_name||'Saída da revenda')}</span><span><b>Início:</b> ${fmtDateTime(t.started_at)}</span><span><b>Último GPS:</b> ${last?`${age} min atrás`:'Sem rastreio'}</span></div><button class="btn secondary wide" data-pull-detail="${t.id}">Ver mapa e linha do tempo</button></article>`;}).join('');}
+function renderPullFarol(){const box=$('pullFarolCards');const q=norm($('pullFarolBusca')?.value||'');const rows=(box?._rows||[]).filter(t=>!q||norm([t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.active_driver_name].join(' ')).includes(q));if(!rows.length){box.className='pull-card-grid empty-state';box.textContent='Nenhuma Puxada em andamento.';return;}box.className='pull-card-grid';box.innerHTML=rows.map(t=>{const last=t.last_track||t.last_event;const age=last?Math.max(0,Math.round((Date.now()-new Date(last.recorded_at).getTime())/60000)):null;return `<article class="pull-card farol"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div>${pullFarolBadge(t,last)}</div><div class="pull-card-body"><span><b>Origem:</b> ${esc(t.origin_unit||'—')}</span><span><b>Parceiro:</b> ${esc(t.carrier||'—')}</span><span><b>Motorista atual:</b> ${esc(t.active_driver_name||'—')}</span><span><b>Etapa:</b> ${esc(t.last_event?pullNumberedStepName(t.last_event):'1. Saída da revenda')}</span><span><b>Início:</b> ${fmtDateTime(t.started_at)}</span><span><b>Último GPS:</b> ${last?`${age} min atrás`:'Sem rastreio'}</span></div><button class="btn secondary wide" data-pull-detail="${t.id}">Ver mapa e linha do tempo</button></article>`;}).join('');}
 function pullFarolBadge(t,last){if(!last)return '<span class="status bad">Sem GPS</span>';const age=(Date.now()-new Date(last.recorded_at).getTime())/60000;if(age>10)return '<span class="status pending">GPS atrasado</span>';return '<span class="status ok">Em andamento</span>';}
 function onPullFarolClick(e){const b=e.target.closest('[data-pull-detail]');if(b)openPullTripDetail(b.dataset.pullDetail,true);}
 
 async function loadPullHistory(silent=false){
   if(!isAdmin())return;
-  try{await loadPullReferenceData();let q=sb.from('pull_trips').select('*').order('started_at',{ascending:false}).limit(1500);const de=$('pullHistDe')?.value,ate=$('pullHistAte')?.value;if(de)q=q.gte('started_at',`${de}T00:00:00-03:00`);if(ate)q=q.lte('started_at',`${ate}T23:59:59-03:00`);const {data,error}=await q;if(error)throw error;pullHistory=data||[];renderPullHistory();}catch(e){if(!silent)toast(humanPullError(e),'error');}
+  try{
+    await loadPullReferenceData();
+    let q=sb.from('pull_trips').select('*').order('started_at',{ascending:false}).limit(1500);
+    const de=$('pullHistDe')?.value,ate=$('pullHistAte')?.value;
+    if(de)q=q.gte('started_at',`${de}T00:00:00-03:00`);
+    if(ate)q=q.lte('started_at',`${ate}T23:59:59-03:00`);
+    const {data,error}=await q;if(error)throw error;
+    pullHistory=data||[];
+    pullHistoryEvents=await loadPullHistoryEvents(pullHistory.map(x=>x.id));
+    renderPullHistory();
+  }catch(e){if(!silent)toast(humanPullError(e),'error');}
 }
-function renderPullHistory(){if(!$('tbodyPullHistory'))return;const q=norm($('pullHistBusca').value),factory=$('pullHistFactory').value;const rows=pullHistory.filter(t=>(!factory||t.factory===factory)&&(!q||norm([t.trip_code,t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.ended_by_name].join(' ')).includes(q)));$('tbodyPullHistory').innerHTML=rows.length?rows.map(t=>{const m=pullTripMetrics(t);return `<tr><td><strong>${esc(t.trip_code)}</strong><small>${pullTripStatusLabel(t)}</small></td><td>${esc(t.plate)}<small>${esc(t.factory)}</small></td><td>${esc(t.driver1_name)}<small>${esc(t.driver2_name)}</small></td><td>${fmtDateTime(t.started_at)}<small>${t.ended_at?fmtDateTime(t.ended_at):'Em andamento'}</small></td><td>${fmtMinutes(m.TMV_OUT)}</td><td>${fmtMinutes(m.FACTORY)}</td><td>${fmtMinutes(m.TMV_RETURN)}</td><td>${m.UNIT==null?'Aguardando':`${fmtMinutes(m.UNIT)}${Number(t.tma_adjust_minutes)>0?`<small>Bruto ${fmtMinutes(m.UNIT_RAW)} • -${fmtMinutes(t.tma_adjust_minutes)}</small>`:''}`}</td><td>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</td><td>${t.nri_status==='COMPLETED'?'<span class="status ok">Concluído</span>':t.nri_status==='PENDING'?'<span class="status pending">Pendente</span>':'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-hist-detail="${t.id}">Detalhar</button>${t.next_started_at?`<button class="mini-btn" data-tma-adjust="${t.id}">Ajustar TMA</button>`:''}</div></td></tr>`;}).join(''):'<tr><td colspan="11">Nenhuma viagem.</td></tr>';}
+async function loadPullHistoryEvents(ids){
+  if(!ids?.length)return [];
+  const out=[];
+  for(let i=0;i<ids.length;i+=75){
+    const chunk=ids.slice(i,i+75);
+    const {data,error}=await sb.from('pull_events').select('trip_id,step_id,step_name,action_code,step_order,recorded_at,user_name,latitude,longitude,gps_accuracy,geofence_status,distance_factory_m,factory_radius_m').in('trip_id',chunk).order('step_order');
+    if(error)throw error;
+    out.push(...(data||[]));
+  }
+  return out;
+}
+function filteredPullHistoryRows(){
+  const q=norm($('pullHistBusca')?.value||''),factory=$('pullHistFactory')?.value||'';
+  return pullHistory.filter(t=>(!factory||t.factory===factory)&&(!q||norm([t.trip_code,t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.ended_by_name].join(' ')).includes(q)));
+}
+function pullHistoryEventLookup(){
+  const map=new Map();
+  pullHistoryEvents.forEach(e=>{const key=`${e.trip_id}|${e.action_code}`;if(!map.has(key))map.set(key,e);});
+  return map;
+}
+function pullHistoryStageEvent(lookup,tripId,step){return lookup.get(`${tripId}|${step.action_code}`)||null;}
+function renderPullHistoryHead(){
+  const head=$('pullHistoryHead');if(!head)return;
+  const stages=pullMainSteps.map((s,i)=>`<th class="pull-history-stage-head"><span>${i+1}</span>${esc(s.name)}</th>`).join('');
+  head.innerHTML=`<th>Viagem</th><th>Origem</th><th>Placa / Fábrica</th><th>Motoristas</th>${stages}<th>TMV Ida</th><th>TMA Fábrica</th><th>TMV Volta</th><th>TMA Revenda</th><th>Ciclo</th><th>NRI</th><th>Ações</th>`;
+}
+function renderPullHistory(){
+  if(!$('tbodyPullHistory'))return;
+  renderPullHistoryHead();
+  const rows=filteredPullHistoryRows(),lookup=pullHistoryEventLookup();
+  const totalCols=4+pullMainSteps.length+7;
+  $('tbodyPullHistory').innerHTML=rows.length?rows.map(t=>{
+    const m=pullTripMetrics(t);
+    const stageCells=pullMainSteps.map((step,i)=>{const ev=pullHistoryStageEvent(lookup,t.id,step);return `<td class="pull-history-stage-cell">${ev?`<strong>${fmtDateTime(ev.recorded_at)}</strong><small>${esc(ev.user_name||'—')} • GPS ±${Math.round(Number(ev.gps_accuracy)||0)} m</small>`:'—'}</td>`;}).join('');
+    return `<tr><td><strong>${esc(t.trip_code)}</strong><small>${pullTripStatusLabel(t)}</small></td><td>${esc(t.origin_unit||'—')}</td><td>${esc(t.plate)}<small>${esc(t.factory)}</small></td><td>${esc(t.driver1_name)}<small>${esc(t.driver2_name)}</small></td>${stageCells}<td>${fmtMinutes(m.TMV_OUT)}</td><td>${fmtMinutes(m.FACTORY)}</td><td>${fmtMinutes(m.TMV_RETURN)}</td><td>${m.UNIT==null?'Aguardando':`${fmtMinutes(m.UNIT)}${Number(t.tma_adjust_minutes)>0?`<small>Bruto ${fmtMinutes(m.UNIT_RAW)} • -${fmtMinutes(t.tma_adjust_minutes)}</small>`:''}`}</td><td>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</td><td>${t.nri_status==='COMPLETED'?'<span class="status ok">Concluído</span>':t.nri_status==='PENDING'?'<span class="status pending">Pendente</span>':'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-hist-detail="${t.id}">Detalhar</button>${t.next_started_at?`<button class="mini-btn" data-tma-adjust="${t.id}">Ajustar TMA</button>`:''}</div></td></tr>`;
+  }).join(''):`<tr><td colspan="${totalCols}">Nenhuma viagem.</td></tr>`;
+}
+function exportPullHistoryCsv(){
+  const rows=filteredPullHistoryRows();if(!rows.length)return toast('Não há viagens para exportar com os filtros atuais.','error');
+  const lookup=pullHistoryEventLookup();
+  const stageHeaders=pullMainSteps.map((s,i)=>`${i+1}. ${s.name}`);
+  const headers=['Viagem','Status','Origem','Placa','Fábrica','Parceiro','Motorista 1','Motorista 2',...stageHeaders,'TMV Ida','TMA Fábrica','TMV Volta','TMA Revenda bruto','Horas a diminuir','TMA Revenda ajustado','Ciclo','NRI'];
+  const matrix=rows.map(t=>{
+    const m=pullTripMetrics(t);
+    const stageValues=pullMainSteps.map(step=>{const ev=pullHistoryStageEvent(lookup,t.id,step);if(!ev)return '';const lat=Number(ev.latitude),lon=Number(ev.longitude),acc=Number(ev.gps_accuracy);const gps=Number.isFinite(lat)&&Number.isFinite(lon)?` | GPS ${lat.toFixed(6)}, ${lon.toFixed(6)}${Number.isFinite(acc)?` | ±${Math.round(acc)} m`:''}`:'';return `${fmtDateTime(ev.recorded_at)} | ${ev.user_name||''}${gps}`;});
+    return [t.trip_code,pullTripStatusLabel(t),t.origin_unit,t.plate,t.factory,t.carrier||'Ambev',t.driver1_name,t.driver2_name,...stageValues,fmtMinutes(m.TMV_OUT),fmtMinutes(m.FACTORY),fmtMinutes(m.TMV_RETURN),fmtMinutes(m.UNIT_RAW),fmtMinutes(Number(t.tma_adjust_minutes||0)),fmtMinutes(m.UNIT),fmtMinutes(m.CYCLE),t.nri_status||''];
+  });
+  downloadCsv(`historico_puxada_${localIsoDate(new Date())}.csv`,[headers,...matrix]);
+}
 function pullTripStatusLabel(t){return t.status==='IN_PROGRESS'?'Em andamento':t.kpi_status==='WAITING_NEXT_START'?'Viagem finalizada • aguardando próxima saída':t.kpi_status==='CLOSED'?'Ciclo KPI fechado':'Cancelado';}
 function onPullHistoryClick(e){const d=e.target.closest('[data-hist-detail]');if(d)return openPullTripDetail(d.dataset.histDetail,false);const a=e.target.closest('[data-tma-adjust]');if(a)return openPullTmaAdjust(a.dataset.tmaAdjust);}
 
 async function openPullTripDetail(id,live=false){
-  try{const t=(pullHistory.find(x=>x.id===id)||($('pullFarolCards')?._rows||[]).find(x=>x.id===id))||((await sb.from('pull_trips').select('*').eq('id',id).single()).data);if(!t)throw new Error('CICLO_NAO_ENCONTRADO');const [ev,oc,tp,aud,nri]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',id).order('recorded_at'),sb.from('pull_occurrences').select('*').eq('trip_id',id).order('started_at'),sb.from('pull_track_points').select('*').eq('trip_id',id).order('recorded_at').limit(5000),sb.from('pull_tma_adjust_audit').select('*').eq('trip_id',id).order('changed_at',{ascending:false}),sb.from('nri_requests').select('id,created_at').eq('pull_trip_id',id)]);[ev,oc,tp,aud,nri].forEach(r=>{if(r.error)throw r.error;});const m=pullTripMetrics(t);const mapId=`pullMap-${String(id).replace(/-/g,'')}`;const timeline=[...(ev.data||[]).map(x=>({at:x.recorded_at,title:x.step_name,detail:`${x.user_name} • ${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)} • precisão ±${Math.round(x.gps_accuracy||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)`:x.geofence_status==='OUTSIDE'?` • fora do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)${x.exception_reason?` • ${x.exception_reason}`:''}`:''}`})),...(oc.data||[]).map(x=>({at:x.started_at,title:`Ocorrência: ${x.occurrence_name}`,detail:`${x.started_by_name}${x.ended_at?` • ${fmtDurationMinutes(minutesBetween(x.started_at,x.ended_at))}`:' • em andamento'}${x.note?` • ${x.note}`:''}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));const body=`<div class="detail-grid"><div class="detail-card"><small>Origem</small><strong>${esc(t.origin_unit||'—')}</strong></div><div class="detail-card"><small>Placa / fábrica</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div><div class="detail-card"><small>Parceiro</small><strong>${esc(t.carrier||'—')}</strong></div><div class="detail-card"><small>Motoristas</small><strong>${esc(t.driver1_name)} / ${esc(t.driver2_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(t.started_at)}</strong></div><div class="detail-card"><small>Fim da viagem</small><strong>${fmtDateTime(t.ended_at)}</strong></div></div><div class="pull-metric-strip"><span>TMV Ida <b>${fmtMinutes(m.TMV_OUT)}</b></span><span>TMA Fábrica <b>${fmtMinutes(m.FACTORY)}</b></span><span>TMV Volta <b>${fmtMinutes(m.TMV_RETURN)}</b></span><span>TMA Revenda <b>${m.UNIT==null?'Aguardando':fmtMinutes(m.UNIT)}</b></span><span>Ciclo <b>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</b></span></div>${t.tma_adjust_minutes>0?`<div class="notice"><strong>TMA ajustado:</strong> bruto ${fmtMinutes(m.UNIT_RAW)} − ${fmtMinutes(t.tma_adjust_minutes)} = <b>${fmtMinutes(m.UNIT)}</b><br>${esc(t.tma_adjust_reason)} • por ${esc(t.tma_adjusted_by_name||'Admin')} em ${fmtDateTime(t.tma_adjusted_at)}</div>`:''}<div id="${mapId}" class="pull-map"></div><div class="section-title">Linha do tempo</div><div class="pull-timeline">${timeline.map(x=>`<div class="pull-timeline-item"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.title)}</strong><span>${esc(x.detail)}</span></div></div>`).join('')}</div><div class="notice"><strong>NRIs vinculados:</strong> ${(nri.data||[]).length}</div>${(aud.data||[]).length?`<details><summary>Auditoria de ajustes TMA (${aud.data.length})</summary>${aud.data.map(a=>`<div class="audit-row">${fmtDateTime(a.changed_at)} • ${esc(a.changed_by_name)} • ${fmtMinutes(a.old_minutes)} → ${fmtMinutes(a.new_minutes)} • ${esc(a.new_reason||'sem ajuste')}</div>`).join('')}</details>`:''}`;const actions=[];if(!live&&t.next_started_at)actions.push({label:'Ajustar TMA Revenda',class:'secondary',onClick:()=>{closeModal();openPullTmaAdjust(t.id);}});openModal(`${t.trip_code} • ${t.plate}`,pullTripStatusLabel(t),body,actions);setTimeout(()=>renderPullMap(mapId,t,tp.data||[],ev.data||[]),120);}catch(e){toast(humanPullError(e),'error');}
+  try{const t=(pullHistory.find(x=>x.id===id)||($('pullFarolCards')?._rows||[]).find(x=>x.id===id))||((await sb.from('pull_trips').select('*').eq('id',id).single()).data);if(!t)throw new Error('CICLO_NAO_ENCONTRADO');const [ev,oc,tp,aud,nri]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',id).order('recorded_at'),sb.from('pull_occurrences').select('*').eq('trip_id',id).order('started_at'),sb.from('pull_track_points').select('*').eq('trip_id',id).order('recorded_at').limit(5000),sb.from('pull_tma_adjust_audit').select('*').eq('trip_id',id).order('changed_at',{ascending:false}),sb.from('nri_requests').select('id,created_at').eq('pull_trip_id',id)]);[ev,oc,tp,aud,nri].forEach(r=>{if(r.error)throw r.error;});const m=pullTripMetrics(t);const mapId=`pullMap-${String(id).replace(/-/g,'')}`;const timeline=[...(ev.data||[]).map(x=>({at:x.recorded_at,title:pullNumberedStepName(x),detail:`${x.user_name} • ${Number(x.latitude).toFixed(5)}, ${Number(x.longitude).toFixed(5)} • precisão ±${Math.round(x.gps_accuracy||0)} m${x.geofence_status==='INSIDE'?` • dentro do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)`:x.geofence_status==='OUTSIDE'?` • fora do raio de auditoria (${Math.round(x.distance_factory_m||0)} m)${x.exception_reason?` • ${x.exception_reason}`:''}`:''}`})),...(oc.data||[]).map(x=>({at:x.started_at,title:`Ocorrência: ${x.occurrence_name}`,detail:`${x.started_by_name}${x.ended_at?` • ${fmtDurationMinutes(minutesBetween(x.started_at,x.ended_at))}`:' • em andamento'}${x.note?` • ${x.note}`:''}`}))].sort((a,b)=>new Date(a.at)-new Date(b.at));const body=`<div class="detail-grid"><div class="detail-card"><small>Origem</small><strong>${esc(t.origin_unit||'—')}</strong></div><div class="detail-card"><small>Placa / fábrica</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div><div class="detail-card"><small>Parceiro</small><strong>${esc(t.carrier||'—')}</strong></div><div class="detail-card"><small>Motoristas</small><strong>${esc(t.driver1_name)} / ${esc(t.driver2_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(t.started_at)}</strong></div><div class="detail-card"><small>Fim da viagem</small><strong>${fmtDateTime(t.ended_at)}</strong></div></div><div class="pull-metric-strip"><span>TMV Ida <b>${fmtMinutes(m.TMV_OUT)}</b></span><span>TMA Fábrica <b>${fmtMinutes(m.FACTORY)}</b></span><span>TMV Volta <b>${fmtMinutes(m.TMV_RETURN)}</b></span><span>TMA Revenda <b>${m.UNIT==null?'Aguardando':fmtMinutes(m.UNIT)}</b></span><span>Ciclo <b>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</b></span></div>${t.tma_adjust_minutes>0?`<div class="notice"><strong>TMA ajustado:</strong> bruto ${fmtMinutes(m.UNIT_RAW)} − ${fmtMinutes(t.tma_adjust_minutes)} = <b>${fmtMinutes(m.UNIT)}</b><br>${esc(t.tma_adjust_reason)} • por ${esc(t.tma_adjusted_by_name||'Admin')} em ${fmtDateTime(t.tma_adjusted_at)}</div>`:''}<div id="${mapId}" class="pull-map"></div><div class="section-title">Linha do tempo</div><div class="pull-timeline">${timeline.map(x=>`<div class="pull-timeline-item"><span class="dot"></span><div><small>${fmtDateTime(x.at)}</small><strong>${esc(x.title)}</strong><span>${esc(x.detail)}</span></div></div>`).join('')}</div><div class="notice"><strong>NRIs vinculados:</strong> ${(nri.data||[]).length}</div>${(aud.data||[]).length?`<details><summary>Auditoria de ajustes TMA (${aud.data.length})</summary>${aud.data.map(a=>`<div class="audit-row">${fmtDateTime(a.changed_at)} • ${esc(a.changed_by_name)} • ${fmtMinutes(a.old_minutes)} → ${fmtMinutes(a.new_minutes)} • ${esc(a.new_reason||'sem ajuste')}</div>`).join('')}</details>`:''}`;const actions=[];if(!live&&t.next_started_at)actions.push({label:'Ajustar TMA Revenda',class:'secondary',onClick:()=>{closeModal();openPullTmaAdjust(t.id);}});openModal(`${t.trip_code} • ${t.plate}`,pullTripStatusLabel(t),body,actions);setTimeout(()=>renderPullMap(mapId,t,tp.data||[],ev.data||[]),120);}catch(e){toast(humanPullError(e),'error');}
 }
-function renderPullMap(mapId,t,track,events){const el=$(mapId);if(!el||!window.L)return;try{const map=L.map(el);pullMapInstances.push(map);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);const pts=(track||[]).map(x=>[Number(x.latitude),Number(x.longitude)]).filter(x=>x.every(Number.isFinite));if(!pts.length)events.forEach(x=>{const p=[Number(x.latitude),Number(x.longitude)];if(p.every(Number.isFinite))pts.push(p);});if(pts.length){L.polyline(pts).addTo(map);L.marker(pts[0]).addTo(map).bindPopup('Início');L.marker(pts[pts.length-1]).addTo(map).bindPopup(t.status==='ARRIVED'?'Chegada à revenda':'Última posição');map.fitBounds(L.latLngBounds(pts).pad(.15));}else map.setView([-6.5,-36.5],6);const f=pullFactories.find(x=>x.name===t.factory);if(f?.latitude!=null&&f?.longitude!=null){L.marker([f.latitude,f.longitude]).addTo(map).bindPopup(`Fábrica ${f.name}`);if(f.radius_meters)L.circle([f.latitude,f.longitude],{radius:Number(f.radius_meters)}).addTo(map);}}catch(e){console.warn(e);}}
+function renderPullMap(mapId,t,track,events){
+  const el=$(mapId);if(!el||!window.L)return;
+  try{
+    const map=L.map(el);pullMapInstances.push(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+    const trackPts=(track||[]).map(x=>[Number(x.latitude),Number(x.longitude)]).filter(x=>x.every(Number.isFinite));
+    const eventRows=(events||[]).filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude))).sort((a,b)=>(Number(a.step_order)||0)-(Number(b.step_order)||0)||new Date(a.recorded_at)-new Date(b.recorded_at));
+    const eventPts=eventRows.map(x=>[Number(x.latitude),Number(x.longitude)]);
+    if(trackPts.length>1)L.polyline(trackPts).addTo(map);
+    else if(eventPts.length>1)L.polyline(eventPts).addTo(map);
+    eventRows.forEach((ev,idx)=>{
+      const n=pullMainStepNumber(ev)||idx+1;
+      const icon=L.divIcon({className:'pull-stage-marker-shell',html:`<span class="pull-stage-map-marker">${n}</span>`,iconSize:[34,34],iconAnchor:[17,17],popupAnchor:[0,-18]});
+      const audit=ev.geofence_status==='INSIDE'?`<br>Dentro do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`:ev.geofence_status==='OUTSIDE'?`<br>Fora do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`:'';
+      L.marker([Number(ev.latitude),Number(ev.longitude)],{icon}).addTo(map).bindPopup(`<strong>Etapa ${n}: ${esc(ev.step_name||'Etapa')}</strong><br>${esc(fmtDateTime(ev.recorded_at))}<br>${esc(ev.user_name||'')}${audit}`);
+    });
+    const boundsPts=[...trackPts,...eventPts];
+    if(boundsPts.length)map.fitBounds(L.latLngBounds(boundsPts).pad(.15));else map.setView([-6.5,-36.5],6);
+    const f=pullFactories.find(x=>x.name===t.factory);
+    if(f?.latitude!=null&&f?.longitude!=null){L.marker([f.latitude,f.longitude]).addTo(map).bindPopup(`Fábrica ${esc(f.name)}`);if(f.radius_meters)L.circle([f.latitude,f.longitude],{radius:Number(f.radius_meters)}).addTo(map);}
+  }catch(e){console.warn(e);}
+}
 
 function openPullTmaAdjust(id){const t=pullHistory.find(x=>x.id===id);if(!t||!t.ended_at||!t.next_started_at)return toast('O TMA Revenda ainda não está fechado.','error');const raw=minutesBetween(t.ended_at,t.next_started_at);const current=Number(t.tma_adjust_minutes||0);const suggested=current||pullSuggestedDiscountForTrip(id);const body=`<div class="notice">TMA bruto desta placa: <strong>${fmtMinutes(raw)}</strong>. O dashboard utilizará TMA bruto menos o desconto aprovado pelo ADMIN.</div><div class="field"><label>Horas a diminuir (HH:MM)</label><input id="modalTmaDiscount" value="${minutesToInput(suggested)}" placeholder="00:00"></div><div class="field"><label>Motivo do ajuste ${suggested?'*':''}</label><textarea id="modalTmaReason" rows="3" placeholder="Ex.: descanso regulamentar / ponto fechado">${esc(t.tma_adjust_reason||'')}</textarea></div>`;openModal(`Ajustar TMA • ${t.plate}`,t.trip_code,body,[{label:'Salvar ajuste',class:'primary',onClick:async()=>{const mins=parseDurationInput($('modalTmaDiscount').value);const reason=$('modalTmaReason').value.trim();if(mins==null)return toast('Informe o desconto em HH:MM.','error');if(mins>0&&!reason)return toast('Informe o motivo do ajuste.','error');try{const {error}=await sb.rpc('adjust_pull_tma',{p_trip_id:t.id,p_minutes:mins,p_reason:reason});if(error)throw error;closeModal();toast('TMA ajustado e auditado.','success');await loadPullHistory();}catch(e){toast(humanPullError(e),'error');}}}]);}
 function pullSuggestedDiscountForTrip(_id){return 0;}
@@ -1051,6 +1124,17 @@ function clearPullStepForm(){$('pullStepId').value='';$('pullStepName').value=''
 function renderPullSteps(){const all=[...pullMainSteps,...pullOccurrenceTypes].sort((a,b)=>a.step_type.localeCompare(b.step_type)||a.sort_order-b.sort_order);$('tbodyPullSteps').innerHTML=all.map(s=>`<tr><td>${s.sort_order}</td><td><strong>${esc(s.name)}</strong></td><td>${s.step_type==='MAIN'?'Principal':'Ocorrência'}</td><td><code>${esc(s.action_code)}</code></td><td>${s.requires_factory_geofence?'Auditoria de raio ':''}${s.duration_mode==='INTERVAL'?'Intervalo ':''}${s.suggest_tma_discount?'Sugere desconto':''}</td><td>${s.active?'<span class="status ok">Ativa</span>':'<span class="status bad">Inativa</span>'}</td><td><button class="mini-btn" data-step-edit="${s.id}">Editar</button></td></tr>`).join('');}
 function onPullStepsClick(e){const b=e.target.closest('[data-step-edit]');if(!b)return;const s=[...pullMainSteps,...pullOccurrenceTypes].find(x=>x.id===b.dataset.stepEdit);if(!s)return;$('pullStepId').value=s.id;$('pullStepName').value=s.name;$('pullStepType').value=s.step_type;$('pullStepCode').value=s.action_code;$('pullStepCode').disabled=['START_TRIP','ARRIVE_FACTORY','LEAVE_FACTORY','DRIVER_SWAP_OUT','DRIVER_SWAP_RETURN','ARRIVE_UNIT'].includes(s.action_code);$('pullStepOrder').value=s.sort_order;$('pullStepDuration').value=s.duration_mode;$('pullStepGeofence').checked=s.requires_factory_geofence;$('pullStepDiscount').checked=s.suggest_tma_discount;$('pullStepActive').checked=s.active;}
 async function savePullStep(e){e.preventDefault();const id=$('pullStepId').value,row={name:$('pullStepName').value.trim(),step_type:$('pullStepType').value,action_code:$('pullStepCode').value.trim().toUpperCase().replace(/[^A-Z0-9_]/g,'_'),sort_order:Number($('pullStepOrder').value),duration_mode:$('pullStepDuration').value,requires_factory_geofence:$('pullStepGeofence').checked,suggest_tma_discount:$('pullStepDiscount').checked,active:$('pullStepActive').checked,required:$('pullStepType').value==='MAIN'};if(!row.name||!row.action_code)return toast('Informe nome e código da etapa.','error');try{const r=id?await sb.from('pull_steps').update(row).eq('id',id):await sb.from('pull_steps').insert(row);if(r.error)throw r.error;toast('Etapa/ocorrência salva.','success');clearPullStepForm();await loadPullReferenceData();renderPullSteps();}catch(err){toast(humanPullError(err),'error');}}
+
+function pullMainStepNumber(stepOrEvent){
+  if(!stepOrEvent)return null;
+  const id=stepOrEvent.step_id||stepOrEvent.id||'';
+  const code=stepOrEvent.action_code||'';
+  const order=Number(stepOrEvent.step_order??stepOrEvent.sort_order);
+  let idx=pullMainSteps.findIndex(s=>(id&&s.id===id)||(code&&s.action_code===code));
+  if(idx<0&&Number.isFinite(order))idx=pullMainSteps.findIndex(s=>Number(s.sort_order)===order);
+  return idx>=0?idx+1:null;
+}
+function pullNumberedStepName(stepOrEvent){const n=pullMainStepNumber(stepOrEvent);const name=stepOrEvent?.step_name||stepOrEvent?.name||'Etapa';return n?`${n}. ${name}`:name;}
 
 function pullTripMetrics(t){const adj=Math.max(0,Number(t.tma_adjust_minutes||0));const unitRaw=t.ended_at&&t.next_started_at?Math.max(0,minutesBetween(t.ended_at,t.next_started_at)):null;return {TMV_OUT:t.started_at&&t.arrived_factory_at?minutesBetween(t.started_at,t.arrived_factory_at):null,FACTORY:t.arrived_factory_at&&t.left_factory_at?minutesBetween(t.arrived_factory_at,t.left_factory_at):null,TMV_RETURN:t.left_factory_at&&t.ended_at?minutesBetween(t.left_factory_at,t.ended_at):null,UNIT_RAW:unitRaw,UNIT:unitRaw==null?null:Math.max(0,unitRaw-adj),CYCLE:t.started_at&&t.next_started_at?Math.max(0,minutesBetween(t.started_at,t.next_started_at)-adj):null};}
 function minutesBetween(a,b){if(!a||!b)return null;const n=(new Date(b)-new Date(a))/60000;return Number.isFinite(n)?Math.max(0,n):null;}

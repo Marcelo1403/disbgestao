@@ -1,1 +1,1 @@
-v1.1.1 - origem escolhida por viagem, parceiro no inicio, GPS em alta precisao e raio da fabrica somente para auditoria
+v1.1.2 - unidade do NRI editavel, parceiro Ambev automatico, etapas numeradas, mapa com marcadores numerados e historico por etapa com CSV

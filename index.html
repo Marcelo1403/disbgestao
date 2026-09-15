@@ -248,7 +248,7 @@
 
       <!-- PUXADA - MOTORISTA -->
       <section id="view-puxada-viagem" class="view role-puxada puxador-only">
-        <div class="page-head"><div><div class="breadcrumb">Puxada / Motorista</div><h1>Minha Puxada</h1><p>Escolha origem, placa, fábrica e parceiro antes de iniciar. As etapas registram GPS, data e hora automaticamente.</p></div><span class="page-chip">PUXADA</span></div>
+        <div class="page-head"><div><div class="breadcrumb">Puxada / Motorista</div><h1>Minha Puxada</h1><p>Escolha origem, placa e fábrica antes de iniciar. O parceiro é Ambev e as etapas registram GPS, data e hora automaticamente.</p></div><span class="page-chip">PUXADA</span></div>
         <div id="pullDriverStartCard" class="card">
           <form id="formPullStart">
             <div class="form-block accent"><div class="block-head"><span class="step">▶</span><div><strong>Iniciar viagem</strong><small>Você será o Motorista 1. O ciclo ficará disponível também para o Motorista 2.</small></div></div>
@@ -256,7 +256,6 @@
                 <div class="field"><label>Origem da viagem *</label><select id="pullStartOrigin" required><option value="">Selecione</option></select></div>
                 <div class="field"><label>Placa do veículo *</label><input id="pullStartPlate" list="pullVehicleList" maxlength="12" autocomplete="off" placeholder="AAA2A222" required><datalist id="pullVehicleList"></datalist></div>
                 <div class="field"><label>Fábrica *</label><select id="pullStartFactory" required><option value="">Selecione</option></select></div>
-                <div class="field"><label>Parceiro / transportadora *</label><select id="pullStartPartner" required><option value="">Selecione</option></select></div>
                 <div class="field"><label>Motorista 2 *</label><select id="pullStartDriver2" required><option value="">Selecione</option></select></div>
               </div>
               <div id="pullStartGps" class="gps-status">A localização será capturada ao iniciar.</div>
@@ -283,8 +282,8 @@
       <!-- PUXADA - HISTORICO -->
       <section id="view-puxada-historico" class="view admin-only role-puxada">
         <div class="page-head"><div><div class="breadcrumb">Puxada / Admin</div><h1>Relatório / Histórico</h1><p>Viagens, tempos, percurso, ocorrências, ajustes de TMA e vínculo com NRI.</p></div><span class="page-chip admin">HISTÓRICO</span></div>
-        <div class="card"><div class="grid grid-4"><div class="field"><label>De</label><input id="pullHistDe" type="date"></div><div class="field"><label>Até</label><input id="pullHistAte" type="date"></div><div class="field"><label>Placa / motorista</label><input id="pullHistBusca"></div><div class="field"><label>Fábrica</label><select id="pullHistFactory"><option value="">Todas</option></select></div></div><div class="actions right"><button id="btnPullHistAtualizar" class="btn secondary">Atualizar</button></div>
-          <div class="table-wrap"><table><thead><tr><th>Viagem</th><th>Placa / Fábrica</th><th>Motoristas</th><th>Início / Fim</th><th>TMV Ida</th><th>TMA Fábrica</th><th>TMV Volta</th><th>TMA Revenda</th><th>Ciclo</th><th>NRI</th><th>Ações</th></tr></thead><tbody id="tbodyPullHistory"></tbody></table></div>
+        <div class="card"><div class="grid grid-4"><div class="field"><label>De</label><input id="pullHistDe" type="date"></div><div class="field"><label>Até</label><input id="pullHistAte" type="date"></div><div class="field"><label>Placa / motorista</label><input id="pullHistBusca"></div><div class="field"><label>Fábrica</label><select id="pullHistFactory"><option value="">Todas</option></select></div></div><div class="actions right"><button id="btnPullHistAtualizar" class="btn secondary">Atualizar</button><button id="btnPullHistCsv" class="btn primary" type="button">Baixar CSV</button></div>
+          <div class="table-wrap pull-history-wrap"><table class="pull-history-table"><thead><tr id="pullHistoryHead"></tr></thead><tbody id="tbodyPullHistory"></tbody></table></div>
         </div>
       </section>
 
@@ -347,7 +346,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="config.js?v=1.1.0"></script>
-  <script src="app.js?v=1.1.0"></script>
+  <script src="config.js?v=1.1.2"></script>
+  <script src="app.js?v=1.1.2"></script>
 </body>
 </html>
