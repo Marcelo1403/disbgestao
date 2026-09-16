@@ -1,1 +1,1 @@
-v1.2.2 - Nota Fiscal e historico de paletes avariados, dashboards reorganizados e histograma Marketplace por hora de inicio
+v1.3.0 - Contagem FEFO integrada ao Disb Gestao com validade, rua, palete, lastro, caixa, unidade, retomada e relatorios CSV

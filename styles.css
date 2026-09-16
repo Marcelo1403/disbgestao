@@ -140,3 +140,16 @@
 
 @media(max-width:900px){.dashboard-page-head{padding:18px}.dashboard-page-head h1{font-size:25px}.damage-history-detail-grid{grid-template-columns:1fr 1fr}.nri-damage-view-grid{grid-template-columns:1fr 1fr}.nav-module-items{margin-left:13px}}
 @media(max-width:520px){.dashboard-page-head{padding:15px}.dashboard-kpi-grid .kpi{min-height:86px}.damage-history-detail-grid{grid-template-columns:1fr}}
+
+/* Disb Gestao v1.3.0 - Contagem FEFO */
+.fefo-hero{display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:4px solid #0b72c6;background:linear-gradient(135deg,#fff,#f3f9fd)}
+.fefo-hero>div:first-child{display:flex;flex-direction:column;gap:4px}.fefo-hero small{font-size:9px;color:#6a8195;font-weight:1000;letter-spacing:.6px}.fefo-hero h2{margin:0;color:#0b4e84;font-size:26px}.fefo-hero span{color:#657d91;font-size:11px}
+.fefo-hero-stats{display:flex;gap:10px;flex-wrap:wrap}.fefo-hero-stats>div{min-width:125px;border:1px solid #d8e5ef;border-radius:13px;background:#fff;padding:11px 13px;display:flex;flex-direction:column;gap:4px}.fefo-hero-stats strong{font-size:18px;color:#153e60}
+.fefo-editor-grid{align-items:start}.fefo-editor-grid .product-preview{min-height:74px}
+.fefo-table{min-width:920px}.fefo-table td{vertical-align:top}.fefo-table td small{display:block;margin-top:4px;color:#75899b;font-size:9px}.fefo-table thead th{background:#f4f8fb}
+.fefo-validity{display:inline-flex;align-items:center;justify-content:center;min-width:92px;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:1000;background:#eef4f8;color:#4f687b;border:1px solid #dce5ec}
+.fefo-validity.ok{background:#edf8f2;color:#167247;border-color:#cfe9db}.fefo-validity.warning{background:#fff7e6;color:#8b5a00;border-color:#f0ddaa}.fefo-validity.expired{background:#fff0f0;color:#b52f2f;border-color:#efcaca}
+.fefo-date-help.ok{color:#167247}.fefo-date-help.warning{color:#8b5a00}.fefo-date-help.expired{color:#b52f2f;font-weight:900}
+.fefo-final-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:15px;border-top:1px solid #e2eaf0}
+.fefo-finished{text-align:center;padding:12px 8px 18px}.fefo-finished-icon{width:62px;height:62px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:#e9f7ef;color:#168653;font-size:34px;font-weight:1000}.fefo-finished h3{margin:0 0 8px;font-size:22px;color:#16476e}.fefo-finished p{margin:7px auto;color:#647c90;max-width:570px;line-height:1.5}
+@media(max-width:760px){.fefo-hero{align-items:flex-start;flex-direction:column}.fefo-hero-stats{width:100%}.fefo-hero-stats>div{flex:1}.fefo-final-actions{flex-direction:column-reverse}.fefo-final-actions .btn{width:100%}}

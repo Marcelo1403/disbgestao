@@ -221,3 +221,33 @@ O ADMIN possui Farol de andamento, Histórico, Dashboards, Metas e Configuraçõ
 Na chegada à revenda, a carreta entra automaticamente em **NRI > Carretas pendentes**. Ao iniciar a conferência, unidade, tipo Ambev, data/hora, motorista que encerrou o ciclo, placa e fábrica são preenchidos automaticamente.
 
 Antes de publicar esta versão execute `supabase/08_v1_1_0_modulo_puxada.sql` no SQL Editor e republique a Edge Function `admin-users`, pois ela passa a aceitar o perfil `MOTORISTA_PUXADOR`.
+
+---
+
+## v1.3.0 - Contagem FEFO
+
+A v1.3.0 integra ao **Disb Gestão** o fluxo de contagem de estoque por FEFO baseado no aplicativo **DisbStock V1.6**.
+
+O módulo usa a mesma autenticação, perfis, base de produtos, unidades e Supabase do restante do sistema. Os perfis `ADMIN`, `COLABORADOR_ARMAZEM` e `CONFERENTE` podem utilizar a Contagem FEFO.
+
+Principais funções:
+
+- iniciar uma nova contagem por unidade;
+- retomar contagem em andamento;
+- localizar produto pelo código e exibir nome/imagem quando disponível;
+- registrar `Código`, `Nome`, `Validade`, `Rua`, `Palete`, `Lastro`, `Caixa` e `Unidade`;
+- alertar quando a validade informada já passou e solicitar confirmação para continuar;
+- editar e excluir itens enquanto a contagem estiver em andamento;
+- ordenar os itens por validade para facilitar a aplicação do FEFO;
+- finalizar a contagem;
+- manter o relatório no Supabase;
+- visualizar relatórios anteriores;
+- baixar e compartilhar CSV com o cabeçalho `codigo;nome;validade;rua;palete;lastro;caixa;unidade`.
+
+Antes de publicar, execute no SQL Editor:
+
+`supabase/17_v1_3_0_contagem_fefo.sql`
+
+O catálogo extraído do DisbStock V1.6 está em `bases_fefo/PRODUTOS_DISBSTOCK_V1_6.csv`. Se desejar utilizar essa base, importe em **Administração > Bases / importação > PRODUTOS**.
+
+As imagens originais do catálogo são opcionais e podem ser copiadas para `imagens_produtos/`. O Disb Gestão já procura automaticamente por `.png`, `.jpg`, `.jpeg` e `.webp` usando o código do produto como nome do arquivo.

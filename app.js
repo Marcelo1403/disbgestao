@@ -47,6 +47,12 @@ let drawingSignature = false;
 let currentAvariaDetail = null;
 let allConferences = [];
 let allMaps = [];
+let fefoActiveCount = null;
+let fefoItems = [];
+let fefoEditingItemId = null;
+let fefoActiveCounts = [];
+let fefoReports = [];
+let fefoItemsByCount = new Map();
 let realtimeChannel = null;
 let activeView = '';
 let toastTimer = null;
@@ -63,6 +69,9 @@ const viewMeta = {
   'nri-avarias-historico':['Paletes avariados','Nota Fiscal, fotos e rastreabilidade'],
   'conf-historico':['Histórico de conferências','Todos os registros'],
   'conf-dashboard':['Dashboard comparativo','Planejado x conferido'],
+  'fefo-contagem':['Contagem FEFO','Produto, validade e posição'],
+  'fefo-andamento':['Contagens em andamento','Retome uma contagem aberta'],
+  'fefo-relatorios':['Relatórios FEFO','Histórico e exportação CSV'],
   'nri-carretas':['Recebimentos pendentes','Puxada e Marketplace aguardando NRI'],
   'marketplace-recebimento':['Recebimento Marketplace','Cronômetro, fornecedor e fila para NRI'],
   'puxada-viagem':['Minha Puxada','Etapas, GPS e ocorrências'],
@@ -87,7 +96,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.2.1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.3.0',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -215,6 +224,22 @@ function bindBaseEvents(){
   ['dashData','dashMapa','dashCidade'].forEach(id=>$(id).addEventListener(id==='dashData'?'change':'input',renderDashboard));
   $('tbodyDashboard').addEventListener('click',onDashboardClick);
 
+  // Contagem FEFO
+  $('btnFefoStart')?.addEventListener('click',startFefoCount);
+  $('formFefoItem')?.addEventListener('submit',saveFefoItem);
+  $('fefoCodigo')?.addEventListener('input',onFefoProductCode);
+  $('fefoValidade')?.addEventListener('input',e=>{e.target.value=maskFefoDate(e.target.value);paintFefoValidityHint();});
+  $('btnFefoCancelEdit')?.addEventListener('click',clearFefoItemForm);
+  $('btnFefoRefreshItems')?.addEventListener('click',()=>loadFefoCurrent());
+  $('tbodyFefoItems')?.addEventListener('click',onFefoItemsClick);
+  $('btnFefoFinish')?.addEventListener('click',finishFefoCount);
+  $('btnFefoCancelCount')?.addEventListener('click',cancelFefoCount);
+  $('btnFefoActiveRefresh')?.addEventListener('click',loadFefoActiveCounts);
+  $('tbodyFefoActiveCounts')?.addEventListener('click',onFefoActiveCountsClick);
+  $('btnFefoReportsRefresh')?.addEventListener('click',loadFefoReports);
+  ['fefoReportSearch','fefoReportUnit','fefoReportFrom','fefoReportTo'].forEach(id=>$(id)?.addEventListener(id==='fefoReportSearch'?'input':'change',renderFefoReports));
+  $('tbodyFefoReports')?.addEventListener('click',onFefoReportsClick);
+
   // Users/import
   $('formUsuario').addEventListener('submit',saveUser);
   $('btnLimparUsuario').addEventListener('click',clearUserForm);
@@ -245,6 +270,7 @@ async function loadProfile(user){
 }
 async function logout(){
   teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null; refs={products:[],units:[],drivers:[],factories:[],customers:[]};
+  fefoActiveCount=null;fefoItems=[];fefoEditingItemId=null;fefoActiveCounts=[];fefoReports=[];fefoItemsByCount.clear();
   $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
   try{await sb.auth.signOut();}catch(_e){}
   setLoginMessage('');
@@ -262,6 +288,7 @@ async function startApp(){
   setupRealtime();
   await initPullModule();
   if(canNri()) { await loadPending(); await loadMarketplaceModule(true); await loadPullNriPending(true); }
+  if(canFefo()) { await refreshFefoBadge(true); }
   if(isAdmin()) { loadAdminAvarias(); }
   const defaultView = profile.role==='COLABORADOR_ENTREGA'?'avaria-cadastro':profile.role==='MOTORISTA_PUXADOR'?'puxada-viagem':profile.role==='CONFERENTE'?'conf-cadastro':'nri-cadastro';
   openView(defaultView,true);
@@ -271,11 +298,13 @@ function isPullDriver(){return profile?.role==='MOTORISTA_PUXADOR';}
 function canNri(){return ['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE'].includes(profile?.role);}
 function canAvaria(){return ['ADMIN','COLABORADOR_ENTREGA'].includes(profile?.role);}
 function canConference(){return ['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE'].includes(profile?.role);}
+function canFefo(){return ['ADMIN','COLABORADOR_ARMAZEM','CONFERENTE'].includes(profile?.role);}
 function canPull(){return isAdmin()||isPullDriver();}
 function applyRole(){
   document.querySelectorAll('.role-nri').forEach(x=>x.classList.toggle('hidden',!canNri()));
   document.querySelectorAll('.role-avaria').forEach(x=>x.classList.toggle('hidden',!canAvaria()));
   document.querySelectorAll('.role-conferencia').forEach(x=>x.classList.toggle('hidden',!canConference()));
+  document.querySelectorAll('.role-fefo').forEach(x=>x.classList.toggle('hidden',!canFefo()));
   document.querySelectorAll('.role-puxada').forEach(x=>x.classList.toggle('hidden',!canPull()));
   document.querySelectorAll('.puxador-only').forEach(x=>x.classList.toggle('hidden',!isPullDriver()));
   document.querySelectorAll('.admin-only').forEach(x=>x.classList.toggle('hidden',!isAdmin()));
@@ -323,6 +352,9 @@ function openView(name,force=false){
   if(name==='conf-minhas')loadMyConferences();
   if(name==='conf-historico')loadConferenceHistory();
   if(name==='conf-dashboard')loadDashboard();
+  if(name==='fefo-contagem')loadFefoCurrent();
+  if(name==='fefo-andamento')loadFefoActiveCounts();
+  if(name==='fefo-relatorios')loadFefoReports();
   if(name==='usuarios')loadUsers();
   if(name==='marketplace-recebimento')loadMarketplaceModule();
   if(name==='nri-carretas'||name.startsWith('puxada-')) pullOnView(name);
@@ -335,10 +367,14 @@ function setupRealtime(){
   if(canNri()) { realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'nris'},()=>debounceReload('nri')); realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'marketplace_receipts'},()=>debounceReload('marketplace')); }
   if(isAdmin()) realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'damage_requests'},()=>debounceReload('avaria'));
   if(canConference()) realtimeChannel.on('postgres_changes',{event:'INSERT',schema:'public',table:'container_conferences'},()=>debounceReload('conf'));
+  if(canFefo()) {
+    realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'fefo_counts'},()=>debounceReload('fefo'));
+    realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'fefo_count_items'},()=>debounceReload('fefo'));
+  }
   realtimeChannel.subscribe();
 }
 function teardownRealtime(){if(realtimeChannel&&sb){sb.removeChannel(realtimeChannel).catch(()=>{});realtimeChannel=null;}}
-const reloadTimers={}; function debounceReload(type){clearTimeout(reloadTimers[type]);reloadTimers[type]=setTimeout(()=>{if(type==='nri'&&canNri())loadPending(true);if(type==='marketplace'&&canNri()){loadMarketplaceModule(true);loadPullNriPending(true);}if(type==='avaria'&&isAdmin())loadAdminAvarias(true);if(type==='conf'){if(activeView==='conf-minhas')loadMyConferences(true);if(activeView==='conf-dashboard'&&isAdmin())loadDashboard(true);}},220);}
+const reloadTimers={}; function debounceReload(type){clearTimeout(reloadTimers[type]);reloadTimers[type]=setTimeout(()=>{if(type==='nri'&&canNri())loadPending(true);if(type==='marketplace'&&canNri()){loadMarketplaceModule(true);loadPullNriPending(true);}if(type==='avaria'&&isAdmin())loadAdminAvarias(true);if(type==='conf'){if(activeView==='conf-minhas')loadMyConferences(true);if(activeView==='conf-dashboard'&&isAdmin())loadDashboard(true);}if(type==='fefo'&&canFefo()){refreshFefoBadge(true);if(activeView==='fefo-contagem')loadFefoCurrent(true);if(activeView==='fefo-andamento')loadFefoActiveCounts(true);if(activeView==='fefo-relatorios')loadFefoReports(true);}},220);}
 
 async function loadReferences(useCache=false){
   if(useCache){ const cached=readRefCache(); if(cached){refs=cached;rebuildReferenceMaps();populateReferenceInputs();} }
@@ -373,6 +409,8 @@ function rebuildReferenceMaps(){
 }
 function populateReferenceInputs(){
   fillSelect('nriUnidade',refs.units.map(x=>x.name),'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
+  if($('fefoStartUnit'))fillSelect('fefoStartUnit',refs.units.map(x=>x.name),'Selecione');
+  if($('fefoReportUnit'))fillSelect('fefoReportUnit',refs.units.map(x=>x.name),'Todas');
   fillSelect('pendUnidade',refs.units.map(x=>x.name),'Todas'); fillSelect('histNriUnidade',refs.units.map(x=>x.name),'Todas');
   updateNriTypeFields();
 }
@@ -1536,6 +1574,367 @@ humanPullError = function(e){const m=String(e?.message||e||'');const extra={MOTO
 
 
 // MODAL / HELPERS ------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// CONTAGEM FEFO - v1.3.0
+// Funcionalidades adaptadas do DisbStock V1.6 para Supabase / multiusuario.
+// ---------------------------------------------------------------------------
+async function refreshFefoBadge(silent=false){
+  if(!canFefo()||!sb)return;
+  try{
+    const {count,error}=await sb.from('fefo_counts').select('id',{count:'exact',head:true}).eq('status','IN_PROGRESS');
+    if(error)throw error;
+    if($('badgeFefoAtivas'))$('badgeFefoAtivas').textContent=String(count||0);
+  }catch(e){if(!silent)toast(humanFefoError(e),'error');}
+}
+
+async function fetchFefoCounts(status){
+  const out=[];let from=0;const page=1000;
+  while(true){
+    let q=sb.from('fefo_counts').select('*').eq('status',status).order('started_at',{ascending:false}).range(from,from+page-1);
+    const {data,error}=await q;if(error)throw error;
+    const rows=data||[];out.push(...rows);
+    if(rows.length<page)break;
+    from+=page;
+  }
+  return out;
+}
+
+async function fetchFefoItemsForCounts(ids){
+  const clean=[...new Set((ids||[]).filter(Boolean))];
+  if(!clean.length)return [];
+  const out=[];const page=1000;
+  for(const group of chunks(clean,40)){
+    let from=0;
+    while(true){
+      const {data,error}=await sb.from('fefo_count_items').select('*').in('count_id',group).order('validity_date',{ascending:true}).order('created_at',{ascending:true}).range(from,from+page-1);
+      if(error)throw error;
+      const rows=data||[];out.push(...rows);
+      if(rows.length<page)break;
+      from+=page;
+    }
+  }
+  return out;
+}
+
+async function fetchFefoItemsForCount(id){
+  return fetchFefoItemsForCounts(id?[id]:[]);
+}
+
+function rememberFefoItems(rows,replaceIds=[]){
+  (replaceIds||[]).forEach(id=>fefoItemsByCount.delete(id));
+  const grouped=new Map();
+  (rows||[]).forEach(x=>{if(!grouped.has(x.count_id))grouped.set(x.count_id,[]);grouped.get(x.count_id).push(x);});
+  grouped.forEach((items,id)=>fefoItemsByCount.set(id,items.sort(fefoItemSort)));
+  (replaceIds||[]).forEach(id=>{if(!fefoItemsByCount.has(id))fefoItemsByCount.set(id,[]);});
+}
+
+function fefoItemSort(a,b){
+  return String(a.validity_date||'9999-12-31').localeCompare(String(b.validity_date||'9999-12-31')) || String(a.product_code||'').localeCompare(String(b.product_code||''),'pt-BR',{numeric:true}) || new Date(a.created_at||0)-new Date(b.created_at||0);
+}
+
+async function loadFefoCurrent(silent=false){
+  if(!canFefo()||!sb)return;
+  try{
+    let row=null;
+    if(fefoActiveCount?.id){
+      const r=await sb.from('fefo_counts').select('*').eq('id',fefoActiveCount.id).eq('status','IN_PROGRESS').maybeSingle();
+      if(r.error)throw r.error;
+      row=r.data||null;
+    }
+    if(!row){
+      const r=await sb.from('fefo_counts').select('*').eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
+      if(r.error)throw r.error;
+      row=r.data||null;
+    }
+    fefoActiveCount=row;
+    fefoItems=row?await fetchFefoItemsForCount(row.id):[];
+    if(row)rememberFefoItems(fefoItems,[row.id]);
+    renderFefoCurrent();
+    await refreshFefoBadge(true);
+  }catch(e){
+    if(!silent)toast(humanFefoError(e),'error');
+  }
+}
+
+function renderFefoCurrent(){
+  if(!$('fefoStartCard'))return;
+  $('fefoStartCounter').value=profile?.name||'';
+  const active=!!fefoActiveCount;
+  $('fefoStartCard').classList.toggle('hidden',active);
+  $('fefoActiveArea').classList.toggle('hidden',!active);
+  if(!active){
+    clearFefoItemForm();
+    if($('tbodyFefoItems'))$('tbodyFefoItems').innerHTML='';
+    return;
+  }
+
+  fefoItems.sort(fefoItemSort);
+  $('fefoActiveCode').textContent=fefoActiveCount.count_code||'FEFO';
+  $('fefoActiveSummary').textContent=`${fefoActiveCount.unit} • ${fefoActiveCount.counter_name} • iniciada em ${fmtDateTime(fefoActiveCount.started_at)}`;
+  $('fefoActiveItemsCount').textContent=String(fefoItems.length);
+  const earliest=fefoItems.map(x=>x.validity_date).filter(Boolean).sort()[0];
+  $('fefoActiveEarliest').textContent=earliest?fmtDate(earliest):'—';
+  $('btnFefoFinish').disabled=!fefoItems.length;
+
+  $('tbodyFefoItems').innerHTML=fefoItems.length?fefoItems.map(x=>{
+    const v=fefoValidityInfo(x.validity_date);
+    return `<tr><td><strong>${esc(x.product_code)}</strong><small>${esc(x.product_name)}</small></td><td><span class="fefo-validity ${v.className}">${fmtDate(x.validity_date)}</span><small>${esc(v.label)}</small></td><td>${esc(x.street||'—')}</td><td>${Number(x.pallet||0)}</td><td>${Number(x.layer||0)}</td><td>${Number(x.box||0)}</td><td>${Number(x.loose_unit||0)}</td><td><div class="mini-actions"><button class="mini-btn" data-fefo-edit="${x.id}">Editar</button><button class="mini-btn danger" data-fefo-delete="${x.id}">Excluir</button></div></td></tr>`;
+  }).join(''):'<tr><td colspan="8">Nenhum produto registrado nesta contagem.</td></tr>';
+}
+
+function onFefoProductCode(){
+  const code=normalizeCode($('fefoCodigo').value);
+  const p=productsByCode.get(code);
+  const placeholder=$('fefoProdutoPlaceholder'),img=$('fefoProdutoImagem'),info=$('fefoProdutoInfo');
+  if(!p){
+    placeholder.classList.remove('hidden');placeholder.textContent=code?'Produto não cadastrado':'Digite o código para carregar o produto.';
+    img.classList.add('hidden');info.classList.add('hidden');
+    return;
+  }
+  placeholder.classList.add('hidden');info.classList.remove('hidden');
+  $('fefoProdutoCodigo').textContent=`Código ${p.code}`;$('fefoProdutoNome').textContent=p.name;
+  img.classList.remove('hidden');setProductImage(img,p.code);
+}
+
+function maskFefoDate(v){
+  const d=String(v||'').replace(/\D/g,'').slice(0,8);
+  if(d.length<=2)return d;
+  if(d.length<=4)return `${d.slice(0,2)}/${d.slice(2)}`;
+  return `${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`;
+}
+function parseFefoDate(v){
+  const m=String(v||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!m)return '';
+  const d=Number(m[1]),mo=Number(m[2]),y=Number(m[3]);
+  const dt=new Date(Date.UTC(y,mo-1,d));
+  if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==d)return '';
+  return `${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function formatFefoDateInput(iso){
+  if(!iso)return '';
+  const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}/${m[2]}/${m[1]}`:'';
+}
+function fefoValidityInfo(iso){
+  if(!iso)return {days:null,className:'',label:'Sem validade'};
+  const today=Date.parse(`${localIsoDate(new Date())}T00:00:00Z`),target=Date.parse(`${iso}T00:00:00Z`);
+  const days=Math.round((target-today)/86400000);
+  if(days<0)return {days,className:'expired',label:`Data vencida há ${Math.abs(days)} dia${Math.abs(days)===1?'':'s'}`};
+  if(days===0)return {days,className:'warning',label:'Vence hoje'};
+  if(days<=30)return {days,className:'warning',label:`Vence em ${days} dia${days===1?'':'s'}`};
+  return {days,className:'ok',label:`${days} dias até o vencimento`};
+}
+function paintFefoValidityHint(){
+  const el=$('fefoValidityHint');if(!el)return;
+  const iso=parseFefoDate($('fefoValidade').value);
+  if(!iso){el.textContent='Informe a validade no formato DD/MM/AAAA.';el.className='field-help';return;}
+  const v=fefoValidityInfo(iso);el.textContent=v.label;el.className=`field-help fefo-date-help ${v.className}`;
+}
+function fefoIntValue(id){return Math.max(0,Math.trunc(num($(id).value)));}
+
+async function startFefoCount(){
+  if(!canFefo())return;
+  const unit=$('fefoStartUnit').value;
+  if(!unit)return toast('Selecione a unidade da contagem.','error');
+  const btn=$('btnFefoStart'),old=btn.textContent;btn.disabled=true;btn.textContent='Iniciando…';
+  try{
+    const {data,error}=await sb.rpc('start_fefo_count',{p_unit:unit});if(error)throw error;
+    fefoActiveCount=data;fefoItems=[];clearFefoItemForm();renderFefoCurrent();await refreshFefoBadge(true);
+    toast(`Contagem ${data.count_code} iniciada.`,'success');
+    setTimeout(()=>$('fefoCodigo')?.focus(),80);
+  }catch(e){
+    const msg=humanFefoError(e);toast(msg,'error');
+    if(String(e?.message||'').includes('FEFO_CONTAGEM_EM_ANDAMENTO'))await loadFefoCurrent(true);
+  }finally{btn.disabled=false;btn.textContent=old;}
+}
+
+async function saveFefoItem(e){
+  e.preventDefault();
+  if(!fefoActiveCount)return toast('Inicie ou retome uma contagem primeiro.','error');
+  const code=normalizeCode($('fefoCodigo').value),product=productsByCode.get(code);
+  if(!code||!product)return toast('Produto não cadastrado. Confira o código.','error');
+  const validity=parseFefoDate($('fefoValidade').value);
+  if(!validity)return toast('Informe uma validade válida no formato DD/MM/AAAA.','error');
+  const vinfo=fefoValidityInfo(validity);
+  if(vinfo.days<0&&!window.confirm('Data vencida\n\nEssa data já passou. Deseja continuar?'))return;
+
+  const btn=$('btnFefoSaveItem'),old=btn.textContent;btn.disabled=true;btn.textContent=fefoEditingItemId?'Atualizando…':'Salvando…';
+  try{
+    const args={
+      p_count_id:fefoActiveCount.id,
+      p_product_code:product.code,
+      p_validity_date:validity,
+      p_street:$('fefoRua').value.trim(),
+      p_pallet:fefoIntValue('fefoPalete'),
+      p_layer:fefoIntValue('fefoLastro'),
+      p_box:fefoIntValue('fefoCaixa'),
+      p_loose_unit:fefoIntValue('fefoUnidadeQtd'),
+      p_item_id:fefoEditingItemId||null
+    };
+    const {error}=await sb.rpc('save_fefo_item',args);if(error)throw error;
+    toast(fefoEditingItemId?'Produto atualizado.':'Produto salvo na contagem.','success');
+    clearFefoItemForm();
+    fefoItems=await fetchFefoItemsForCount(fefoActiveCount.id);rememberFefoItems(fefoItems,[fefoActiveCount.id]);renderFefoCurrent();
+    setTimeout(()=>$('fefoCodigo')?.focus(),80);
+  }catch(err){toast(humanFefoError(err),'error');}
+  finally{btn.disabled=false;btn.textContent=fefoEditingItemId?'Atualizar Produto':'Salvar Produto';}
+}
+
+function clearFefoItemForm(){
+  fefoEditingItemId=null;
+  if($('fefoItemId'))$('fefoItemId').value='';
+  if($('fefoCodigo'))$('fefoCodigo').value='';
+  if($('fefoValidade'))$('fefoValidade').value='';
+  if($('fefoRua'))$('fefoRua').value='';
+  ['fefoPalete','fefoLastro','fefoCaixa','fefoUnidadeQtd'].forEach(id=>{if($(id))$(id).value='0';});
+  if($('fefoItemFormTitle'))$('fefoItemFormTitle').textContent='Adicionar produto';
+  if($('btnFefoSaveItem'))$('btnFefoSaveItem').textContent='Salvar Produto';
+  if($('btnFefoCancelEdit'))$('btnFefoCancelEdit').classList.add('hidden');
+  if($('fefoValidityHint')){$('fefoValidityHint').textContent='Informe a validade do produto.';$('fefoValidityHint').className='field-help';}
+  if($('fefoProdutoPlaceholder')){$('fefoProdutoPlaceholder').classList.remove('hidden');$('fefoProdutoPlaceholder').textContent='Digite o código para carregar o produto.';}
+  if($('fefoProdutoImagem'))$('fefoProdutoImagem').classList.add('hidden');
+  if($('fefoProdutoInfo'))$('fefoProdutoInfo').classList.add('hidden');
+}
+
+function onFefoItemsClick(e){
+  const edit=e.target.closest('[data-fefo-edit]');if(edit)return editFefoItem(edit.dataset.fefoEdit);
+  const del=e.target.closest('[data-fefo-delete]');if(del)return deleteFefoItem(del.dataset.fefoDelete);
+}
+function editFefoItem(id){
+  const x=fefoItems.find(r=>r.id===id);if(!x)return;
+  fefoEditingItemId=x.id;$('fefoItemId').value=x.id;$('fefoCodigo').value=x.product_code;$('fefoValidade').value=formatFefoDateInput(x.validity_date);$('fefoRua').value=x.street||'';$('fefoPalete').value=x.pallet||0;$('fefoLastro').value=x.layer||0;$('fefoCaixa').value=x.box||0;$('fefoUnidadeQtd').value=x.loose_unit||0;
+  $('fefoItemFormTitle').textContent='Atualizar Produto';$('btnFefoSaveItem').textContent='Atualizar Produto';$('btnFefoCancelEdit').classList.remove('hidden');onFefoProductCode();paintFefoValidityHint();
+  $('formFefoItem').scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function deleteFefoItem(id){
+  const x=fefoItems.find(r=>r.id===id);if(!x)return;
+  if(!window.confirm(`Excluir ${x.product_code} - ${x.product_name} desta contagem?`))return;
+  try{const {error}=await sb.rpc('delete_fefo_item',{p_item_id:id});if(error)throw error;if(fefoEditingItemId===id)clearFefoItemForm();fefoItems=await fetchFefoItemsForCount(fefoActiveCount.id);rememberFefoItems(fefoItems,[fefoActiveCount.id]);renderFefoCurrent();toast('Produto excluído.','success');}catch(e){toast(humanFefoError(e),'error');}
+}
+
+async function finishFefoCount(){
+  if(!fefoActiveCount)return;
+  if(!fefoItems.length)return toast('Adicione pelo menos um produto antes de finalizar.','error');
+  if(!window.confirm(`Finalizar a contagem ${fefoActiveCount.count_code}?\n\nDepois de finalizada, os itens não poderão ser alterados.`))return;
+  const btn=$('btnFefoFinish'),old=btn.textContent;btn.disabled=true;btn.textContent='Finalizando…';
+  try{
+    const countBefore={...fefoActiveCount},itemsBefore=[...fefoItems].sort(fefoItemSort);
+    const {data,error}=await sb.rpc('finish_fefo_count',{p_count_id:fefoActiveCount.id});if(error)throw error;
+    const finished={...countBefore,...data};
+    fefoActiveCount=null;fefoItems=[];clearFefoItemForm();renderFefoCurrent();await refreshFefoBadge(true);
+    fefoReports=[finished,...fefoReports.filter(x=>x.id!==finished.id)];fefoItemsByCount.set(finished.id,itemsBefore);
+    openModal('Contagem Finalizada',finished.count_code,`<div class="fefo-finished"><span class="fefo-finished-icon">✓</span><h3>Conferência Finalizada</h3><p>${esc(finished.unit)} • ${itemsBefore.length} item${itemsBefore.length===1?'':'s'} registrado${itemsBefore.length===1?'':'s'}.</p><p>O relatório permanece salvo no Supabase e pode ser baixado novamente em <strong>FEFO → Relatórios</strong>.</p></div>`,[
+      {label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(finished,itemsBefore)},
+      {label:'Compartilhar CSV',class:'secondary',onClick:()=>shareFefoCsv(finished,itemsBefore)},
+      {label:'Fechar',class:'secondary',onClick:closeModal}
+    ]);
+  }catch(e){toast(humanFefoError(e),'error');}
+  finally{btn.disabled=false;btn.textContent=old;}
+}
+
+async function cancelFefoCount(){
+  if(!fefoActiveCount)return;
+  if(!window.confirm(`Cancelar a contagem ${fefoActiveCount.count_code}?\n\nEla sairá da lista de contagens em andamento.`))return;
+  try{const {error}=await sb.rpc('cancel_fefo_count',{p_count_id:fefoActiveCount.id});if(error)throw error;fefoActiveCount=null;fefoItems=[];clearFefoItemForm();renderFefoCurrent();await refreshFefoBadge(true);toast('Contagem cancelada.','success');}catch(e){toast(humanFefoError(e),'error');}
+}
+
+async function loadFefoActiveCounts(silent=false){
+  if(!canFefo()||!sb)return;
+  try{
+    fefoActiveCounts=await fetchFefoCounts('IN_PROGRESS');
+    const items=await fetchFefoItemsForCounts(fefoActiveCounts.map(x=>x.id));rememberFefoItems(items,fefoActiveCounts.map(x=>x.id));
+    renderFefoActiveCounts();await refreshFefoBadge(true);
+  }catch(e){if(!silent)toast(humanFefoError(e),'error');}
+}
+function renderFefoActiveCounts(){
+  if(!$('tbodyFefoActiveCounts'))return;
+  $('tbodyFefoActiveCounts').innerHTML=fefoActiveCounts.length?fefoActiveCounts.map(c=>{const items=fefoItemsByCount.get(c.id)||[];return `<tr><td><strong>${esc(c.count_code)}</strong><small>Em andamento</small></td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${fmtDateTime(c.started_at)}</td><td>${items.length}</td><td><button class="mini-btn" data-fefo-resume="${c.id}">Retomar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma contagem em andamento.</td></tr>';
+}
+function onFefoActiveCountsClick(e){const b=e.target.closest('[data-fefo-resume]');if(b)resumeFefoCount(b.dataset.fefoResume);}
+async function resumeFefoCount(id){
+  try{
+    let c=fefoActiveCounts.find(x=>x.id===id)||null;
+    if(!c){const r=await sb.from('fefo_counts').select('*').eq('id',id).eq('status','IN_PROGRESS').single();if(r.error)throw r.error;c=r.data;}
+    fefoActiveCount=c;fefoItems=fefoItemsByCount.get(id)||await fetchFefoItemsForCount(id);rememberFefoItems(fefoItems,[id]);clearFefoItemForm();openView('fefo-contagem',true);renderFefoCurrent();
+  }catch(e){toast(humanFefoError(e),'error');}
+}
+
+async function loadFefoReports(silent=false){
+  if(!canFefo()||!sb)return;
+  try{
+    fefoReports=await fetchFefoCounts('COMPLETED');
+    const items=await fetchFefoItemsForCounts(fefoReports.map(x=>x.id));rememberFefoItems(items,fefoReports.map(x=>x.id));
+    renderFefoReports();
+  }catch(e){if(!silent)toast(humanFefoError(e),'error');}
+}
+function filteredFefoReports(){
+  const q=String($('fefoReportSearch')?.value||'').trim().toLowerCase(),unit=$('fefoReportUnit')?.value||'',from=$('fefoReportFrom')?.value||'',to=$('fefoReportTo')?.value||'';
+  return fefoReports.filter(c=>{
+    const at=String(c.completed_at||c.started_at||'').slice(0,10),items=fefoItemsByCount.get(c.id)||[];
+    if(unit&&c.unit!==unit)return false;if(from&&at<from)return false;if(to&&at>to)return false;
+    if(q){const hay=[c.count_code,c.unit,c.counter_name,c.counter_username,...items.flatMap(i=>[i.product_code,i.product_name,i.street,fmtDate(i.validity_date)])].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+    return true;
+  });
+}
+function renderFefoReports(){
+  if(!$('tbodyFefoReports'))return;
+  const rows=filteredFefoReports();
+  $('tbodyFefoReports').innerHTML=rows.length?rows.map(c=>{const items=fefoItemsByCount.get(c.id)||[],earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];return `<tr><td><strong>${esc(c.count_code)}</strong></td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${fmtDateTime(c.started_at)}</td><td>${fmtDateTime(c.completed_at)}</td><td>${items.length}</td><td>${earliest?fmtDate(earliest):'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-fefo-report="${c.id}">Visualizar</button><button class="mini-btn" data-fefo-csv="${c.id}">CSV</button><button class="mini-btn" data-fefo-share="${c.id}">Compartilhar</button></div></td></tr>`;}).join(''):'<tr><td colspan="8">Nenhum relatório encontrado.</td></tr>';
+}
+function onFefoReportsClick(e){
+  const detail=e.target.closest('[data-fefo-report]');if(detail)return openFefoReport(detail.dataset.fefoReport);
+  const csv=e.target.closest('[data-fefo-csv]');if(csv){const c=fefoReports.find(x=>x.id===csv.dataset.fefoCsv);if(c)downloadFefoCsv(c,fefoItemsByCount.get(c.id)||[]);return;}
+  const share=e.target.closest('[data-fefo-share]');if(share){const c=fefoReports.find(x=>x.id===share.dataset.fefoShare);if(c)shareFefoCsv(c,fefoItemsByCount.get(c.id)||[]);}
+}
+function openFefoReport(id){
+  const c=fefoReports.find(x=>x.id===id)||fefoActiveCounts.find(x=>x.id===id);if(!c)return;
+  const items=[...(fefoItemsByCount.get(c.id)||[])].sort(fefoItemSort),earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];
+  const body=`<div class="detail-grid"><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Responsável</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(c.started_at)}</strong></div><div class="detail-card"><small>Finalização</small><strong>${fmtDateTime(c.completed_at)}</strong></div><div class="detail-card"><small>Itens</small><strong>${items.length}</strong></div><div class="detail-card"><small>Menor validade</small><strong>${earliest?fmtDate(earliest):'—'}</strong></div></div><div class="table-wrap"><table class="fefo-table"><thead><tr><th>Código</th><th>Produto</th><th>Validade</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th></tr></thead><tbody>${items.map(x=>{const v=fefoValidityInfo(x.validity_date);return `<tr><td><strong>${esc(x.product_code)}</strong></td><td>${esc(x.product_name)}</td><td><span class="fefo-validity ${v.className}">${fmtDate(x.validity_date)}</span><small>${esc(v.label)}</small></td><td>${esc(x.street||'—')}</td><td>${Number(x.pallet||0)}</td><td>${Number(x.layer||0)}</td><td>${Number(x.box||0)}</td><td>${Number(x.loose_unit||0)}</td></tr>`;}).join('')||'<tr><td colspan="8">Nenhum item.</td></tr>'}</tbody></table></div>`;
+  openModal(`FEFO • ${c.count_code}`,c.status==='COMPLETED'?'Contagem finalizada':'Contagem em andamento',body,[
+    {label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(c,items)},
+    {label:'Compartilhar CSV',class:'secondary',onClick:()=>shareFefoCsv(c,items)},
+    {label:'Fechar',class:'secondary',onClick:closeModal}
+  ]);
+}
+
+function fefoCsvCell(v){const s=String(v??'');return /[;"\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}
+function fefoCsvText(items){
+  const rows=[['codigo','nome','validade','rua','palete','lastro','caixa','unidade'],...[...(items||[])].sort(fefoItemSort).map(x=>[x.product_code,x.product_name,fmtDate(x.validity_date),x.street||'',Number(x.pallet||0),Number(x.layer||0),Number(x.box||0),Number(x.loose_unit||0)])];
+  return '\uFEFF'+rows.map(r=>r.map(fefoCsvCell).join(';')).join('\r\n');
+}
+function fefoFileStamp(v){
+  const d=new Date(v||Date.now());
+  try{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(d).map(p=>[p.type,p.value]));return `${parts.year}${parts.month}${parts.day}_${parts.hour}${parts.minute}`;}catch{return localIsoDate(d).replace(/-/g,'');}
+}
+function fefoFileName(count){return `contagem_${fefoFileStamp(count?.completed_at||count?.started_at)}.csv`;}
+function downloadFefoCsv(count,items){
+  const blob=new Blob([fefoCsvText(items)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=fefoFileName(count);a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function shareFefoCsv(count,items){
+  const name=fefoFileName(count),file=new File([fefoCsvText(items)],name,{type:'text/csv;charset=utf-8'});
+  try{
+    if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){await navigator.share({title:`Contagem FEFO ${count?.count_code||''}`,text:`Relatório da contagem FEFO ${count?.count_code||''}`,files:[file]});return;}
+    downloadFefoCsv(count,items);toast('Compartilhamento direto indisponível neste dispositivo. O CSV foi baixado.','success');
+  }catch(e){if(e?.name!=='AbortError')toast('Não foi possível compartilhar. O CSV permanece disponível para download.','error');}
+}
+
+function humanFefoError(e){
+  const m=String(e?.message||e||'Erro na Contagem FEFO');
+  const map={
+    FEFO_CONTAGEM_EM_ANDAMENTO:'Você já possui uma contagem FEFO em andamento. Retome a contagem existente.',
+    FEFO_CONTAGEM_NAO_ENCONTRADA:'Contagem FEFO não encontrada.',
+    FEFO_CONTAGEM_FINALIZADA:'Esta contagem já foi finalizada ou cancelada.',
+    FEFO_PRODUTO_NAO_CADASTRADO:'Produto não cadastrado.',
+    FEFO_VALIDADE_OBRIGATORIA:'Informe a validade do produto.',
+    FEFO_ITEM_NAO_ENCONTRADO:'Item da contagem não encontrado.',
+    FEFO_CONTAGEM_SEM_ITENS:'Adicione pelo menos um produto antes de finalizar.',
+    UNIDADE_INVALIDA:'Selecione uma unidade ativa.',
+    FORBIDDEN:'Seu perfil não possui permissão para esta ação.'
+  };
+  const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];
+  if(/relation .*fefo_/i.test(m)||/fefo_counts.*does not exist/i.test(m))return 'O módulo FEFO ainda não foi criado no Supabase. Execute o SQL 17_v1_3_0_contagem_fefo.sql.';
+  return humanError(e);
+}
+
+
 function openModal(title,subtitle,body,actions=[]){$('modalTitle').textContent=title;$('modalSubtitle').textContent=subtitle||'';$('modalBody').innerHTML=body||'';const a=$('modalActions');a.innerHTML='';actions.forEach(x=>{const b=document.createElement('button');b.className=`btn ${x.class||'secondary'}`;b.textContent=x.label;b.addEventListener('click',x.onClick);a.appendChild(b);});$('modal').classList.add('open');}
 function closeModal(){cleanupPullMaps();$('modal').classList.remove('open');$('modalBody').onchange=null;$('modalBody').onclick=null;$('modalBody').innerHTML='';$('modalActions').innerHTML='';}
 function statusBadge(s){const cls=s==='IMPRESSO'||s==='APROVADO'?'ok':s==='REPROVADO'||s==='REMOVIDO'?'bad':s==='PARCIAL'?'partial':'pending';return `<span class="status ${cls}">${esc(s)}</span>`;}
@@ -1585,7 +1984,7 @@ function exportNriDamageHistoryCsv(){const arr=filteredNriDamageHistory(),header
 
 function fmtDateTime(v){if(!v)return '—';try{return new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,dateStyle:'short',timeStyle:'medium'}).format(new Date(v));}catch{return String(v);}}
 function localIsoDate(d){return new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
-function localTime(d){return new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hour12:false}).format(d);}
+function localTime(d){return new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d);}
 function maskShortDate(v){const d=String(v||'').replace(/\D/g,'').slice(0,6);return d.length<=2?d:d.length<=4?`${d.slice(0,2)}/${d.slice(2)}`:`${d.slice(0,2)}/${d.slice(2,4)}/${d.slice(4)}`;}
 function parseShortDate(v){const m=String(v||'').match(/^(\d{2})\/(\d{2})\/(\d{2})$/);if(!m)return '';const y=2000+Number(m[3]),mo=Number(m[2]),d=Number(m[1]);const dt=new Date(Date.UTC(y,mo-1,d));if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==d)return '';return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function formatShortDate(iso){if(!iso)return '';const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}/${m[2]}/${m[1].slice(2)}`:'';}
