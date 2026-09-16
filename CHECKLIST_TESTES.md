@@ -47,3 +47,11 @@ Antes de desligar os aplicativos antigos, valide:
 - [ ] Compartilhar CSV abre o compartilhamento nativo quando suportado.
 - [ ] Em dispositivo sem compartilhamento de arquivo, a ação faz fallback para download.
 - [ ] Badge “Em andamento” atualiza via Realtime.
+
+## v1.3.1
+- [ ] NRI AMBEV mostra apenas placas ativas cadastradas em Veiculos / parceiros.
+- [ ] NRI originada pela Puxada exibe a placa vinculada mesmo quando o campo fica bloqueado.
+- [ ] Marketplace continua mostrando placa `--` e bloqueada.
+- [ ] Puxada e Transferencia usam seletor de placa e nao permitem digitacao livre.
+- [ ] FEFO finalizado oferece Baixar CSV e Fechar, sem Compartilhar.
+- [ ] Relatorios FEFO exibem Visualizar e CSV, sem Compartilhar.

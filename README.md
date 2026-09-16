@@ -251,3 +251,11 @@ Antes de publicar, execute no SQL Editor:
 O catálogo extraído do DisbStock V1.6 está em `bases_fefo/PRODUTOS_DISBSTOCK_V1_6.csv`. Se desejar utilizar essa base, importe em **Administração > Bases / importação > PRODUTOS**.
 
 As imagens originais do catálogo são opcionais e podem ser copiadas para `imagens_produtos/`. O Disb Gestão já procura automaticamente por `.png`, `.jpg`, `.jpeg` e `.webp` usando o código do produto como nome do arquivo.
+
+## v1.3.1 - Placas por cadastro e FEFO sem compartilhamento
+
+- NRI: placa selecionada a partir dos veiculos ativos cadastrados em Puxada > Configuracoes.
+- Puxada/Transferencia: placa selecionada no mesmo cadastro de veiculos, sem digitacao livre.
+- FEFO: permanece com Visualizar e Baixar CSV; a opcao Compartilhar foi removida.
+- Nenhum campo de area do armazem foi adicionado.
+- Nao ha SQL novo nesta versao.

@@ -154,7 +154,6 @@ function bindBaseEvents(){
   $('nriSemValidade').addEventListener('change',updateNriValidityMode);
   $('nriValidade').addEventListener('input',e=>{ e.target.value=maskShortDate(e.target.value); updateBlockDate(); });
   $('nriLote').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase());
-  $('nriPlaca').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
   $('btnAdicionarNriItem').addEventListener('click',addNriDraftItem);
   $('btnCancelarNriItem').addEventListener('click',clearNriItemEditor);
   $('btnLimparNri').addEventListener('click',clearNriRequest);
@@ -444,7 +443,8 @@ function updateNriTypeFields(){
   setSelectFixedValue($('nriMotorista'),'--',marketplace);
   setSelectFixedValue($('nriFabrica'),'--',marketplace);
   const plate=$('nriPlaca');
-  if(marketplace){plate.value='--';plate.disabled=true;plate.required=false;}else{plate.disabled=false;plate.required=true;if(plate.value==='--')plate.value='';}
+  if(marketplace)setSelectFixedValue(plate,'--',true);
+  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();}
 }
 function updateNriValidityMode(){
   const sem=$('nriSemValidade').checked;
@@ -934,6 +934,17 @@ async function loadPullReferenceData(){
   populatePullReferenceInputs();
 }
 
+function populatePlateSelectors(){
+  const vehicles=pullVehicles.filter(x=>x.active!==false&&String(x.plate||'').trim()).sort((a,b)=>String(a.plate).localeCompare(String(b.plate),'pt-BR'));
+  const fill=(id)=>{
+    const el=$(id);if(!el||el.disabled)return;
+    const old=el.value;
+    el.innerHTML='<option value="">Selecione</option>'+vehicles.map(x=>`<option value="${esc(x.plate)}">${esc(x.plate)}${x.carrier?` • ${esc(x.carrier)}`:''}</option>`).join('');
+    if(vehicles.some(x=>x.plate===old))el.value=old;
+  };
+  fill('nriPlaca');
+  fill('pullStartPlate');
+}
 function populatePullReferenceInputs(){
   if($('pullStartOrigin')){
     const old=$('pullStartOrigin').value;
@@ -952,7 +963,7 @@ function populatePullReferenceInputs(){
     $('pullStartDriver2').innerHTML='<option value="">Selecione</option>'+others.map(x=>`<option value="${x.id}">${esc(x.name)} (${esc(x.username)})</option>`).join('');
     if(others.some(x=>x.id===old))$('pullStartDriver2').value=old;
   }
-  if($('pullVehicleList')) $('pullVehicleList').innerHTML=pullVehicles.filter(x=>x.active).map(x=>`<option value="${esc(x.plate)}">${esc(x.carrier||'')}</option>`).join('');
+  populatePlateSelectors();
   const factoryOptions='<option value="">Todas</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
   if($('pullHistFactory'))$('pullHistFactory').innerHTML=factoryOptions;
   if($('pullFactoryName'))$('pullFactoryName').innerHTML='<option value="">Selecione</option>'+pullFactories.map(x=>`<option>${esc(x.name)}</option>`).join('');
@@ -1138,7 +1149,7 @@ function prefillNriFromPull(t){
   $('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;
   $('nriHora').value=localTime(end);$('nriHora').disabled=true;
   setSelectFixedValue($('nriMotorista'),t.ended_by_name||t.active_driver_name||'—',true);
-  $('nriPlaca').value=t.plate;$('nriPlaca').disabled=true;$('nriPlaca').required=false;
+  setSelectFixedValue($('nriPlaca'),t.plate,true);
   setSelectFixedValue($('nriFabrica'),t.factory,true);
   $('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados da carreta preenchidos automaticamente pela Puxada. A unidade pode ser ajustada antes do cadastro dos produtos, lotes, validades e NRIs.</span>`;
   openView('nri-cadastro',true);
@@ -1146,8 +1157,8 @@ function prefillNriFromPull(t){
 function clearNriPullContext(){
   nriPullLocked=false;if(!$('nriPullTripId'))return;$('nriPullTripId').value='';$('nriPullBanner').classList.add('hidden');$('nriPullBanner').innerHTML='';
   [$('nriUnidade'),$('nriMotorista'),$('nriFabrica')].forEach(sel=>{if(!sel)return;[...sel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());sel.disabled=false;sel.required=true;});
-  $('nriTipo').disabled=false;$('nriTipo').required=true;$('nriRecebimento').disabled=false;$('nriHora').disabled=false;$('nriPlaca').disabled=false;$('nriPlaca').required=true;
-  populateReferenceInputs();
+  $('nriTipo').disabled=false;$('nriTipo').required=true;$('nriRecebimento').disabled=false;$('nriHora').disabled=false;setSelectFixedValue($('nriPlaca'),'--',false);
+  populateReferenceInputs();populatePlateSelectors();
 }
 
 async function loadPullFarol(silent=false){
@@ -1473,7 +1484,9 @@ updateNriTypeFields = function(){
   if(marketplace){
     [...f.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());const old=f.value;f.disabled=false;f.required=true;f.innerHTML='<option value="">Selecione o fornecedor</option>'+activeMarketplaceSuppliers().map(x=>`<option>${esc(x.name)}</option>`).join('');if(activeMarketplaceSuppliers().some(x=>x.name===old))f.value=old;
   }else{fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');f.disabled=false;f.required=true;}
-  const plate=$('nriPlaca');if(marketplace){plate.value='--';plate.disabled=true;plate.required=false;}else{plate.disabled=false;plate.required=true;if(plate.value==='--')plate.value='';}
+  const plate=$('nriPlaca');
+  if(marketplace)setSelectFixedValue(plate,'--',true);
+  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();}
 };
 
 addNriDraftItem = function(){
@@ -1491,7 +1504,7 @@ onNriDraftListClick = function(e){const b=e.target.closest('button[data-act]');i
 clearNriItemEditor = function(){nriEditingId=null;['nriCodigo','nriValidade','nriLote','nriBloqueio'].forEach(id=>$(id).value='');$('nriSemValidade').checked=false;updateNriValidityMode();$('nriQuantidade').value=1;$('nriPaletes').value=1;$('produtoPlaceholder').classList.remove('hidden');$('produtoImagem').classList.add('hidden');$('produtoInfo').classList.add('hidden');$('btnAdicionarNriItem').textContent='+ Adicionar à carreta';$('btnCancelarNriItem').classList.add('hidden');resetNriDamageEditor();};
 function clearNriSourceContext(){
   nriPullLocked=false;nriMarketplaceLocked=false;if($('nriPullTripId'))$('nriPullTripId').value='';if($('nriMarketplaceReceiptId'))$('nriMarketplaceReceiptId').value='';$('nriPullBanner')?.classList.add('hidden');if($('nriPullBanner'))$('nriPullBanner').innerHTML='';
-  [$('nriUnidade'),$('nriMotorista'),$('nriFabrica')].forEach(sel=>{if(!sel)return;[...sel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());sel.disabled=false;sel.required=true;});$('nriTipo').disabled=false;$('nriTipo').required=true;$('nriRecebimento').disabled=false;$('nriHora').disabled=false;$('nriPlaca').disabled=false;$('nriPlaca').required=true;populateReferenceInputs();
+  [$('nriUnidade'),$('nriMotorista'),$('nriFabrica')].forEach(sel=>{if(!sel)return;[...sel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());sel.disabled=false;sel.required=true;});$('nriTipo').disabled=false;$('nriTipo').required=true;$('nriRecebimento').disabled=false;$('nriHora').disabled=false;setSelectFixedValue($('nriPlaca'),'--',false);populateReferenceInputs();populatePlateSelectors();
 }
 clearNriPullContext = function(){clearNriSourceContext();};
 clearNriRequest = function(){nriDraftItems=[];renderNriDraftItems();clearNriItemEditor();clearNriSourceContext();['nriUnidade','nriMotorista','nriFabrica','nriPlaca'].forEach(id=>$(id).value='');$('nriTipo').value='AMBEV';updateNriTypeFields();$('nriRecebimento').value=localIsoDate(new Date());$('nriHora').value=localTime(new Date());$('nriConferente').value=profile?.name||'';};
@@ -1511,8 +1524,8 @@ loadPullNriPending = async function(silent=false){
   if(!canNri())return;try{const [pr,mr]=await Promise.all([sb.from('pull_trips').select('*').eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),sb.from('marketplace_receipts').select('*').eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)]);if(pr.error)throw pr.error;if(mr.error)throw mr.error;const rows=[...(pr.data||[]).map(x=>({...x,_source:'PULL',_sort:x.ended_at})),...(mr.data||[]).map(x=>({...x,_source:'MARKETPLACE',_sort:x.ended_at}))].sort((a,b)=>new Date(b._sort)-new Date(a._sort));$('badgePullNri').textContent=rows.length;const el=$('pullNriCards');if(!rows.length){el.className='pull-card-grid empty-state';el.textContent='Nenhum recebimento pendente.';return;}el.className='pull-card-grid';el.innerHTML=rows.map(x=>x._source==='PULL'?`<article class="pull-card"><div class="pull-card-head"><div><small>PUXADA • ${esc(x.trip_code)}</small><strong>${esc(x.plate)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fábrica:</b> ${esc(x.factory)}</span><span><b>Motorista:</b> ${esc(x.ended_by_name||'—')}</span><span><b>Recebida:</b> ${fmtDateTime(x.ended_at)}</span><span><b>Unidade:</b> ${esc(x.origin_unit)}</span></div><button class="btn primary wide" data-source="PULL" data-pull-nri="${x.id}">Cadastrar NRIs</button></article>`:`<article class="pull-card marketplace"><div class="pull-card-head"><div><small>MARKETPLACE • ${esc(x.receipt_code)}</small><strong>${esc(x.supplier_name)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fornecedor:</b> ${esc(x.supplier_name)}</span><span><b>Conferente:</b> ${esc(x.checker_name)}</span><span><b>Finalizado:</b> ${fmtDateTime(x.ended_at)}</span><span><b>Unidade:</b> ${esc(x.unit)}</span><span><b>Tempo:</b> ${fmtDurationSeconds(x.duration_seconds||0)}</span></div><button class="btn primary wide" data-source="MARKETPLACE" data-market-nri="${x.id}">Cadastrar NRIs</button></article>`).join('');el._pendingRows=rows;}catch(e){if(!silent)toast(humanPullError(e),'error');}
 };
 onPullNriCardsClick = function(e){const p=e.target.closest('[data-pull-nri]'),m=e.target.closest('[data-market-nri]');if(!p&&!m)return;const rows=$('pullNriCards')._pendingRows||[];if(p){const t=rows.find(x=>x._source==='PULL'&&x.id===p.dataset.pullNri);if(t)prefillNriFromPull(t);}else{const r=rows.find(x=>x._source==='MARKETPLACE'&&x.id===m.dataset.marketNri);if(r)prefillNriFromMarketplace(r);}};
-prefillNriFromPull = function(t){clearNriRequest();nriPullLocked=true;$('nriPullTripId').value=t.id;const end=new Date(t.ended_at),unitSel=$('nriUnidade');if(unitSel){[...unitSel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());if(![...unitSel.options].some(o=>o.value===t.origin_unit)){const o=document.createElement('option');o.value=t.origin_unit;o.textContent=t.origin_unit;unitSel.appendChild(o);}unitSel.value=t.origin_unit;unitSel.disabled=false;unitSel.required=true;}$('nriTipo').value='AMBEV';$('nriTipo').disabled=true;$('nriTipo').required=false;$('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;$('nriHora').value=localTime(end);$('nriHora').disabled=true;setSelectFixedValue($('nriMotorista'),t.ended_by_name||t.active_driver_name||'—',true);$('nriPlaca').value=t.plate;$('nriPlaca').disabled=true;$('nriPlaca').required=false;setSelectFixedValue($('nriFabrica'),t.factory,true);$('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados preenchidos automaticamente pela Puxada. A unidade pode ser ajustada antes do cadastro dos NRIs.</span>`;openView('nri-cadastro',true);};
-function prefillNriFromMarketplace(r){clearNriRequest();nriMarketplaceLocked=true;$('nriMarketplaceReceiptId').value=r.id;const end=new Date(r.ended_at);setSelectFixedValue($('nriUnidade'),r.unit,true);$('nriTipo').value='MARKETPLACE';$('nriTipo').disabled=true;$('nriTipo').required=false;$('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;$('nriHora').value=localTime(end);$('nriHora').disabled=true;setSelectFixedValue($('nriMotorista'),'--',true);$('nriPlaca').value='--';$('nriPlaca').disabled=true;$('nriPlaca').required=false;setSelectFixedValue($('nriFabrica'),r.supplier_name,true);$('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(r.receipt_code)} • Marketplace</strong><span>Unidade, data, hora, conferente e fornecedor foram preenchidos pelo recebimento. No NRI, a Fábrica será registrada como ${esc(r.supplier_name)}.</span>`;openView('nri-cadastro',true);}
+prefillNriFromPull = function(t){clearNriRequest();nriPullLocked=true;$('nriPullTripId').value=t.id;const end=new Date(t.ended_at),unitSel=$('nriUnidade');if(unitSel){[...unitSel.options].filter(o=>o.dataset.fixed==='__fixed_value__').forEach(o=>o.remove());if(![...unitSel.options].some(o=>o.value===t.origin_unit)){const o=document.createElement('option');o.value=t.origin_unit;o.textContent=t.origin_unit;unitSel.appendChild(o);}unitSel.value=t.origin_unit;unitSel.disabled=false;unitSel.required=true;}$('nriTipo').value='AMBEV';$('nriTipo').disabled=true;$('nriTipo').required=false;$('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;$('nriHora').value=localTime(end);$('nriHora').disabled=true;setSelectFixedValue($('nriMotorista'),t.ended_by_name||t.active_driver_name||'—',true);setSelectFixedValue($('nriPlaca'),t.plate,true);setSelectFixedValue($('nriFabrica'),t.factory,true);$('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(t.trip_code)} • ${esc(t.plate)}</strong><span>Dados preenchidos automaticamente pela Puxada. A unidade pode ser ajustada antes do cadastro dos NRIs.</span>`;openView('nri-cadastro',true);};
+function prefillNriFromMarketplace(r){clearNriRequest();nriMarketplaceLocked=true;$('nriMarketplaceReceiptId').value=r.id;const end=new Date(r.ended_at);setSelectFixedValue($('nriUnidade'),r.unit,true);$('nriTipo').value='MARKETPLACE';$('nriTipo').disabled=true;$('nriTipo').required=false;$('nriRecebimento').value=localIsoDate(end);$('nriRecebimento').disabled=true;$('nriHora').value=localTime(end);$('nriHora').disabled=true;setSelectFixedValue($('nriMotorista'),'--',true);setSelectFixedValue($('nriPlaca'),'--',true);setSelectFixedValue($('nriFabrica'),r.supplier_name,true);$('nriPullBanner').classList.remove('hidden');$('nriPullBanner').innerHTML=`<strong>${esc(r.receipt_code)} • Marketplace</strong><span>Unidade, data, hora, conferente e fornecedor foram preenchidos pelo recebimento. No NRI, a Fábrica será registrada como ${esc(r.supplier_name)}.</span>`;openView('nri-cadastro',true);}
 
 function pullStepsForCycle(type){const flow=type==='TRANSFER'?'TRANSFER':'PULL';return pullAllMainSteps.filter(x=>(x.flow_type||'PULL')===flow).sort((a,b)=>a.sort_order-b.sort_order);}
 loadPullReferenceData = async function(){
@@ -1575,7 +1588,7 @@ humanPullError = function(e){const m=String(e?.message||e||'');const extra={MOTO
 
 // MODAL / HELPERS ------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// CONTAGEM FEFO - v1.3.0
+// CONTAGEM FEFO - v1.3.1
 // Funcionalidades adaptadas do DisbStock V1.6 para Supabase / multiusuario.
 // ---------------------------------------------------------------------------
 async function refreshFefoBadge(silent=false){
@@ -1823,7 +1836,6 @@ async function finishFefoCount(){
     fefoReports=[finished,...fefoReports.filter(x=>x.id!==finished.id)];fefoItemsByCount.set(finished.id,itemsBefore);
     openModal('Contagem Finalizada',finished.count_code,`<div class="fefo-finished"><span class="fefo-finished-icon">✓</span><h3>Conferência Finalizada</h3><p>${esc(finished.unit)} • ${itemsBefore.length} item${itemsBefore.length===1?'':'s'} registrado${itemsBefore.length===1?'':'s'}.</p><p>O relatório permanece salvo no Supabase e pode ser baixado novamente em <strong>FEFO → Relatórios</strong>.</p></div>`,[
       {label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(finished,itemsBefore)},
-      {label:'Compartilhar CSV',class:'secondary',onClick:()=>shareFefoCsv(finished,itemsBefore)},
       {label:'Fechar',class:'secondary',onClick:closeModal}
     ]);
   }catch(e){toast(humanFefoError(e),'error');}
@@ -1877,12 +1889,11 @@ function filteredFefoReports(){
 function renderFefoReports(){
   if(!$('tbodyFefoReports'))return;
   const rows=filteredFefoReports();
-  $('tbodyFefoReports').innerHTML=rows.length?rows.map(c=>{const items=fefoItemsByCount.get(c.id)||[],earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];return `<tr><td><strong>${esc(c.count_code)}</strong></td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${fmtDateTime(c.started_at)}</td><td>${fmtDateTime(c.completed_at)}</td><td>${items.length}</td><td>${earliest?fmtDate(earliest):'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-fefo-report="${c.id}">Visualizar</button><button class="mini-btn" data-fefo-csv="${c.id}">CSV</button><button class="mini-btn" data-fefo-share="${c.id}">Compartilhar</button></div></td></tr>`;}).join(''):'<tr><td colspan="8">Nenhum relatório encontrado.</td></tr>';
+  $('tbodyFefoReports').innerHTML=rows.length?rows.map(c=>{const items=fefoItemsByCount.get(c.id)||[],earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];return `<tr><td><strong>${esc(c.count_code)}</strong></td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${fmtDateTime(c.started_at)}</td><td>${fmtDateTime(c.completed_at)}</td><td>${items.length}</td><td>${earliest?fmtDate(earliest):'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-fefo-report="${c.id}">Visualizar</button><button class="mini-btn" data-fefo-csv="${c.id}">CSV</button></div></td></tr>`;}).join(''):'<tr><td colspan="8">Nenhum relatório encontrado.</td></tr>';
 }
 function onFefoReportsClick(e){
   const detail=e.target.closest('[data-fefo-report]');if(detail)return openFefoReport(detail.dataset.fefoReport);
   const csv=e.target.closest('[data-fefo-csv]');if(csv){const c=fefoReports.find(x=>x.id===csv.dataset.fefoCsv);if(c)downloadFefoCsv(c,fefoItemsByCount.get(c.id)||[]);return;}
-  const share=e.target.closest('[data-fefo-share]');if(share){const c=fefoReports.find(x=>x.id===share.dataset.fefoShare);if(c)shareFefoCsv(c,fefoItemsByCount.get(c.id)||[]);}
 }
 function openFefoReport(id){
   const c=fefoReports.find(x=>x.id===id)||fefoActiveCounts.find(x=>x.id===id);if(!c)return;
@@ -1890,7 +1901,6 @@ function openFefoReport(id){
   const body=`<div class="detail-grid"><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Responsável</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(c.started_at)}</strong></div><div class="detail-card"><small>Finalização</small><strong>${fmtDateTime(c.completed_at)}</strong></div><div class="detail-card"><small>Itens</small><strong>${items.length}</strong></div><div class="detail-card"><small>Menor validade</small><strong>${earliest?fmtDate(earliest):'—'}</strong></div></div><div class="table-wrap"><table class="fefo-table"><thead><tr><th>Código</th><th>Produto</th><th>Validade</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th></tr></thead><tbody>${items.map(x=>{const v=fefoValidityInfo(x.validity_date);return `<tr><td><strong>${esc(x.product_code)}</strong></td><td>${esc(x.product_name)}</td><td><span class="fefo-validity ${v.className}">${fmtDate(x.validity_date)}</span><small>${esc(v.label)}</small></td><td>${esc(x.street||'—')}</td><td>${Number(x.pallet||0)}</td><td>${Number(x.layer||0)}</td><td>${Number(x.box||0)}</td><td>${Number(x.loose_unit||0)}</td></tr>`;}).join('')||'<tr><td colspan="8">Nenhum item.</td></tr>'}</tbody></table></div>`;
   openModal(`FEFO • ${c.count_code}`,c.status==='COMPLETED'?'Contagem finalizada':'Contagem em andamento',body,[
     {label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(c,items)},
-    {label:'Compartilhar CSV',class:'secondary',onClick:()=>shareFefoCsv(c,items)},
     {label:'Fechar',class:'secondary',onClick:closeModal}
   ]);
 }
@@ -1907,13 +1917,6 @@ function fefoFileStamp(v){
 function fefoFileName(count){return `contagem_${fefoFileStamp(count?.completed_at||count?.started_at)}.csv`;}
 function downloadFefoCsv(count,items){
   const blob=new Blob([fefoCsvText(items)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=fefoFileName(count);a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-async function shareFefoCsv(count,items){
-  const name=fefoFileName(count),file=new File([fefoCsvText(items)],name,{type:'text/csv;charset=utf-8'});
-  try{
-    if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){await navigator.share({title:`Contagem FEFO ${count?.count_code||''}`,text:`Relatório da contagem FEFO ${count?.count_code||''}`,files:[file]});return;}
-    downloadFefoCsv(count,items);toast('Compartilhamento direto indisponível neste dispositivo. O CSV foi baixado.','success');
-  }catch(e){if(e?.name!=='AbortError')toast('Não foi possível compartilhar. O CSV permanece disponível para download.','error');}
 }
 
 function humanFefoError(e){
