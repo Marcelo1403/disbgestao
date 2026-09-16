@@ -94,3 +94,49 @@
 .marketplace-hist-card{border-top:4px solid #7c3aed}.marketplace-duration-histogram{grid-template-columns:repeat(13,minmax(58px,1fr));min-width:860px}.marketplace-duration-histogram .pull-hist-bin>span{font-size:9px;white-space:nowrap}.marketplace-duration-histogram .pull-hist-bin i{background:#7c3aed}
 .signature-card canvas{background:#fff!important}.signature-details{background:#fff}.signature-details img{background:#fff!important;padding:8px}
 @media(max-width:700px){.nri-damage-view-grid{grid-template-columns:1fr 1fr}.nri-damage-view-gallery{grid-template-columns:1fr}}
+
+
+/* Disb Gestao v1.2.2 - navegacao, dashboards e historico de paletes avariados */
+.nav-module{margin:9px 3px;border-color:rgba(255,255,255,.11);background:rgba(255,255,255,.035);box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}
+.nav-module.open{background:rgba(255,255,255,.065);border-color:rgba(155,207,246,.28)}
+.nav-module-toggle{grid-template-columns:30px 1fr 18px;padding:11px 10px;color:#d8eafa;letter-spacing:0;text-transform:none}
+.module-name{display:flex;flex-direction:column;font-size:12px;line-height:1.05;font-weight:1000;color:#f4f9fd}
+.module-name:before{content:'MÓDULO';font-size:7px;letter-spacing:1.1px;color:#86b5d8;font-weight:1000;margin-bottom:4px}
+.nav-module-items{position:relative;padding:5px 5px 8px 14px;margin:0 5px 4px 16px;border-left:1px solid rgba(148,198,235,.26)}
+.nav-module-items:before{content:'SUBMÓDULOS';display:block;font-size:7px;letter-spacing:1.1px;color:#7faacb;font-weight:1000;padding:2px 4px 5px}
+.nav-module .nav-item{position:relative;padding:9px 9px;font-size:11px;color:#d4e5f2;border-radius:9px}
+.nav-module .nav-item:before{content:'';position:absolute;left:-15px;top:50%;width:10px;height:1px;background:rgba(148,198,235,.25)}
+.nav-module .nav-item>span{width:21px;height:21px;border-radius:6px;background:rgba(255,255,255,.07)}
+.nav-module .nav-item.active{box-shadow:0 5px 14px rgba(0,0,0,.13)}
+
+.dashboard-view{--dash-accent:#0b72c6}
+.dashboard-page-head{position:relative;overflow:hidden;padding:22px 24px;border:1px solid #d8e6f1;border-radius:20px;background:linear-gradient(135deg,#ffffff 0%,#f3f9fd 58%,#e9f5fd 100%);box-shadow:0 10px 28px rgba(18,69,108,.07)}
+.dashboard-page-head:after{content:'';position:absolute;right:-55px;top:-80px;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle,rgba(11,114,198,.12),rgba(11,114,198,0) 70%);pointer-events:none}
+.dashboard-page-head h1{font-size:30px}.dashboard-page-head p{max-width:760px}
+.dashboard-filter-card{border-top:4px solid var(--dash-accent);box-shadow:0 10px 28px rgba(18,69,108,.06)}
+.dashboard-filter-card>.section-title{margin-bottom:13px;color:#16496f}
+.dashboard-kpi-grid{gap:12px;margin-bottom:18px}
+.dashboard-kpi-grid .kpi{position:relative;overflow:hidden;min-height:98px;padding:16px 17px;border:1px solid #dce7ef;border-radius:16px;background:linear-gradient(145deg,#fff,#f8fbfd);box-shadow:0 7px 20px rgba(32,77,111,.06)}
+.dashboard-kpi-grid .kpi:before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:#4b93c9}
+.dashboard-kpi-grid .kpi.positive:before{background:#22a065}.dashboard-kpi-grid .kpi.negative:before{background:#d84a4a}.dashboard-kpi-grid .kpi.warning:before{background:#d69a22}
+.dashboard-kpi-grid .kpi span{font-size:11px;color:#677f92;font-weight:800}.dashboard-kpi-grid .kpi strong{font-size:24px;letter-spacing:-.4px;margin-top:8px}
+.dashboard-section-card{border:1px solid #dce7ef;box-shadow:0 10px 28px rgba(23,64,96,.055)}
+.dashboard-section-card>.section-title{font-size:15px;color:#153f61;margin-bottom:14px}
+.dashboard-section-card table thead th,.pull-arrival-card table thead th{background:#f3f8fb;color:#31546e;border-bottom-color:#dbe6ee}
+.dashboard-section-tag{align-self:flex-start;border:1px solid #d4e4ef;background:#f7fbfe;color:#44657e;border-radius:999px;padding:6px 9px;font-size:8px;font-weight:1000;letter-spacing:.8px}
+.dashboard-section-tag.marketplace-tag{border-color:#ddd0fb;background:#f7f3ff;color:#6841b1}
+.pull-metric-card{border-top:4px solid #0b72c6}.pull-arrival-card{border-top:4px solid #4c94c9}.marketplace-hist-card{border-top-color:#7c3aed}
+.pull-tabs{padding:5px;border:1px solid #dce7ef;background:#f5f9fc;border-radius:14px;width:max-content;max-width:100%}.pull-tabs button{border:0;background:transparent}.pull-tabs button.active{box-shadow:0 4px 12px rgba(23,100,217,.18)}
+.pull-hour-histogram{background-image:linear-gradient(to top,rgba(128,151,171,.10) 1px,transparent 1px);background-size:100% 25%;border:1px solid #e1e9f0;border-radius:14px;padding:18px 10px 0}
+.pull-hist-bin>div{background:linear-gradient(to top,#eef4f8,#fbfdfe)}
+.marketplace-start-histogram .pull-hist-bin i{background:#7c3aed}
+.pull-break-grid .pull-break-card{border:1px solid #dfe8ef;border-radius:13px;padding:13px;background:#fbfdff}
+.ranking-grid .dashboard-section-card:first-child{border-top:4px solid #0b72c6}.ranking-grid .dashboard-section-card:last-child{border-top:4px solid #54a17b}
+
+.damage-history-filter{--dash-accent:#c73c3c}
+.damage-history-kpis .kpi:first-child:before{background:#8a9bab}.damage-history-kpis .kpi:nth-child(2):before{background:#d84a4a}.damage-history-kpis .kpi:nth-child(3):before{background:#845ec2}.damage-history-kpis .kpi:nth-child(4):before{background:#d39a2c}
+.damage-history-table-wrap{max-height:620px;overflow:auto}.damage-history-table{min-width:2350px}.damage-history-table thead th{position:sticky;top:0;z-index:2;background:#f6f9fb}.damage-history-table td{vertical-align:top}.damage-history-table small{display:block;margin-top:3px;color:#72869a}.damage-history-nris{max-width:230px;white-space:normal}.damage-history-detail-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.nri-damage-view-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+
+@media(max-width:900px){.dashboard-page-head{padding:18px}.dashboard-page-head h1{font-size:25px}.damage-history-detail-grid{grid-template-columns:1fr 1fr}.nri-damage-view-grid{grid-template-columns:1fr 1fr}.nav-module-items{margin-left:13px}}
+@media(max-width:520px){.dashboard-page-head{padding:15px}.dashboard-kpi-grid .kpi{min-height:86px}.damage-history-detail-grid{grid-template-columns:1fr}}

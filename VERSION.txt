@@ -1,1 +1,1 @@
-v1.2.1 - evidencia de paletes avariados, histograma Marketplace e assinatura branca
+v1.2.2 - Nota Fiscal e historico de paletes avariados, dashboards reorganizados e histograma Marketplace por hora de inicio
