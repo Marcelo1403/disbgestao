@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.2.0">
+  <link rel="stylesheet" href="styles.css?v=1.2.1">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -16,7 +16,7 @@
         <div class="login-logo"><img src="assets/icon-192.png" alt="Disb Gestão"></div>
         <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
         <h1>Disb Gestão</h1>
-        <p>NRI, avarias, conferência e Puxada em um único aplicativo.</p><div class="login-version">v1.2.0</div>
+        <p>NRI, avarias, conferência e Puxada em um único aplicativo.</p><div class="login-version">v1.2.1</div>
         <div class="feature-list">
           <span>✓ Cadastro por carreta e impressão de NRIs</span>
           <span>✓ Avarias com foto, GPS e assinatura</span>
@@ -41,7 +41,7 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.2.0</div>
+      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.2.1</div>
       <div class="nav-module role-nri open" data-module="nri">
         <button type="button" class="nav-module-toggle" aria-expanded="true"><span class="module-icon">▣</span><span class="module-name">NRI</span><span class="module-chevron">⌄</span></button>
         <div class="nav-module-items">
@@ -164,7 +164,7 @@
         <div class="card">
           <div class="filters grid grid-3"><div class="field"><label>Produto, NRI, lote ou placa</label><input id="pendFiltro" placeholder="Pesquisar..."></div><div class="field"><label>Unidade</label><select id="pendUnidade"><option value="">Todas</option></select></div><div class="actions end"><button id="btnSelecionarPendentes" class="btn secondary">Selecionar visíveis</button></div></div>
           <div class="toolbar"><button id="btnImprimirTudo" class="btn primary">Imprimir tudo</button><button id="btnImprimirSelecionadas" class="btn secondary">Imprimir selecionadas</button></div>
-          <div class="table-wrap"><table><thead><tr><th></th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody id="tbodyPendentes"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th></th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Avaria</th><th>Quantidade</th><th>Ações</th></tr></thead><tbody id="tbodyPendentes"></tbody></table></div>
         </div>
       </section>
 
@@ -245,7 +245,7 @@
       <!-- HISTORICO NRI -->
       <section id="view-nri-historico" class="view admin-only">
         <div class="page-head"><div><div class="breadcrumb">Admin / NRI</div><h1>Histórico / rastreabilidade</h1><p>Consulte NRIs por lote, produto, placa, conferente ou período.</p></div><span class="page-chip admin">ADMIN</span></div>
-        <div class="card"><div class="filters grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="histNriBusca"></div><div class="field"><label>Status</label><select id="histNriStatus"><option value="">Todos</option><option>PENDENTE</option><option>IMPRESSO</option><option>REMOVIDO</option></select></div><div class="field"><label>Unidade</label><select id="histNriUnidade"><option value="">Todas</option></select></div><div class="field"><label>De</label><input id="histNriDe" type="date"></div><div class="field"><label>Até</label><input id="histNriAte" type="date"></div><div class="actions end span-2"><button id="btnAtualizarHistNri" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Cadastro</th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Usuário / Conferente</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyHistNri"></tbody></table></div></div>
+        <div class="card"><div class="filters grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="histNriBusca"></div><div class="field"><label>Status</label><select id="histNriStatus"><option value="">Todos</option><option>PENDENTE</option><option>IMPRESSO</option><option>REMOVIDO</option></select></div><div class="field"><label>Unidade</label><select id="histNriUnidade"><option value="">Todas</option></select></div><div class="field"><label>De</label><input id="histNriDe" type="date"></div><div class="field"><label>Até</label><input id="histNriAte" type="date"></div><div class="actions end span-2"><button id="btnAtualizarHistNri" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Cadastro</th><th>NRI / Produto</th><th>Lote / Validade</th><th>Unidade / Transporte</th><th>Avaria</th><th>Usuário / Conferente</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyHistNri"></tbody></table></div></div>
       </section>
 
       <!-- HISTORICO CONFERENCIA -->
@@ -317,6 +317,7 @@
         <div id="pullPlannerWrap" class="card hidden"><div class="section-title">Planificador consolidado</div><div class="table-wrap"><table><thead><tr><th>Período</th><th colspan="3">TMV Ida</th><th colspan="3">TMA Fábrica</th><th colspan="3">TMV Volta</th><th colspan="3">TMA Revenda</th><th colspan="3">Ciclo</th></tr><tr><th></th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th></tr></thead><tbody id="tbodyPullPlanner"></tbody></table></div></div>
         <div class="card pull-arrival-card"><div class="section-heading"><div><strong>Histograma de chegada à fábrica</strong><span>Quantidade de carretas por faixa de uma hora, usando o horário real da etapa de chegada.</span></div></div><div class="pull-arrival-summary"><div><span>Chegadas</span><strong id="pullArrivalCount">0</strong></div><div><span>Faixa de pico</span><strong id="pullArrivalPeak">—</strong></div><div><span>Mediana</span><strong id="pullArrivalMedian">—</strong></div><div><span>Amplitude</span><strong id="pullArrivalRange">—</strong></div></div><div class="pull-hist-scroll"><div id="pullArrivalHistogram" class="pull-hour-histogram"></div></div><div class="section-title pull-subtitle">Análise por fábrica</div><div class="table-wrap"><table><thead><tr><th>Fábrica</th><th>Chegadas</th><th>Faixa de pico</th><th>Mediana</th><th>Primeira</th><th>Última</th></tr></thead><tbody id="tbodyPullArrivalFactory"></tbody></table></div></div>
         <div class="card pull-arrival-card"><div class="section-heading"><div><strong>Histograma de chegada à revenda / final do ciclo</strong><span>Quantidade de ciclos finalizados por faixa de uma hora. Em Transferência, considera a chegada final à Matriz Caicó.</span></div></div><div class="pull-arrival-summary"><div><span>Chegadas</span><strong id="pullFinalArrivalCount">0</strong></div><div><span>Faixa de pico</span><strong id="pullFinalArrivalPeak">—</strong></div><div><span>Mediana</span><strong id="pullFinalArrivalMedian">—</strong></div><div><span>Amplitude</span><strong id="pullFinalArrivalRange">—</strong></div></div><div class="pull-hist-scroll"><div id="pullFinalArrivalHistogram" class="pull-hour-histogram"></div></div><div class="section-title pull-subtitle">Análise por destino final</div><div class="table-wrap"><table><thead><tr><th>Destino</th><th>Tipo</th><th>Chegadas</th><th>Faixa de pico</th><th>Mediana</th><th>Primeira</th><th>Última</th></tr></thead><tbody id="tbodyPullFinalArrivalUnit"></tbody></table></div></div>
+        <div class="card pull-arrival-card marketplace-hist-card"><div class="section-heading"><div><strong>Histograma de tempo de recebimento Marketplace</strong><span>Distribuição da duração dos recebimentos em faixas de 30 minutos. Usa Ano e Mês do painel; os demais filtros são exclusivos de Puxada / Transferência.</span></div></div><div class="pull-arrival-summary"><div><span>Recebimentos</span><strong id="marketReceiptCount">0</strong></div><div><span>Tempo médio</span><strong id="marketReceiptAvg">—</strong></div><div><span>Mediana</span><strong id="marketReceiptMedian">—</strong></div><div><span>Maior tempo</span><strong id="marketReceiptMax">—</strong></div></div><div class="pull-hist-scroll"><div id="marketReceiptHistogram" class="pull-hour-histogram marketplace-duration-histogram"></div></div><div class="section-title pull-subtitle">Análise por fornecedor e unidade</div><div class="table-wrap"><table><thead><tr><th>Fornecedor</th><th>Unidade</th><th>Recebimentos</th><th>Média</th><th>Mediana</th><th>Menor</th><th>Maior</th></tr></thead><tbody id="tbodyMarketplaceReceiptHistogram"></tbody></table></div></div>
         <div id="pullMetricBreakdowns"><div class="card"><div class="section-title">Detalhamento do indicador selecionado</div><div id="pullDashBreakdownTables" class="pull-break-grid"></div></div></div>
       </section>
 
@@ -368,7 +369,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="config.js?v=1.2.0"></script>
-  <script src="app.js?v=1.2.0"></script>
+  <script src="config.js?v=1.2.1"></script>
+  <script src="app.js?v=1.2.1"></script>
 </body>
 </html>

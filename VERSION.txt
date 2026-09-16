@@ -1,1 +1,1 @@
-v1.2.0 - Marketplace, palete avariado no NRI, Transferencia e histogramas por tipo de ciclo
+v1.2.1 - evidencia de paletes avariados, histograma Marketplace e assinatura branca

@@ -84,3 +84,13 @@
 .transfer-start-summary div{display:flex;flex-direction:column;gap:4px}.transfer-start-summary small{font-size:11px;color:#6a8093;font-weight:800}.transfer-start-summary strong{font-size:14px}
 .cycle-choice{max-width:520px}
 @media(max-width:800px){.marketplace-live{align-items:flex-start;flex-direction:column}.transfer-start-summary{grid-template-columns:1fr}.choice-toggle{grid-template-columns:1fr 1fr}}
+
+/* v1.2.1 - evidencias NRI, histograma Marketplace e assinatura branca */
+.nri-damage-view-card{border:1px solid #ead1d1;border-radius:14px;background:#fff;margin:12px 0;overflow:hidden}
+.nri-damage-view-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#fff7f7;border-bottom:1px solid #f0dddd}
+.nri-damage-view-head>div{display:flex;flex-direction:column;gap:3px}.nri-damage-view-head small{font-size:8px;color:#8a6262;font-weight:1000}.nri-damage-view-head strong{font-size:12px}
+.nri-damage-view-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:12px 14px}.nri-damage-view-grid>div{border:1px solid #e2e8ee;border-radius:10px;padding:9px;background:#fafcfd;display:flex;flex-direction:column;gap:3px}.nri-damage-view-grid small{font-size:8px;color:#6e8193;font-weight:900}.nri-damage-view-grid strong{font-size:11px}
+.nri-damage-view-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;padding:0 14px 14px}.nri-damage-view-photo{display:flex;flex-direction:column;gap:6px;text-decoration:none;color:#345a78;border:1px solid #dce5ec;border-radius:11px;background:#fff;padding:8px}.nri-damage-view-photo img{width:100%;height:210px;object-fit:contain;background:#fff;border-radius:8px}.nri-damage-view-photo span{font-size:9px;font-weight:800}.nri-damage-notice{border-color:#efcaca;background:#fff7f7;color:#784848}
+.marketplace-hist-card{border-top:4px solid #7c3aed}.marketplace-duration-histogram{grid-template-columns:repeat(13,minmax(58px,1fr));min-width:860px}.marketplace-duration-histogram .pull-hist-bin>span{font-size:9px;white-space:nowrap}.marketplace-duration-histogram .pull-hist-bin i{background:#7c3aed}
+.signature-card canvas{background:#fff!important}.signature-details{background:#fff}.signature-details img{background:#fff!important;padding:8px}
+@media(max-width:700px){.nri-damage-view-grid{grid-template-columns:1fr 1fr}.nri-damage-view-gallery{grid-template-columns:1fr}}
