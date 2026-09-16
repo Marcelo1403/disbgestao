@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.1.9">
+  <link rel="stylesheet" href="styles.css?v=1.2.0">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -16,7 +16,7 @@
         <div class="login-logo"><img src="assets/icon-192.png" alt="Disb Gestão"></div>
         <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
         <h1>Disb Gestão</h1>
-        <p>NRI, avarias, conferência e Puxada em um único aplicativo.</p><div class="login-version">v1.1.9</div>
+        <p>NRI, avarias, conferência e Puxada em um único aplicativo.</p><div class="login-version">v1.2.0</div>
         <div class="feature-list">
           <span>✓ Cadastro por carreta e impressão de NRIs</span>
           <span>✓ Avarias com foto, GPS e assinatura</span>
@@ -41,11 +41,12 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.1.9</div>
+      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.2.0</div>
       <div class="nav-module role-nri open" data-module="nri">
         <button type="button" class="nav-module-toggle" aria-expanded="true"><span class="module-icon">▣</span><span class="module-name">NRI</span><span class="module-chevron">⌄</span></button>
         <div class="nav-module-items">
-          <button class="nav-item role-nri" data-view="nri-carretas"><span>▤</span>Carretas pendentes <b id="badgePullNri" class="badge">0</b></button>
+          <button class="nav-item role-nri" data-view="nri-carretas"><span>▤</span>Recebimentos pendentes <b id="badgePullNri" class="badge">0</b></button>
+          <button class="nav-item role-nri" data-view="marketplace-recebimento"><span>◷</span>Recebimento Marketplace</button>
           <button class="nav-item role-nri" data-view="nri-cadastro"><span>＋</span>Cadastro por carreta</button>
           <button class="nav-item role-nri" data-view="nri-pendentes"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
           <button class="nav-item admin-only" data-view="nri-historico"><span>⌕</span>Histórico NRI</button>
@@ -103,6 +104,7 @@
         <div class="card">
           <form id="formNriCadastro" novalidate>
             <input id="nriPullTripId" type="hidden">
+            <input id="nriMarketplaceReceiptId" type="hidden">
             <div id="nriPullBanner" class="pull-nri-banner hidden"></div>
             <div class="form-block">
               <div class="block-head"><span class="step">1</span><div><strong>Dados da carreta</strong><small>Preencha uma vez para toda a requisição.</small></div></div>
@@ -127,6 +129,13 @@
                 <div class="field"><label>Quantidade de paletes (NRIs) *</label><input id="nriPaletes" type="number" min="1" max="99" value="1"></div>
                 <div class="field"><label>Bloqueio</label><input id="nriBloqueio" readonly placeholder="validade - 30 dias"></div>
               </div>
+              <div class="nri-damage-box">
+                <div class="field"><label>Palete avariado?</label><div class="choice-toggle" id="nriDamageChoice"><button type="button" class="choice-btn danger-choice" data-nri-damage="YES">Sim</button><button type="button" class="choice-btn success-choice active" data-nri-damage="NO">Não</button></div></div>
+                <div id="nriDamageDetails" class="nri-damage-details hidden">
+                  <div class="grid grid-2"><div class="field"><label>Quantidade de paletes avariados *</label><input id="nriDamagePallets" type="number" min="1" value="1"></div><div class="field"><label>Motivo do avariado *</label><select id="nriDamageReason"><option value="">Selecione</option><option>Quebrado</option><option>Embalagem amassada/rasgada</option><option>Faltando na Grade</option><option>Não foi no caminhão</option><option>Furada</option><option>Sem Tampa</option><option>Mal cheia</option><option>Outros</option></select></div></div>
+                  <div class="field"><label>Fotos obrigatórias (1 a 5) *</label><div class="actions"><button id="btnNriDamageCamera" type="button" class="btn secondary">📷 Tirar foto</button><button id="btnNriDamageFile" type="button" class="btn secondary">＋ Arquivo</button></div><input id="nriDamageCamera" class="hidden" type="file" accept="image/*" capture="environment"><input id="nriDamageFile" class="hidden" type="file" accept="image/*" multiple><div id="nriDamagePhotoGallery" class="photo-gallery"></div><small id="nriDamagePhotoStatus" class="field-help">Nenhuma foto adicionada. Pelo menos 1 foto é obrigatória.</small></div>
+                </div>
+              </div>
               <div class="actions right"><button type="button" id="btnCancelarNriItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarNriItem" class="btn primary">+ Adicionar à carreta</button></div>
             </div>
             <div class="list-card"><div class="list-head"><div><strong>Produtos adicionados</strong><small>Edite ou exclua antes de finalizar.</small></div><span id="nriItemCounter" class="counter">0 itens • 0 NRIs</span></div><div id="nriItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
@@ -135,10 +144,18 @@
         </div>
       </section>
 
-      <!-- NRI - CARRETAS DA PUXADA AGUARDANDO CONFERENCIA -->
+      <!-- NRI - RECEBIMENTOS AGUARDANDO CADASTRO -->
       <section id="view-nri-carretas" class="view role-nri">
-        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Carretas pendentes</h1><p>Carretas que encerraram a Puxada e aguardam cadastro dos NRIs.</p></div><span class="page-chip">PUXADA → NRI</span></div>
-        <div class="card"><div class="actions right"><button id="btnAtualizarPullNri" class="btn secondary">Atualizar</button></div><div id="pullNriCards" class="pull-card-grid empty-state">Nenhuma carreta pendente.</div></div>
+        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Recebimentos pendentes</h1><p>Puxadas e recebimentos Marketplace finalizados que aguardam cadastro dos NRIs.</p></div><span class="page-chip">RECEBIMENTO → NRI</span></div>
+        <div class="card"><div class="actions right"><button id="btnAtualizarPullNri" class="btn secondary">Atualizar</button></div><div id="pullNriCards" class="pull-card-grid empty-state">Nenhum recebimento pendente.</div></div>
+      </section>
+
+      <!-- MARKETPLACE - RECEBIMENTO -->
+      <section id="view-marketplace-recebimento" class="view role-nri">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / Marketplace</div><h1>Recebimento de Marketplace</h1><p>Registre unidade e fornecedor. Data, horários, conferente e duração são controlados automaticamente.</p></div><span class="page-chip">MARKETPLACE</span></div>
+        <div id="marketStartCard" class="card"><form id="formMarketplaceReceipt"><div class="grid grid-3"><div class="field"><label>Unidade *</label><select id="marketUnit" required></select></div><div class="field"><label>Fornecedor *</label><select id="marketSupplier" required><option value="">Selecione</option></select></div><div class="field"><label>Conferente</label><input id="marketChecker" readonly></div></div><div class="actions right"><button id="btnMarketStart" class="btn primary">Iniciar recebimento</button></div></form></div>
+        <div id="marketActiveCard" class="card marketplace-active hidden"><div class="marketplace-live"><div><small>RECEBIMENTO EM ANDAMENTO</small><h2 id="marketActiveCode">—</h2><span id="marketActiveSummary">—</span></div><div class="pull-live-time"><small>TEMPO DE RECEBIMENTO</small><strong id="marketActiveElapsed">00:00:00</strong></div></div><div class="actions right"><button id="btnMarketFinish" class="btn primary">Finalizar recebimento</button></div></div>
+        <div class="card admin-only"><div class="section-title">Fornecedores Marketplace</div><form id="formMarketplaceSupplier"><input id="marketSupplierId" type="hidden"><div class="grid grid-2"><div class="field"><label>Fornecedor *</label><input id="marketSupplierName" required placeholder="Nome do fornecedor"></div><label class="check"><input id="marketSupplierActive" type="checkbox" checked> Fornecedor ativo</label></div><div class="actions right"><button id="btnMarketSupplierNew" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar fornecedor</button></div></form><div id="marketSupplierRows" class="compact-list"></div></div>
       </section>
 
       <!-- NRI PENDENTES -->
@@ -248,23 +265,25 @@
 
       <!-- PUXADA - MOTORISTA -->
       <section id="view-puxada-viagem" class="view role-puxada puxador-only">
-        <div class="page-head"><div><div class="breadcrumb">Puxada / Motorista</div><h1>Minha Puxada</h1><p>Escolha origem, placa e fábrica antes de iniciar. O parceiro é Ambev e as etapas registram GPS, data e hora automaticamente.</p></div><span class="page-chip">PUXADA</span></div>
+        <div class="page-head"><div><div class="breadcrumb">Puxada / Motorista</div><h1>Minha Operação</h1><p>Escolha Puxada ou Transferência antes de iniciar. As etapas registram GPS, data e hora automaticamente.</p></div><span class="page-chip">PUXADA / TRANSFERÊNCIA</span></div>
         <div id="pullDriverStartCard" class="card">
           <form id="formPullStart">
-            <div class="form-block accent"><div class="block-head"><span class="step">▶</span><div><strong>Iniciar viagem</strong><small>Você será o Motorista 1. O ciclo ficará disponível também para o Motorista 2.</small></div></div>
-              <div class="grid grid-3">
-                <div class="field"><label>Origem da viagem *</label><select id="pullStartOrigin" required><option value="">Selecione</option></select></div>
-                <div class="field"><label>Placa do veículo *</label><input id="pullStartPlate" list="pullVehicleList" maxlength="12" autocomplete="off" placeholder="AAA2A222" required><datalist id="pullVehicleList"></datalist></div>
-                <div class="field"><label>Fábrica *</label><select id="pullStartFactory" required><option value="">Selecione</option></select></div>
-                <div class="field"><label>Motorista 2 *</label><select id="pullStartDriver2" required><option value="">Selecione</option></select></div>
+            <div class="form-block accent"><div class="block-head"><span class="step">▶</span><div><strong>Iniciar ciclo</strong><small>Selecione o tipo de operação antes de preencher os dados.</small></div></div>
+              <div class="field"><label>Tipo do ciclo *</label><div id="pullCycleChoice" class="choice-toggle cycle-choice"><button type="button" class="choice-btn active" data-pull-cycle="PULL">Puxada</button><button type="button" class="choice-btn" data-pull-cycle="TRANSFER">Transferência</button></div><input id="pullStartCycleType" type="hidden" value="PULL"></div>
+              <div class="grid grid-3"><div class="field"><label>Placa do veículo *</label><input id="pullStartPlate" list="pullVehicleList" maxlength="12" autocomplete="off" placeholder="AAA2A222" required><datalist id="pullVehicleList"></datalist></div></div>
+              <div id="pullStartPullFields" class="grid grid-3">
+                <div class="field"><label>Origem da viagem *</label><select id="pullStartOrigin"><option value="">Selecione</option></select></div>
+                <div class="field"><label>Fábrica *</label><select id="pullStartFactory"><option value="">Selecione</option></select></div>
+                <div class="field"><label>Motorista 2 *</label><select id="pullStartDriver2"><option value="">Selecione</option></select></div>
               </div>
+              <div id="pullStartTransferFields" class="transfer-start-summary hidden"><div><small>ORIGEM</small><strong>Matriz Caicó</strong></div><div><small>ROTA</small><strong>Matriz Caicó → Filial Pau dos Ferros → Matriz Caicó</strong></div><div><small>MOTORISTA</small><strong id="pullTransferDriver">—</strong></div></div>
               <div id="pullStartGps" class="gps-status">A localização será capturada ao iniciar.</div>
               <div class="actions right"><button id="btnPullStart" class="btn primary" type="submit">Iniciar viagem</button></div>
             </div>
           </form>
         </div>
         <div id="pullDriverActive" class="hidden">
-          <div class="pull-trip-hero card"><div><small>PUXADA EM ANDAMENTO</small><h2 id="pullActiveCode">—</h2><span id="pullActiveSummary">—</span></div><div class="pull-live-time"><small>TEMPO EM VIAGEM</small><strong id="pullActiveElapsed">00:00:00</strong></div></div>
+          <div class="pull-trip-hero card"><div><small id="pullActiveTypeLabel">CICLO EM ANDAMENTO</small><h2 id="pullActiveCode">—</h2><span id="pullActiveSummary">—</span></div><div class="pull-live-time"><small>TEMPO EM VIAGEM</small><strong id="pullActiveElapsed">00:00:00</strong></div></div>
           <div class="grid grid-3 pull-driver-info"><div class="detail-card"><small>PLACA</small><strong id="pullActivePlate">—</strong></div><div class="detail-card"><small>FÁBRICA</small><strong id="pullActiveFactory">—</strong></div><div class="detail-card"><small>MOTORISTA ATUAL</small><strong id="pullActiveDriver">—</strong></div></div>
           <div class="card pull-next-card"><small>PRÓXIMA ETAPA</small><h2 id="pullNextStepName">—</h2><p id="pullNextStepHint">O GPS será capturado no apontamento.</p><button id="btnPullNextStep" class="btn primary wide">Registrar próxima etapa</button></div>
           <div class="card"><div class="section-title">Ocorrências</div><p class="muted-text">Descanso, abastecimento e outras exceções podem ser apontadas sem alterar a sequência principal.</p><div id="pullOpenOccurrence" class="pull-open-occurrence hidden"></div><div id="pullOccurrenceButtons" class="pull-occurrence-buttons"></div></div>
@@ -276,13 +295,13 @@
       <section id="view-puxada-farol" class="view admin-only role-puxada">
         <div class="page-head"><div><div class="breadcrumb">Puxada / Admin</div><h1>Farol de andamento</h1><p>Localização mais recente, etapa atual e linha do tempo das carretas em viagem.</p></div><span class="page-chip admin">TEMPO REAL</span></div>
         <div class="card"><div class="grid grid-3"><div class="field span-2"><label>Pesquisar</label><input id="pullFarolBusca" placeholder="Placa, fábrica ou motorista"></div><div class="actions end"><button id="btnPullFarolAtualizar" class="btn secondary">Atualizar</button></div></div></div>
-        <div id="pullFarolCards" class="pull-card-grid empty-state">Nenhuma Puxada em andamento.</div>
+        <div id="pullFarolCards" class="pull-card-grid empty-state">Nenhum ciclo em andamento.</div>
       </section>
 
       <!-- PUXADA - HISTORICO -->
       <section id="view-puxada-historico" class="view admin-only role-puxada">
         <div class="page-head"><div><div class="breadcrumb">Puxada / Admin</div><h1>Relatório / Histórico</h1><p>Viagens, tempos, percurso, ocorrências, ajustes de TMA e vínculo com NRI.</p></div><span class="page-chip admin">HISTÓRICO</span></div>
-        <div class="card"><div class="grid grid-4"><div class="field"><label>De</label><input id="pullHistDe" type="date"></div><div class="field"><label>Até</label><input id="pullHistAte" type="date"></div><div class="field"><label>Placa / motorista</label><input id="pullHistBusca"></div><div class="field"><label>Fábrica</label><select id="pullHistFactory"><option value="">Todas</option></select></div></div><div class="actions right"><button id="btnPullHistAtualizar" class="btn secondary">Atualizar</button><button id="btnPullHistCsv" class="btn primary" type="button">Baixar CSV</button></div>
+        <div class="card"><div class="grid grid-4"><div class="field"><label>De</label><input id="pullHistDe" type="date"></div><div class="field"><label>Até</label><input id="pullHistAte" type="date"></div><div class="field"><label>Tipo</label><select id="pullHistType"><option value="">Todos</option><option value="PULL">Puxada</option><option value="TRANSFER">Transferência</option></select></div><div class="field"><label>Placa / motorista</label><input id="pullHistBusca"></div><div class="field"><label>Fábrica / destino</label><select id="pullHistFactory"><option value="">Todas</option></select></div></div><div class="actions right"><button id="btnPullHistAtualizar" class="btn secondary">Atualizar</button><button id="btnPullHistCsv" class="btn primary" type="button">Baixar CSV</button></div>
           <div class="table-wrap pull-history-wrap"><table class="pull-history-table"><thead><tr id="pullHistoryHead"></tr></thead><tbody id="tbodyPullHistory"></tbody></table></div>
         </div>
       </section>
@@ -290,13 +309,14 @@
       <!-- PUXADA - DASHBOARD -->
       <section id="view-puxada-dashboard" class="view admin-only role-puxada">
         <div class="page-head"><div><div class="breadcrumb">Puxada / Admin</div><h1>Dashboards</h1><p>TMV Ida, TMA Fábrica, TMV Volta, TMA Revenda, Ciclo e Planificador.</p></div><span class="page-chip admin">DASHBOARD</span></div>
-        <div class="card pull-filter-card"><div class="section-title">Filtros do painel</div><div class="pull-dash-filters"><div class="field"><label>Ano</label><select id="pullDashYear"></select></div><div class="field"><label>Período</label><select id="pullDashMonth"><option value="">Todos</option></select></div><div class="field"><label>Transportadora</label><select id="pullDashCarrier"><option value="">Todas</option></select></div><div class="field"><label>Fábrica</label><select id="pullDashFactory"><option value="">Todas</option></select></div><div class="field"><label>Motorista</label><select id="pullDashDriver"><option value="">Todos</option></select></div><div class="actions end"><button id="btnPullDashAtualizar" class="btn secondary">Atualizar</button></div></div></div>
+        <div class="card pull-filter-card"><div class="section-title">Filtros do painel</div><div class="pull-dash-filters"><div class="field"><label>Tipo de ciclo</label><select id="pullDashType"><option value="">Todos</option><option value="PULL">Puxada</option><option value="TRANSFER">Transferência</option></select></div><div class="field"><label>Ano</label><select id="pullDashYear"></select></div><div class="field"><label>Período</label><select id="pullDashMonth"><option value="">Todos</option></select></div><div class="field"><label>Transportadora</label><select id="pullDashCarrier"><option value="">Todas</option></select></div><div class="field"><label>Fábrica / destino</label><select id="pullDashFactory"><option value="">Todas</option></select></div><div class="field"><label>Motorista</label><select id="pullDashDriver"><option value="">Todos</option></select></div><div class="actions end"><button id="btnPullDashAtualizar" class="btn secondary">Atualizar</button></div></div></div>
         <div class="section-heading"><div><strong>Resumo operacional</strong><span>Visão geral das viagens no filtro selecionado.</span></div></div>
         <div class="kpi-grid pull-overview-kpis"><div class="kpi"><span>Viagens</span><strong id="pullOverviewTrips">0</strong></div><div class="kpi positive"><span>Concluídas</span><strong id="pullOverviewCompleted">0</strong></div><div class="kpi"><span>Em andamento</span><strong id="pullOverviewProgress">0</strong></div><div class="kpi"><span>Ciclo médio</span><strong id="pullOverviewCycle">—</strong></div><div class="kpi"><span>Chegadas à fábrica</span><strong id="pullOverviewArrivals">0</strong></div><div class="kpi"><span>Horário de pico</span><strong id="pullOverviewPeak">—</strong></div></div>
-        <div class="card pull-metric-card"><div class="section-title">Indicadores de tempo</div><div id="pullMetricTabs" class="pull-tabs"><button class="active" data-metric="TMV_OUT">TMV Ida</button><button data-metric="FACTORY">TMA Fábrica</button><button data-metric="TMV_RETURN">TMV Volta</button><button data-metric="UNIT">TMA Revenda</button><button data-metric="CYCLE">Ciclo da Puxada</button><button data-metric="PLANNER">Planificador</button></div><div id="pullDashKpis" class="kpi-grid"><div class="kpi"><span>Nº de viagens com cálculo</span><strong id="pullKpiTrips">0</strong></div><div class="kpi"><span>Tempo real médio</span><strong id="pullKpiAvg">—</strong></div><div class="kpi"><span>Tempo meta</span><strong id="pullKpiTarget">—</strong></div><div class="kpi positive"><span>Dentro da meta</span><strong id="pullKpiWithin">0</strong></div><div class="kpi"><span>% Aderência</span><strong id="pullKpiAdherence">—</strong></div><div class="kpi"><span>Meta aderência</span><strong id="pullKpiAdhTarget">—</strong></div><div class="kpi"><span>Fábricas</span><strong id="pullKpiFactories">0</strong></div><div class="kpi"><span>Placas</span><strong id="pullKpiPlates">0</strong></div></div></div>
+        <div class="card pull-metric-card"><div class="section-title">Indicadores de tempo</div><div id="pullMetricTabs" class="pull-tabs"><button class="active" data-metric="TMV_OUT">TMV Ida</button><button data-metric="FACTORY">TMA Fábrica</button><button data-metric="TMV_RETURN">TMV Volta</button><button data-metric="UNIT">TMA Revenda</button><button data-metric="CYCLE">Ciclo</button><button data-metric="PLANNER">Planificador</button></div><div id="pullDashKpis" class="kpi-grid"><div class="kpi"><span>Nº de viagens com cálculo</span><strong id="pullKpiTrips">0</strong></div><div class="kpi"><span>Tempo real médio</span><strong id="pullKpiAvg">—</strong></div><div class="kpi"><span>Tempo meta</span><strong id="pullKpiTarget">—</strong></div><div class="kpi positive"><span>Dentro da meta</span><strong id="pullKpiWithin">0</strong></div><div class="kpi"><span>% Aderência</span><strong id="pullKpiAdherence">—</strong></div><div class="kpi"><span>Meta aderência</span><strong id="pullKpiAdhTarget">—</strong></div><div class="kpi"><span>Fábricas / destinos</span><strong id="pullKpiFactories">0</strong></div><div class="kpi"><span>Placas</span><strong id="pullKpiPlates">0</strong></div></div></div>
         <div id="pullDashBarsCard" class="card"><div class="section-title" id="pullDashChartTitle">Evolução por mês</div><div id="pullDashBars" class="pull-bars empty-state">Sem dados.</div></div>
         <div id="pullPlannerWrap" class="card hidden"><div class="section-title">Planificador consolidado</div><div class="table-wrap"><table><thead><tr><th>Período</th><th colspan="3">TMV Ida</th><th colspan="3">TMA Fábrica</th><th colspan="3">TMV Volta</th><th colspan="3">TMA Revenda</th><th colspan="3">Ciclo</th></tr><tr><th></th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th><th>Real</th><th>Meta</th><th>%</th></tr></thead><tbody id="tbodyPullPlanner"></tbody></table></div></div>
         <div class="card pull-arrival-card"><div class="section-heading"><div><strong>Histograma de chegada à fábrica</strong><span>Quantidade de carretas por faixa de uma hora, usando o horário real da etapa de chegada.</span></div></div><div class="pull-arrival-summary"><div><span>Chegadas</span><strong id="pullArrivalCount">0</strong></div><div><span>Faixa de pico</span><strong id="pullArrivalPeak">—</strong></div><div><span>Mediana</span><strong id="pullArrivalMedian">—</strong></div><div><span>Amplitude</span><strong id="pullArrivalRange">—</strong></div></div><div class="pull-hist-scroll"><div id="pullArrivalHistogram" class="pull-hour-histogram"></div></div><div class="section-title pull-subtitle">Análise por fábrica</div><div class="table-wrap"><table><thead><tr><th>Fábrica</th><th>Chegadas</th><th>Faixa de pico</th><th>Mediana</th><th>Primeira</th><th>Última</th></tr></thead><tbody id="tbodyPullArrivalFactory"></tbody></table></div></div>
+        <div class="card pull-arrival-card"><div class="section-heading"><div><strong>Histograma de chegada à revenda / final do ciclo</strong><span>Quantidade de ciclos finalizados por faixa de uma hora. Em Transferência, considera a chegada final à Matriz Caicó.</span></div></div><div class="pull-arrival-summary"><div><span>Chegadas</span><strong id="pullFinalArrivalCount">0</strong></div><div><span>Faixa de pico</span><strong id="pullFinalArrivalPeak">—</strong></div><div><span>Mediana</span><strong id="pullFinalArrivalMedian">—</strong></div><div><span>Amplitude</span><strong id="pullFinalArrivalRange">—</strong></div></div><div class="pull-hist-scroll"><div id="pullFinalArrivalHistogram" class="pull-hour-histogram"></div></div><div class="section-title pull-subtitle">Análise por destino final</div><div class="table-wrap"><table><thead><tr><th>Destino</th><th>Tipo</th><th>Chegadas</th><th>Faixa de pico</th><th>Mediana</th><th>Primeira</th><th>Última</th></tr></thead><tbody id="tbodyPullFinalArrivalUnit"></tbody></table></div></div>
         <div id="pullMetricBreakdowns"><div class="card"><div class="section-title">Detalhamento do indicador selecionado</div><div id="pullDashBreakdownTables" class="pull-break-grid"></div></div></div>
       </section>
 
@@ -308,7 +328,7 @@
           <div class="pull-goal-row"><strong>TMA Fábrica</strong><div class="field"><label>Tempo meta (HH:MM)</label><input id="goalFactory" placeholder="00:00"></div><div class="field"><label>Meta aderência (%)</label><input id="goalFactoryAdh" type="number" min="0" max="100" step="0.1"></div></div>
           <div class="pull-goal-row"><strong>TMV Volta</strong><div class="field"><label>Tempo meta (HH:MM)</label><input id="goalTmvReturn" placeholder="00:00"></div><div class="field"><label>Meta aderência (%)</label><input id="goalTmvReturnAdh" type="number" min="0" max="100" step="0.1"></div></div>
           <div class="pull-goal-row"><strong>TMA Revenda</strong><div class="field"><label>Tempo meta (HH:MM)</label><input id="goalUnit" placeholder="00:00"></div><div class="field"><label>Meta aderência (%)</label><input id="goalUnitAdh" type="number" min="0" max="100" step="0.1"></div></div>
-          <div class="pull-goal-row"><strong>Ciclo da Puxada</strong><div class="field"><label>Tempo meta (HH:MM)</label><input id="goalCycle" placeholder="00:00"></div><div class="field"><label>Meta aderência (%)</label><input id="goalCycleAdh" type="number" min="0" max="100" step="0.1"></div></div>
+          <div class="pull-goal-row"><strong>Ciclo</strong><div class="field"><label>Tempo meta (HH:MM)</label><input id="goalCycle" placeholder="00:00"></div><div class="field"><label>Meta aderência (%)</label><input id="goalCycleAdh" type="number" min="0" max="100" step="0.1"></div></div>
         </div><div class="actions right"><button class="btn primary">Salvar metas</button></div></form></div>
       </section>
 
@@ -320,7 +340,7 @@
           <div class="card"><div class="section-title">Fábricas e raio de auditoria</div><form id="formPullFactory"><input id="pullFactoryOriginal" type="hidden"><div class="field"><label>Fábrica *</label><select id="pullFactoryName" required></select></div><div class="grid grid-3"><div class="field"><label>Latitude *</label><input id="pullFactoryLat" type="number" step="any" required></div><div class="field"><label>Longitude *</label><input id="pullFactoryLon" type="number" step="any" required></div><div class="field"><label>Raio (m) *</label><input id="pullFactoryRadius" type="number" min="1" required></div></div><div class="actions"><button id="btnPullFactoryGps" type="button" class="btn secondary">Usar minha localização</button><button type="submit" class="btn primary">Salvar localização/raio</button></div></form><div id="pullFactoryList" class="compact-list"></div></div>
           <div class="card"><div class="section-title">Veículos / parceiros</div><form id="formPullVehicle"><input id="pullVehicleId" type="hidden"><div class="grid grid-2"><div class="field"><label>Placa *</label><input id="pullVehiclePlate" maxlength="12" required></div><div class="field"><label>Parceiro / transportadora *</label><input id="pullVehicleCarrier" required></div></div><label class="check"><input id="pullVehicleActive" type="checkbox" checked> Veículo ativo</label><div class="actions right"><button id="btnPullVehicleNew" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar veículo</button></div></form><div id="pullVehicleRows" class="compact-list"></div></div>
         </div>
-        <div class="card"><div class="section-title">Etapas principais e ocorrências</div><form id="formPullStep"><input id="pullStepId" type="hidden"><div class="grid grid-4"><div class="field"><label>Nome *</label><input id="pullStepName" required></div><div class="field"><label>Tipo *</label><select id="pullStepType"><option value="MAIN">Etapa principal</option><option value="OCCURRENCE">Ocorrência</option></select></div><div class="field"><label>Código de ação *</label><input id="pullStepCode" placeholder="GENERAL_..." required></div><div class="field"><label>Ordem *</label><input id="pullStepOrder" type="number" required></div><div class="field"><label>Duração</label><select id="pullStepDuration"><option value="POINT">Pontual</option><option value="INTERVAL">Início / fim</option></select></div><div class="field"><label>Motorista responsável *</label><select id="pullStepExecutor"><option value="1">Motorista 1</option><option value="2">Motorista 2</option></select><small id="pullStepExecutorNote">Escolha quem deve registrar esta etapa.</small></div><label class="check"><input id="pullStepGeofence" type="checkbox"> Auditar raio da fábrica</label><label class="check"><input id="pullStepDiscount" type="checkbox"> Sugerir desconto no TMA</label><label class="check"><input id="pullStepActive" type="checkbox" checked> Ativa</label></div><div class="actions right"><button id="btnPullStepNew" type="button" class="btn secondary">Nova</button><button class="btn primary">Salvar</button></div></form><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Nome</th><th>Tipo</th><th>Responsável</th><th>Ação</th><th>Regras</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyPullSteps"></tbody></table></div></div>
+        <div class="card"><div class="section-title">Etapas principais e ocorrências</div><form id="formPullStep"><input id="pullStepId" type="hidden"><div class="grid grid-4"><div class="field"><label>Nome *</label><input id="pullStepName" required></div><div class="field"><label>Tipo *</label><select id="pullStepType"><option value="MAIN">Etapa principal</option><option value="OCCURRENCE">Ocorrência</option></select></div><div class="field"><label>Fluxo *</label><select id="pullStepFlow"><option value="PULL">Puxada</option><option value="TRANSFER">Transferência</option><option value="BOTH">Ambos</option></select></div><div class="field"><label>Código de ação *</label><input id="pullStepCode" placeholder="GENERAL_..." required></div><div class="field"><label>Ordem *</label><input id="pullStepOrder" type="number" required></div><div class="field"><label>Duração</label><select id="pullStepDuration"><option value="POINT">Pontual</option><option value="INTERVAL">Início / fim</option></select></div><div class="field"><label>Motorista responsável *</label><select id="pullStepExecutor"><option value="1">Motorista 1</option><option value="2">Motorista 2</option></select><small id="pullStepExecutorNote">Escolha quem deve registrar esta etapa.</small></div><label class="check"><input id="pullStepGeofence" type="checkbox"> Auditar raio da fábrica</label><label class="check"><input id="pullStepDiscount" type="checkbox"> Sugerir desconto no TMA</label><label class="check"><input id="pullStepActive" type="checkbox" checked> Ativa</label></div><div class="actions right"><button id="btnPullStepNew" type="button" class="btn secondary">Nova</button><button class="btn primary">Salvar</button></div></form><div class="table-wrap"><table><thead><tr><th>Ordem</th><th>Nome</th><th>Tipo</th><th>Fluxo</th><th>Responsável</th><th>Ação</th><th>Regras</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyPullSteps"></tbody></table></div></div>
       </section>
 
       <!-- USERS -->
@@ -348,7 +368,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="config.js?v=1.1.9"></script>
-  <script src="app.js?v=1.1.9"></script>
+  <script src="config.js?v=1.2.0"></script>
+  <script src="app.js?v=1.2.0"></script>
 </body>
 </html>

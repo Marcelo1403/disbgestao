@@ -1,0 +1,9 @@
+DISB GESTAO v1.2.0
+
+1. Execute no Supabase: supabase/15_v1_2_0_marketplace_transferencia_avarias.sql
+2. Copie os arquivos desta versão para C:\disbgestao-git.
+3. Rode npm install e npm run android:sync.
+4. Faça git add -A, commit e push.
+5. Gere o APK com Gradle.
+
+Importante: o script 15 pressupõe que os scripts 12, 13 e 14 já foram aplicados.

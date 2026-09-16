@@ -1,1 +1,1 @@
-v1.1.9 - bloqueia etapas obrigatorias enquanto houver ocorrencia em andamento
+v1.2.0 - Marketplace, palete avariado no NRI, Transferencia e histogramas por tipo de ciclo
