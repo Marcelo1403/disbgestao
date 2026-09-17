@@ -122,3 +122,11 @@ Antes de desligar os aplicativos antigos, valide:
 - SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
 - Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
 - Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.
+
+## Avarias de Vendas — seletor de produtos
+- [ ] Ao focar Produto avariado, a lista da base aparece.
+- [ ] Digitar `SKOL` filtra produtos contendo SKOL na descrição.
+- [ ] Cada opção exibe código, descrição e foto quando disponível; sem imagem mostra `Sem foto`.
+- [ ] Pesquisar pelo código também localiza o produto.
+- [ ] Não é possível adicionar produto sem selecionar uma opção da lista.
+- [ ] O produto adicionado mostra código e descrição e mantém a foto da avaria obrigatória.

@@ -252,7 +252,15 @@
             <div class="form-block accent sales-damage-item-editor">
               <div class="block-head"><span class="step">2</span><div><strong>Produto avariado</strong><small>Não há captura de localização. Cada produto exige exatamente uma foto.</small></div></div>
               <div class="grid grid-4">
-                <div class="field span-2"><label>Produto avariado *</label><input id="salesDamageProduct" autocomplete="off" placeholder="Nome ou descrição do produto"></div>
+                <div class="field span-2 sales-product-field">
+                  <label>Produto avariado *</label>
+                  <div id="salesDamageProductPicker" class="sales-product-picker">
+                    <input id="salesDamageProduct" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="salesDamageProductOptions" placeholder="Digite código ou descrição do produto">
+                    <button id="btnSalesDamageProductClear" type="button" class="sales-product-clear hidden" aria-label="Limpar produto selecionado">×</button>
+                    <div id="salesDamageProductOptions" class="sales-product-options hidden" role="listbox"></div>
+                  </div>
+                  <div id="salesDamageProductSelected" class="sales-product-selected muted">Digite para pesquisar e selecione um produto da base.</div>
+                </div>
                 <div class="field"><label>Quantidade *</label><input id="salesDamageQuantity" type="number" min="0.01" step="0.01"></div>
                 <div class="field"><label>Unidade *</label><select id="salesDamageUnit"><option value="CAIXA">Caixa</option><option value="UNIDADE">Unidade</option></select></div>
                 <div class="field span-2"><label>Motivo *</label><select id="salesDamageReason"><option value="">Selecione</option><option value="VALIDADE">Validade</option><option value="QUEBRADO">Quebrado</option><option value="EMBALAGEM">Embalagem amassada/rasgada</option><option value="FURADA">Furada</option><option value="SEM_TAMPA">Sem tampa</option><option value="MAL_CHEIA">Mal cheia</option><option value="OUTROS">Outros</option></select></div>

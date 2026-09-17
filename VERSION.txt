@@ -1,1 +1,1 @@
-v1.4.0 - permissoes, Avarias de Vendas e base de clientes paginada ate 5000
+v1.4.0 - permissoes, Avarias de Vendas, clientes ate 5000, lotes alfanumericos e seletor visual de produtos

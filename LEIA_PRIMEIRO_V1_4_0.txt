@@ -31,3 +31,7 @@ HOTFIX CLIENTES / SQL 18
 - O script agora cria/preenche customers.id antes da FK de Avarias de Vendas.
 - O frontend descarta o cache antigo de clientes e recarrega ate 5000 PDVs em paginas de 1000.
 - A busca direta de PDV possui modo compativel para a base antiga.
+AJUSTE COMPLEMENTAR:
+- Avarias de Vendas usa seletor pesquisável de produtos da base, com código, descrição e imagem quando disponível.
+- As imagens disponíveis do DisbStock V1.6 ficam em imagens_produtos/.
+- Não existe SQL adicional para este seletor.

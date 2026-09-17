@@ -74,3 +74,12 @@ O SQL 18 pressupõe que os scripts anteriores, inclusive o SQL 17 do FEFO, já f
 - SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
 - Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
 - Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.
+
+## Ajuste complementar — seletor visual de produtos em Avarias de Vendas
+
+- O campo Produto avariado agora pesquisa a base ativa de produtos por código ou descrição.
+- A lista exibe foto do produto quando disponível, código e descrição.
+- A seleção é obrigatória: não é mais possível cadastrar texto livre como produto na Avaria de Vendas.
+- A busca local usa a base já paginada de até 25.000 produtos e limita apenas a renderização simultânea a 200 resultados; todos os produtos continuam pesquisáveis.
+- Foram incluídas as imagens disponíveis do catálogo DisbStock V1.6 em `imagens_produtos/`; produtos sem imagem disponível exibem `Sem foto`.
+- Não há SQL adicional para este ajuste.
