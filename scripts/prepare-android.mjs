@@ -41,14 +41,14 @@ const gradleGroovy = path.join(root, 'android', 'app', 'build.gradle');
 const gradleKts = path.join(root, 'android', 'app', 'build.gradle.kts');
 if (fs.existsSync(gradleGroovy)) {
   let g = fs.readFileSync(gradleGroovy, 'utf8');
-  g = g.replace(/versionCode\s+\d+/, 'versionCode 131');
-  g = g.replace(/versionName\s+["'][^"']+["']/, 'versionName "1.3.1"');
+  g = g.replace(/versionCode\s+\d+/, 'versionCode 140');
+  g = g.replace(/versionName\s+["'][^"']+["']/, 'versionName "1.4.0"');
   fs.writeFileSync(gradleGroovy, g, 'utf8');
-  console.log('Versao Android OK: versionCode 131 / versionName 1.3.1.');
+  console.log('Versao Android OK: versionCode 140 / versionName 1.4.0.');
 } else if (fs.existsSync(gradleKts)) {
   let g = fs.readFileSync(gradleKts, 'utf8');
-  g = g.replace(/versionCode\s*=\s*\d+/, 'versionCode = 131');
-  g = g.replace(/versionName\s*=\s*["'][^"']+["']/, 'versionName = "1.3.1"');
+  g = g.replace(/versionCode\s*=\s*\d+/, 'versionCode = 140');
+  g = g.replace(/versionName\s*=\s*["'][^"']+["']/, 'versionName = "1.4.0"');
   fs.writeFileSync(gradleKts, g, 'utf8');
-  console.log('Versao Android OK: versionCode 131 / versionName 1.3.1.');
+  console.log('Versao Android OK: versionCode 140 / versionName 1.4.0.');
 }

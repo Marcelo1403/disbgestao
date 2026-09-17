@@ -242,7 +242,7 @@ Principais funções:
 - finalizar a contagem;
 - manter o relatório no Supabase;
 - visualizar relatórios anteriores;
-- baixar e compartilhar CSV com o cabeçalho `codigo;nome;validade;rua;palete;lastro;caixa;unidade`.
+- baixar CSV com o cabeçalho `codigo;nome;validade;rua;palete;lastro;caixa;unidade`.
 
 Antes de publicar, execute no SQL Editor:
 
@@ -259,3 +259,41 @@ As imagens originais do catálogo são opcionais e podem ser copiadas para `imag
 - FEFO: permanece com Visualizar e Baixar CSV; a opcao Compartilhar foi removida.
 - Nenhum campo de area do armazem foi adicionado.
 - Nao ha SQL novo nesta versao.
+
+## v1.4.0 - Permissões por funcionalidade + Avarias de Vendas
+
+A v1.4.0 adiciona os cargos **Vendedor** e **Gerente de Vendas** e muda o controle de acesso para **cargo + permissões por funcionalidade**. O cargo continua definindo um conjunto padrão, mas o responsável por Usuários pode habilitar ou desabilitar funções individualmente para cada usuário. O bloqueio é aplicado tanto na interface quanto nas RPCs/RLS do Supabase.
+
+### Avarias de Vendas
+
+- Vendedor: data e vendedor automáticos, Código PDV com preenchimento dos dados do cliente, vários produtos por solicitação, quantidade, Caixa/Unidade, motivo e uma foto obrigatória por produto.
+- Motivo **Validade** exige data de validade.
+- Não existe captura de GPS no fluxo de Vendas.
+- A foto é comprimida no navegador antes do upload para reduzir consumo de Storage.
+- Gerente de Vendas: consulta todas as solicitações e aprova/reprova um ou vários produtos. Toda decisão exige justificativa.
+- Admin: acesso completo e possibilidade de reprovar uma aprovação realizada por Gerente de Vendas, também com justificativa e auditoria.
+- Bucket privado: `avarias-vendas`.
+- Tabelas principais: `sales_damage_requests` e `sales_damage_items`.
+
+### Permissões
+
+As tabelas `permissions`, `role_permissions` e `user_permissions` controlam os acessos. A tela **Administração > Usuários** permite editar as funcionalidades de cada usuário e restaurar o padrão do cargo.
+
+A v1.4.0 também aplica as permissões no backend dos módulos existentes (NRI, Avarias de Entrega, Conferência, FEFO, Puxada, Marketplace, Bases e Usuários), evitando que uma função apenas escondida na tela continue acessível diretamente por API. O ajuste de TMA ganhou a permissão específica `PULL_TMA_ADJUST`.
+
+Antes de publicar:
+
+1. Execute `supabase/18_v1_4_0_permissoes_avarias_vendas.sql` no SQL Editor, depois do SQL 17.
+2. Republique a Edge Function `admin-users`, pois ela passa a aceitar `VENDEDOR`, `GERENTE_VENDAS` e os overrides de permissões.
+3. Atualize o site e force a recarga do navegador.
+
+A versão Android preparada é `versionCode 140` / `versionName 1.4.0`.
+
+
+### v1.4.0 - Paginação das bases de referência
+
+A carga da base de clientes é paginada em lotes de 1.000 registros, com limite operacional de 5.000 clientes no cache. Avarias de Entrega e Avarias de Vendas também possuem busca direta de fallback no Supabase pelo Código PDV quando o código não estiver no cache. A base de produtos é carregada em páginas, preparada para até 25.000 registros.
+
+
+### Regra de cadastro de lote
+Os campos de lote do sistema aceitam somente letras e números (A-Z e 0-9). Caracteres especiais e espaços são removidos no preenchimento.

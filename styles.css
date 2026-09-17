@@ -153,3 +153,30 @@
 .fefo-final-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:15px;border-top:1px solid #e2eaf0}
 .fefo-finished{text-align:center;padding:12px 8px 18px}.fefo-finished-icon{width:62px;height:62px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:#e9f7ef;color:#168653;font-size:34px;font-weight:1000}.fefo-finished h3{margin:0 0 8px;font-size:22px;color:#16476e}.fefo-finished p{margin:7px auto;color:#647c90;max-width:570px;line-height:1.5}
 @media(max-width:760px){.fefo-hero{align-items:flex-start;flex-direction:column}.fefo-hero-stats{width:100%}.fefo-hero-stats>div{flex:1}.fefo-final-actions{flex-direction:column-reverse}.fefo-final-actions .btn{width:100%}}
+
+/* v1.4.0 - Permissoes por funcionalidade + Avarias de Vendas */
+.page-chip.sales{background:#eef6ff;border-color:#bcd8f3;color:#0b4f87}
+.page-chip.sales.manager{background:#fff4dc;border-color:#f0d28f;color:#76520a}
+.user-admin-grid{grid-template-columns:minmax(380px,.9fr) minmax(620px,1.4fr);align-items:start}
+.permission-editor-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--line,#dce4ec)}
+.permission-editor-head>div{display:flex;flex-direction:column;gap:3px}.permission-editor-head small{color:var(--muted,#6c7885)}
+.permission-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:520px;overflow:auto;padding-right:4px}
+.permission-group{border:1px solid var(--line,#dce4ec);border-radius:12px;background:#fff;overflow:hidden}
+.permission-group-title{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f5f8fb;border-bottom:1px solid var(--line,#dce4ec)}
+.permission-group-title small{font-weight:800;color:#557086}
+.permission-row{display:flex;gap:9px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid #edf1f5;cursor:pointer}
+.permission-row:last-child{border-bottom:0}.permission-row input{margin-top:3px}.permission-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}.permission-row strong{font-size:13px}.permission-row small{font-size:11px;color:var(--muted,#6c7885);line-height:1.35}
+.permission-row:has(input:checked){background:#f5fbff}.permission-row:has(input:disabled){cursor:default;opacity:.78}
+.sales-photo-card{margin-top:14px}.sales-photo-thumb{max-width:520px}.sales-photo-thumb img{width:92px;height:76px;object-fit:cover;border-radius:9px}
+.sales-damage-row{grid-template-columns:minmax(190px,2fr) minmax(120px,.8fr) minmax(160px,1.1fr) 105px auto}
+.sales-list-photo{display:flex!important;align-items:center;gap:7px}.sales-list-photo img{width:50px;height:42px;border-radius:7px;object-fit:cover;border:1px solid var(--line,#dce4ec)}
+.sales-request-hero{margin-bottom:14px}.sales-review-item{margin-bottom:14px}.sales-proof{display:flex;margin-top:10px}.sales-proof a{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:inherit;padding:7px;border:1px solid var(--line,#dce4ec);border-radius:10px;background:#f8fafc}.sales-proof img{width:110px;height:84px;object-fit:cover;border-radius:8px}.sales-proof span{font-weight:800;font-size:12px}
+.sales-decision{margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid #dfe7ee;display:flex;flex-direction:column;gap:3px}.sales-decision.approved{background:#f1fbf5;border-color:#bde3ca}.sales-decision.rejected{background:#fff5f5;border-color:#edc4c4}.sales-decision strong{font-size:12px}.sales-decision span{font-size:11px;color:var(--muted,#687887)}.sales-decision p{margin:3px 0 0;font-size:12px;line-height:1.4}
+@media(max-width:1100px){.user-admin-grid{grid-template-columns:1fr}.permission-editor{grid-template-columns:1fr}.sales-damage-row{grid-template-columns:1fr 1fr}.sales-list-photo{grid-column:1/-1}}
+@media(max-width:640px){.permission-editor-head{align-items:flex-start;flex-direction:column}.permission-editor-head .btn{width:100%}.sales-damage-row{grid-template-columns:1fr}.sales-proof a{width:100%}.sales-proof img{width:90px}}
+
+/* v1.4.0 - decisoes de Avarias de Vendas */
+.sales-review-justification{margin:14px 0 18px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-soft,#f7f9fb)}
+.sales-review-justification .field{margin:0}
+.sales-review-justification textarea{width:100%;min-height:92px;resize:vertical}
+.sales-review-justification small{display:block;margin-top:6px;color:var(--muted)}

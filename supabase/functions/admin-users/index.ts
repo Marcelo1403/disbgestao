@@ -53,6 +53,39 @@ function getSecretKey(): string {
   );
 }
 
+
+
+async function savePermissionOverrides(admin: any, userId: string, role: string, permissions: unknown, updatedBy: string) {
+  if (!Array.isArray(permissions)) return;
+
+  const normalized: string[] = [...new Set<string>(permissions.map((x: unknown) => String(x || '').trim().toUpperCase()).filter(Boolean))];
+
+  const [{ data: allPermissions, error: permissionsError }, { data: roleRows, error: roleError }] = await Promise.all([
+    admin.from('permissions').select('code').eq('active', true),
+    admin.from('role_permissions').select('permission_code').eq('role', role),
+  ]);
+  if (permissionsError) throw permissionsError;
+  if (roleError) throw roleError;
+
+  const valid = new Set<string>((allPermissions || []).map((x: any) => String(x.code)));
+  const defaults = new Set<string>((roleRows || []).map((x: any) => String(x.permission_code)));
+  const enabled = new Set<string>(normalized.filter((code) => valid.has(code)));
+
+  const { error: deleteError } = await admin.from('user_permissions').delete().eq('user_id', userId);
+  if (deleteError) throw deleteError;
+
+  if (role === 'ADMIN') return;
+
+  const overrides = [...valid]
+    .filter((code) => enabled.has(code) !== defaults.has(code))
+    .map((code) => ({ user_id: userId, permission_code: code, allowed: enabled.has(code), updated_by: updatedBy }));
+
+  if (overrides.length) {
+    const { error: insertError } = await admin.from('user_permissions').insert(overrides);
+    if (insertError) throw insertError;
+  }
+}
+
 async function findAuthUserByEmail(admin: any, email: string) {
   const target = email.toLowerCase();
   for (let page = 1; page <= 20; page++) {
@@ -96,7 +129,7 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: `AUTH_INVALIDA: ${userError?.message || 'usuario nao identificado'}` });
     }
 
-    // IMPORTANTE: a autorizacao ADMIN e verificada com o cliente do proprio usuario,
+    // IMPORTANTE: a autorizacao ADMIN_USERS e verificada com o cliente do proprio usuario,
     // nao com a chave administrativa. A policy profiles permite ao usuario consultar
     // o proprio perfil (id = auth.uid()).
     const { data: callerProfile, error: profileError } = await caller
@@ -122,7 +155,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (callerProfile.role !== 'ADMIN' || callerProfile.active !== true) {
+    if (callerProfile.active !== true) {
       return json({
         ok: false,
         error: `FORBIDDEN: usuario=${callerProfile.username}, role=${callerProfile.role}, active=${callerProfile.active}`,
@@ -130,7 +163,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Cliente privilegiado SOMENTE depois de confirmar que quem chamou e ADMIN.
+    const { data: canManageUsers, error: permissionError } = await caller.rpc('has_permission', { p_code: 'ADMIN_USERS' });
+    if (permissionError) {
+      console.error('admin-users permission error', permissionError);
+      return json({ ok: false, error: `ERRO_PERMISSAO_ADMIN_USERS: ${permissionError.message}` });
+    }
+    if (canManageUsers !== true) {
+      return json({
+        ok: false,
+        error: `FORBIDDEN: usuario=${callerProfile.username}, role=${callerProfile.role}, permissao=ADMIN_USERS`,
+        diagnostic: { user_id: userData.user.id, email: userData.user.email || null, profile: callerProfile },
+      });
+    }
+
+    // Cliente privilegiado SOMENTE depois de confirmar a permissao ADMIN_USERS.
     const admin = createClient(url, secretKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
@@ -150,7 +196,7 @@ Deno.serve(async (req: Request) => {
     const active = body.active !== false;
     const password = String(body.password || '');
     const domain = Deno.env.get('USER_EMAIL_DOMAIN') || 'disbecol.app';
-    const allowedRoles = ['ADMIN', 'COLABORADOR_ARMAZEM', 'COLABORADOR_ENTREGA', 'CONFERENTE', 'MOTORISTA_PUXADOR'];
+    const allowedRoles = ['ADMIN', 'COLABORADOR_ARMAZEM', 'COLABORADOR_ENTREGA', 'CONFERENTE', 'MOTORISTA_PUXADOR', 'VENDEDOR', 'GERENTE_VENDAS'];
 
     if (!allowedRoles.includes(role)) return json({ ok: false, error: 'PERFIL_INVALIDO' });
     if (!username || !name) return json({ ok: false, error: 'DADOS_OBRIGATORIOS' });
@@ -188,6 +234,7 @@ Deno.serve(async (req: Request) => {
           .upsert({ id: userId, username, name, role, active }, { onConflict: 'id' });
         if (profileRepairError) throw profileRepairError;
 
+        await savePermissionOverrides(admin, userId, role, body.permissions, userData.user.id);
         return json({ ok: true, id: userId, repaired: true });
       }
 
@@ -205,6 +252,7 @@ Deno.serve(async (req: Request) => {
         .upsert({ id: created.user.id, username, name, role, active }, { onConflict: 'id' });
       if (profileUpsertError) throw profileUpsertError;
 
+      await savePermissionOverrides(admin, created.user.id, role, body.permissions, userData.user.id);
       return json({ ok: true, id: created.user.id, repaired: false });
     }
 
@@ -237,6 +285,7 @@ Deno.serve(async (req: Request) => {
         .eq('id', profile.id);
       if (profileUpdateError) throw profileUpdateError;
 
+      await savePermissionOverrides(admin, profile.id, role, body.permissions, userData.user.id);
       return json({ ok: true, id: profile.id });
     }
 

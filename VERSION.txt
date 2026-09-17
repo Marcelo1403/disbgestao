@@ -1,1 +1,1 @@
-v1.3.1 - seletor de placas cadastradas na NRI e na Puxada/Transferencia; FEFO sem compartilhamento
+v1.4.0 - permissoes, Avarias de Vendas e base de clientes paginada ate 5000
