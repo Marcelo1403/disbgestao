@@ -83,3 +83,7 @@ O SQL 18 pressupõe que os scripts anteriores, inclusive o SQL 17 do FEFO, já f
 - A busca local usa a base já paginada de até 25.000 produtos e limita apenas a renderização simultânea a 200 resultados; todos os produtos continuam pesquisáveis.
 - Foram incluídas as imagens disponíveis do catálogo DisbStock V1.6 em `imagens_produtos/`; produtos sem imagem disponível exibem `Sem foto`.
 - Não há SQL adicional para este ajuste.
+
+
+### Seletor visual de produtos - Avarias de Entrega
+O campo Produto avariado do motorista de entrega agora pesquisa a base de produtos por codigo ou descricao, mostra foto, codigo e nome, exige selecao de um produto cadastrado e reutiliza as imagens locais do catalogo.

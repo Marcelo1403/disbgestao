@@ -209,7 +209,7 @@
             <div class="form-block accent">
               <div class="block-head"><span class="step">+</span><div><strong>Produto avariado</strong><small>Foto e GPS são obrigatórios por produto.</small></div></div>
               <div class="grid grid-4">
-                <div class="field span-2"><label>Produto avariado *</label><input id="avProduto" autocomplete="off" placeholder="Digite o nome do produto"></div>
+                <div class="field span-2 sales-product-field"><label>Produto avariado *</label><div id="avProductPicker" class="sales-product-picker"><input id="avProduto" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="avProductOptions" placeholder="Digite código ou descrição do produto"><button type="button" id="btnAvProductClear" class="sales-product-clear hidden" aria-label="Limpar produto">×</button><div id="avProductOptions" class="sales-product-options hidden" role="listbox"></div></div><div id="avProductSelected" class="sales-product-selected muted">Digite para pesquisar e selecione um produto da base.</div></div>
                 <div class="field"><label>Lote *</label><input id="avLote" pattern="[A-Za-z0-9]+" title="Use apenas letras e números" autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
                 <div class="field"><label>Quantidade *</label><input id="avQuantidade" type="number" min="0" step="1"></div>
                 <div class="field"><label>Unidade *</label><select id="avUnidade"><option>UNIDADE</option><option>CAIXA</option></select></div>

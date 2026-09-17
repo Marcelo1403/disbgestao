@@ -303,3 +303,7 @@ Os campos de lote do sistema aceitam somente letras e números (A-Z e 0-9). Cara
 - SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
 - Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
 - Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.
+
+
+### Seletor visual de produtos - Avarias de Entrega
+O campo Produto avariado do motorista de entrega agora pesquisa a base de produtos por codigo ou descricao, mostra foto, codigo e nome, exige selecao de um produto cadastrado e reutiliza as imagens locais do catalogo.
