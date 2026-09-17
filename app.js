@@ -101,6 +101,7 @@ let salesCustomerLookupSeq = 0;
 const REF_PAGE_SIZE = 1000;
 const CUSTOMER_REF_LIMIT = 5000;
 const PRODUCT_REF_LIMIT = 25000;
+const REF_CACHE_KEY = 'ops_ref_cache_v140_customers5000';
 
 const viewMeta = {
   'nri-cadastro':['Cadastro por carreta','Cadastre várias NRIs de uma vez'],
@@ -499,6 +500,36 @@ async function fetchReferencePages(makeQuery,maxRows){
   }
   return rows;
 }
+function isMissingCustomerIdError(e){
+  const m=String(e?.message||e||'');
+  return /column .*id.* does not exist/i.test(m)||/customers.*id.*does not exist/i.test(m)||/42703/.test(String(e?.code||''));
+}
+async function loadCustomerReferencePages(maxRows=CUSTOMER_REF_LIMIT){
+  try{
+    return await fetchReferencePages(()=>sb.from('customers').select('id,code,name,city,branch').order('code').order('branch').order('id'),maxRows);
+  }catch(e){
+    if(!isMissingCustomerIdError(e))throw e;
+    console.warn('Base customers antiga sem coluna id; usando modo compativel para consulta de PDV. Execute o SQL 18 corrigido.',e);
+    return await fetchReferencePages(()=>sb.from('customers').select('code,name,city,branch').order('code').order('branch'),maxRows);
+  }
+}
+async function queryCustomersByCodeCompat(normalized){
+  const selectWithId=()=>sb.from('customers').select('id,code,name,city,branch');
+  const selectLegacy=()=>sb.from('customers').select('code,name,city,branch');
+  const run=async(make)=>{
+    let q=await make().eq('code',normalized).order('branch').order('name').limit(50);
+    if(q.error)return q;
+    let rows=(q.data||[]).filter(c=>normalizeCode(c.code)===normalized);
+    if(rows.length)return {data:rows,error:null};
+    q=await make().like('code',`%${normalized}`).order('branch').order('name').limit(100);
+    if(q.error)return q;
+    rows=(q.data||[]).filter(c=>normalizeCode(c.code)===normalized);
+    return {data:rows,error:null};
+  };
+  let out=await run(selectWithId);
+  if(out.error&&isMissingCustomerIdError(out.error))out=await run(selectLegacy);
+  return out;
+}
 async function loadReferences(useCache=false){
   if(useCache){ const cached=readRefCache(); if(cached){refs=cached;rebuildReferenceMaps();populateReferenceInputs();} }
   if(refRefreshPromise)return refRefreshPromise;
@@ -509,17 +540,17 @@ async function loadReferences(useCache=false){
         sb.from('units').select('name').eq('active',true).order('name'),
         sb.from('drivers').select('name').eq('active',true).order('name'),
         sb.from('factories').select('name').eq('active',true).order('name'),
-        fetchReferencePages(()=>sb.from('customers').select('id,code,name,city,branch').order('code').order('branch').order('id'),CUSTOMER_REF_LIMIT)
+        loadCustomerReferencePages(CUSTOMER_REF_LIMIT)
       ]);
       const errors=[u,d,f].map(x=>x.error).filter(Boolean); if(errors.length)throw errors[0];
       refs=sanitizeRefs({products,units:u.data||[],drivers:d.data||[],factories:f.data||[],customers});
-      localStorage.setItem('ops_ref_cache',JSON.stringify({at:Date.now(),data:refs})); rebuildReferenceMaps();populateReferenceInputs();
+      localStorage.setItem(REF_CACHE_KEY,JSON.stringify({at:Date.now(),data:refs})); rebuildReferenceMaps();populateReferenceInputs();
     }catch(e){ if(!refs.products.length)toast(humanError(e),'error'); }
     finally{refRefreshPromise=null;}
   })();
   return refRefreshPromise;
 }
-function readRefCache(){try{const x=JSON.parse(localStorage.getItem('ops_ref_cache')||'null');return x&&Date.now()-x.at<12*3600e3?sanitizeRefs(x.data):null;}catch{return null;}}
+function readRefCache(){try{localStorage.removeItem('ops_ref_cache');const x=JSON.parse(localStorage.getItem(REF_CACHE_KEY)||'null');return x&&Date.now()-x.at<12*3600e3?sanitizeRefs(x.data):null;}catch{return null;}}
 function rebuildReferenceMaps(){
   productsByCode=new Map(refs.products.map(x=>[String(x.code),x]));
   customersByCode=new Map();
@@ -552,15 +583,9 @@ function mergeCustomerReferences(rows){
 async function fetchCustomersByCode(code){
   const normalized=normalizeCode(code);if(!normalized)return [];
   const cached=customersByCode.get(normalized)||[];if(cached.length)return cached;
-  let {data,error}=await sb.from('customers').select('id,code,name,city,branch').eq('code',normalized).order('branch').order('name').limit(50);
+  const {data,error}=await queryCustomersByCodeCompat(normalized);
   if(error)throw error;
-  let rows=(data||[]).filter(c=>normalizeCode(c.code)===normalized);
-  if(!rows.length){
-    const suffix=await sb.from('customers').select('id,code,name,city,branch').like('code',`%${normalized}`).order('branch').order('name').limit(50);
-    if(suffix.error)throw suffix.error;
-    rows=(suffix.data||[]).filter(c=>normalizeCode(c.code)===normalized);
-  }
-  mergeCustomerReferences(rows);
+  mergeCustomerReferences(data||[]);
   return customersByCode.get(normalized)||[];
 }
 
@@ -1153,7 +1178,7 @@ function humanUserAdminError(e){
 
 // IMPORT ---------------------------------------------------------------------
 async function importBaseCsv(){if(!hasPerm('ADMIN_BASES'))return;const file=$('importFile').files?.[0];if(!file)return toast('Selecione um arquivo CSV.','error');const type=$('importTipo').value;const out=$('importResult');out.textContent='Lendo arquivo…';try{const text=await readCsvFileText(file);const rows=parseCsvObjects(text);if(!rows.length)throw new Error('O arquivo não possui registros.');const normalized=dedupeImport(type,normalizeImport(type,rows));out.textContent=`${normalized.length} linhas reconhecidas. Enviando…`;let done=0;for(const chunk of chunks(normalized,300)){let res;if(type==='maps')res=await sb.from('maps').upsert(chunk,{onConflict:'map_number,map_date'});else if(type==='nris')res=await sb.from('nris').upsert(chunk,{onConflict:'nri'});else if(type==='conferences')res=await sb.from('container_conferences').upsert(chunk,{onConflict:'map_number,conference_date'});else res=await sb.from(type).upsert(chunk,{onConflict:importConflict(type)});if(res.error)throw res.error;done+=chunk.length;out.textContent=`Importados ${done}/${normalized.length}…`;}
-    if(type==='nris'){const x=await sb.rpc('sync_nri_sequence');if(x.error)throw x.error;}out.textContent=`Concluído: ${done} registros importados.`;toast('Importação concluída.','success');localStorage.removeItem('ops_ref_cache');if(['products','units','drivers','factories','customers'].includes(type))await loadReferences(false);
+    if(type==='nris'){const x=await sb.rpc('sync_nri_sequence');if(x.error)throw x.error;}out.textContent=`Concluído: ${done} registros importados.`;toast('Importação concluída.','success');localStorage.removeItem(REF_CACHE_KEY);localStorage.removeItem('ops_ref_cache');if(['products','units','drivers','factories','customers'].includes(type))await loadReferences(false);
   }catch(e){out.textContent=`Erro: ${humanError(e)}`;toast(humanError(e),'error');}}
 function importConflict(type){return ({products:'code',units:'name',drivers:'name',factories:'name',customers:'code,branch'})[type];}
 function dedupeImport(type,rows){

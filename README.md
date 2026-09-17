@@ -297,3 +297,9 @@ A carga da base de clientes é paginada em lotes de 1.000 registros, com limite 
 
 ### Regra de cadastro de lote
 Os campos de lote do sistema aceitam somente letras e números (A-Z e 0-9). Caracteres especiais e espaços são removidos no preenchimento.
+
+
+### Hotfix compatibilidade de clientes
+- SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
+- Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
+- Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.

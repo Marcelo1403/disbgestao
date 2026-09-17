@@ -116,3 +116,9 @@ Antes de desligar os aplicativos antigos, valide:
 - [ ] A carga de produtos é paginada e não fica restrita aos primeiros 1.000 registros.
 
 - [ ] **Lote alfanumérico:** em NRI e Avarias de Entrega, confirmar que os campos de lote aceitam apenas A-Z e 0-9, inclusive ao colar texto com caracteres especiais.
+
+
+### Hotfix compatibilidade de clientes
+- SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
+- Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
+- Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.

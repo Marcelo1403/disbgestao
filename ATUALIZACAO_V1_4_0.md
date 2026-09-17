@@ -68,3 +68,9 @@ O SQL 18 pressupõe que os scripts anteriores, inclusive o SQL 17 do FEFO, já f
 - Campos de **Lote** em NRI e Avarias de Entrega aceitam somente letras e números.
 - Espaços, hífens, barras, pontos e demais caracteres especiais são removidos imediatamente ao digitar ou colar.
 - Os lotes continuam sendo normalizados em maiúsculas.
+
+
+### Hotfix compatibilidade de clientes
+- SQL 18 agora adiciona `customers.id` de forma idempotente para bases antigas antes de criar Avarias de Vendas.
+- Cache de clientes foi versionado para descartar a carga antiga limitada/incompleta.
+- Busca de PDV mantém modo compativel mesmo se a coluna `id` ainda nao existir, permitindo Avarias de Entrega localizar clientes.

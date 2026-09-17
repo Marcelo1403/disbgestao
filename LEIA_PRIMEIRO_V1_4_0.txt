@@ -25,3 +25,9 @@ CORRECAO INCLUIDA NESTE PACOTE:
 - Produtos carregados de forma paginada, preparados para ate 25.000 registros.
 
 LOTES: campos de lote em NRI e Avarias de Entrega aceitam somente letras e numeros.
+
+HOTFIX CLIENTES / SQL 18
+- O SQL 18 foi corrigido para bancos antigos onde public.customers ainda nao possui a coluna id.
+- O script agora cria/preenche customers.id antes da FK de Avarias de Vendas.
+- O frontend descarta o cache antigo de clientes e recarrega ate 5000 PDVs em paginas de 1000.
+- A busca direta de PDV possui modo compativel para a base antiga.

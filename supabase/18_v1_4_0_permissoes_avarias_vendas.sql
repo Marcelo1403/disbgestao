@@ -156,6 +156,42 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- COMPATIBILIDADE DA BASE DE CLIENTES
+-- Bancos antigos do Disb Gestao podem ter public.customers sem a coluna id.
+-- A v1.4.0 usa um UUID estavel do cliente para vincular Avarias de Vendas.
+-- Esta etapa e idempotente e preserva a chave/estrutura antiga da tabela.
+-- ---------------------------------------------------------------------------
+create extension if not exists pgcrypto;
+
+alter table public.customers
+  add column if not exists id uuid default gen_random_uuid();
+
+update public.customers
+set id=gen_random_uuid()
+where id is null;
+
+alter table public.customers
+  alter column id set default gen_random_uuid();
+
+alter table public.customers
+  alter column id set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid='public.customers'::regclass
+      and contype in ('p','u')
+      and conkey=array[(select attnum from pg_attribute where attrelid='public.customers'::regclass and attname='id')]::smallint[]
+  ) then
+    alter table public.customers add constraint customers_id_unique unique(id);
+  end if;
+end $$;
+
+create index if not exists idx_customers_code on public.customers(code);
+
+-- ---------------------------------------------------------------------------
 -- AVARIAS DE VENDAS
 -- ---------------------------------------------------------------------------
 create sequence if not exists public.sales_damage_request_number_seq start 1;
@@ -1831,3 +1867,8 @@ select role,count(*) as permissoes_padrao from public.role_permissions group by 
 select table_name from information_schema.tables
 where table_schema='public' and table_name in ('permissions','role_permissions','user_permissions','sales_damage_requests','sales_damage_items')
 order by table_name;
+-- Confirma compatibilidade da base de clientes:
+select column_name,data_type,is_nullable
+from information_schema.columns
+where table_schema='public' and table_name='customers' and column_name='id';
+
