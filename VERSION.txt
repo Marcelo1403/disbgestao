@@ -1,1 +1,1 @@
-v1.5.1 - redesign + Ativo de Giro + fluxo final de Avarias de Vendas com camera e GPS
+v1.5.1 - redesign + Ativo de Giro + Avarias de Vendas com camera, GPS e lancamento em lote
