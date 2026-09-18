@@ -1,1 +1,1 @@
-v1.5.1 - redesign visual corporativo + Ativo de Giro + navegacao por areas
+v1.5.1 - redesign + Ativo de Giro + fluxo final de Avarias de Vendas com camera e GPS

@@ -98,15 +98,15 @@
         </div>
       </div>
 
-      <div class="nav-area" data-area="vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
+      <div class="nav-area" data-area="vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST">
         <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">$</span><span class="area-name">Vendas</span><span class="area-chevron">⌄</span></button>
         <div class="nav-area-items">
-          <div class="nav-module role-sales-damage" data-module="avarias-vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
+          <div class="nav-module role-sales-damage" data-module="avarias-vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST">
             <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias de Vendas</span><span class="module-chevron">⌄</span></button>
             <div class="nav-module-items">
               <button class="nav-item role-sales-damage" data-view="sales-avaria-cadastro" data-permission="SALES_DAMAGE_CREATE"><span>＋</span>Nova solicitação</button>
               <button class="nav-item role-sales-damage" data-view="sales-avaria-minhas" data-permission="SALES_DAMAGE_VIEW_OWN"><span>↺</span>Minhas solicitações</button>
-              <button class="nav-item role-sales-damage" data-view="sales-avaria-gestao" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE"><span>☑</span>Gestão de solicitações <b id="badgeSalesDamage" class="badge">0</b></button>
+              <button class="nav-item role-sales-damage" data-view="sales-avaria-gestao" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST"><span>☑</span>Gestão de solicitações <b id="badgeSalesDamage" class="badge">0</b></button>
             </div>
           </div>
         </div>
@@ -193,7 +193,7 @@
                 <div class="field"><label>Palete avariado?</label><div class="choice-toggle" id="nriDamageChoice"><button type="button" class="choice-btn danger-choice" data-nri-damage="YES">Sim</button><button type="button" class="choice-btn success-choice active" data-nri-damage="NO">Não</button></div></div>
                 <div id="nriDamageDetails" class="nri-damage-details hidden">
                   <div class="grid grid-3"><div class="field"><label>Quantidade de paletes avariados *</label><input id="nriDamagePallets" type="number" min="1" value="1"></div><div class="field"><label>Motivo do avariado *</label><select id="nriDamageReason"><option value="">Selecione</option><option>Quebrado</option><option>Embalagem amassada/rasgada</option><option>Faltando na Grade</option><option>Não foi no caminhão</option><option>Furada</option><option>Sem Tampa</option><option>Mal cheia</option><option>Outros</option></select></div><div class="field"><label>Número da Nota Fiscal *</label><input id="nriDamageInvoice" maxlength="60" autocomplete="off" placeholder="Ex.: 123456"><small>Usado somente na rastreabilidade e no histórico de paletes avariados.</small></div></div>
-                  <div class="field"><label>Fotos obrigatórias (1 a 5) *</label><div class="actions"><button id="btnNriDamageCamera" type="button" class="btn secondary">📷 Tirar foto</button><button id="btnNriDamageFile" type="button" class="btn secondary">＋ Arquivo</button></div><input id="nriDamageCamera" class="hidden" type="file" accept="image/*" capture="environment"><input id="nriDamageFile" class="hidden" type="file" accept="image/*" multiple><div id="nriDamagePhotoGallery" class="photo-gallery"></div><small id="nriDamagePhotoStatus" class="field-help">Nenhuma foto adicionada. Pelo menos 1 foto é obrigatória.</small></div>
+                  <div class="field"><label>Fotos obrigatórias (1 a 5) *</label><div class="actions"><button id="btnNriDamageCamera" type="button" class="btn secondary">📷 Abrir câmera</button></div><input id="nriDamageCamera" class="hidden" type="file" accept="image/*" capture="environment"><div id="nriDamagePhotoGallery" class="photo-gallery"></div><small id="nriDamagePhotoStatus" class="field-help">Somente fotos tiradas pela câmera. Pelo menos 1 foto é obrigatória.</small></div>
                 </div>
               </div>
               <div class="actions right"><button type="button" id="btnCancelarNriItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarNriItem" class="btn primary">+ Adicionar à carreta</button></div>
@@ -258,7 +258,7 @@
                 <div class="field span-2"><label>Motivo *</label><select id="avMotivo"><option value="">Selecione</option><option>Quebrado</option><option>Embalagem amassada/rasgada</option><option>Faltando na Grade</option><option>Não foi no caminhão</option><option>Furada</option><option>Sem Tampa</option><option>Mal cheia</option></select></div>
               </div>
               <div class="evidence-grid">
-                <div class="evidence-card"><div class="evidence-card-head"><div><strong>Fotos da avaria *</strong><small>Adicione de 1 a 5 fotos. Cada foto registra seu próprio GPS.</small></div><span id="avFotoCounter" class="counter">0/5 fotos</span></div><div class="actions"><button type="button" id="btnAvCamera" class="btn secondary">Abrir câmera</button><button type="button" id="btnAvArquivo" class="btn secondary">Adicionar fotos</button></div><input id="avFotoCamera" type="file" accept="image/*" capture="environment" class="hidden"><input id="avFotoArquivo" type="file" accept="image/*" multiple class="hidden"><div id="avPhotoGallery" class="photo-gallery empty"><span>Nenhuma foto adicionada.</span></div><div id="avGpsStatus" class="gps-status">Adicione uma foto para capturar a localização.</div></div>
+                <div class="evidence-card"><div class="evidence-card-head"><div><strong>Fotos da avaria *</strong><small>Tire de 1 a 5 fotos pela câmera. Cada foto registra seu próprio GPS.</small></div><span id="avFotoCounter" class="counter">0/5 fotos</span></div><div class="actions"><button type="button" id="btnAvCamera" class="btn secondary">📷 Abrir câmera</button></div><input id="avFotoCamera" type="file" accept="image/*" capture="environment" class="hidden"><div id="avPhotoGallery" class="photo-gallery empty"><span>Nenhuma foto adicionada.</span></div><div id="avGpsStatus" class="gps-status">Abra a câmera para tirar uma foto e capturar a localização.</div></div>
               </div>
               <div class="actions right"><button type="button" id="btnCancelarAvItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnAdicionarAvItem" class="btn primary">+ Adicionar produto</button></div>
             </div>
@@ -309,16 +309,16 @@
                 <div id="salesDamageValidityWrap" class="field hidden"><label>Data de validade *</label><input id="salesDamageValidity" type="date"></div>
               </div>
               <div class="evidence-card sales-photo-card">
-                <div class="evidence-card-head"><div><strong>Foto do produto *</strong><small>Uma foto obrigatória por produto. Sem GPS.</small></div><span id="salesDamagePhotoStatus" class="counter">0/1 foto</span></div>
-                <div class="actions"><button type="button" id="btnSalesDamageCamera" class="btn secondary">Abrir câmera</button><button type="button" id="btnSalesDamageFile" class="btn secondary">Escolher foto</button></div>
+                <div class="evidence-card-head"><div><strong>Foto do produto *</strong><small>Somente câmera. 1 foto obrigatória; para avaria por validade, até 2 fotos. Cada foto registra GPS.</small></div><span id="salesDamagePhotoStatus" class="counter">0/1 foto</span></div>
+                <div class="actions"><button type="button" id="btnSalesDamageCamera" class="btn secondary">📷 Abrir câmera</button></div>
                 <input id="salesDamageCamera" type="file" accept="image/*" capture="environment" class="hidden">
-                <input id="salesDamageFile" type="file" accept="image/*" class="hidden">
                 <div id="salesDamagePhotoPreview" class="photo-gallery empty"><span>Nenhuma foto adicionada.</span></div>
+                <div id="salesDamageGpsStatus" class="gps-status">Abra a câmera para tirar a foto e capturar a localização.</div>
               </div>
               <div class="actions right"><button type="button" id="btnSalesDamageCancelItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnSalesDamageAddItem" class="btn primary">+ Adicionar produto</button></div>
             </div>
 
-            <div class="list-card"><div class="list-head"><div><strong>Produtos da solicitação</strong><small>O gerente poderá decidir cada produto separadamente.</small></div><span id="salesDamageItemCounter" class="counter">0 produtos</span></div><div id="salesDamageItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
+            <div class="list-card"><div class="list-head"><div><strong>Produtos da solicitação</strong><small>Cada produto seguirá o fluxo Pendente → Em análise → Aprovado/Reprovado → Lançado.</small></div><span id="salesDamageItemCounter" class="counter">0 produtos</span></div><div id="salesDamageItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
             <div class="actions right"><button type="button" id="btnSalesDamageClear" class="btn secondary">Limpar</button><button type="submit" id="btnSalesDamageSubmit" class="btn primary">Enviar solicitação</button></div>
           </form>
         </div>
@@ -326,14 +326,14 @@
 
       <!-- AVARIAS DE VENDAS - MINHAS -->
       <section id="view-sales-avaria-minhas" class="view role-sales-damage" data-permission="SALES_DAMAGE_VIEW_OWN">
-        <div class="page-head"><div><div class="breadcrumb">Vendas / Avarias</div><h1>Minhas solicitações</h1><p>Acompanhe o andamento e as decisões por produto.</p></div><span class="page-chip sales">VENDAS</span></div>
-        <div class="card"><div class="grid grid-3"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageMySearch" placeholder="Código da solicitação, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageMyStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageMy"></tbody></table></div></div>
+        <div class="page-head"><div><div class="breadcrumb">Vendas / Avarias</div><h1>Minhas solicitações</h1><p>Acompanhe apenas o status atual de cada produto solicitado.</p></div><span class="page-chip sales">VENDAS</span></div>
+        <div class="card"><div class="grid grid-3"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageMySearch" placeholder="Código da solicitação, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageMyStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageMy"></tbody></table></div></div>
       </section>
 
       <!-- AVARIAS DE VENDAS - GESTAO -->
-      <section id="view-sales-avaria-gestao" class="view role-sales-damage" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
-        <div class="page-head"><div><div class="breadcrumb">Gerência de Vendas / Avarias</div><h1>Gestão de solicitações</h1><p>Aprove ou reprove um ou mais produtos. Toda decisão exige justificativa.</p></div><span class="page-chip sales manager">GERÊNCIA</span></div>
-        <div class="card"><div class="grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageManageSearch" placeholder="Solicitação, vendedor, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageManageStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option></select></div><div class="actions end"><button id="btnSalesDamageRefresh" type="button" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>Vendedor</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageManage"></tbody></table></div></div>
+      <section id="view-sales-avaria-gestao" class="view role-sales-damage" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST">
+        <div class="page-head"><div><div class="breadcrumb">Gerência de Vendas / Avarias</div><h1>Gestão de solicitações</h1><p>Fluxo em duas etapas: decisão do Gerente de Vendas, decisão final e confirmação de avaria lançada.</p></div><span class="page-chip sales manager">GERÊNCIA</span></div>
+        <div class="card"><div class="grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageManageSearch" placeholder="Solicitação, vendedor, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageManageStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado</option></select></div><div class="actions end"><button id="btnSalesDamageRefresh" type="button" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>Vendedor</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageManage"></tbody></table></div></div>
       </section>
 
       <!-- HISTORICO DE PALETES AVARIADOS -->

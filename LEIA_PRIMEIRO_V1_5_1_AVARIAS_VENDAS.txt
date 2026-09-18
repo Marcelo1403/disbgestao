@@ -1,0 +1,11 @@
+DISB GESTAO v1.5.1 - CONSOLIDACAO AVARIAS
+
+1) Aplique este pacote sobre a v1.5.1.
+2) No Supabase, execute: supabase/21_v1_5_1_avarias_vendas_fluxo_final_camera_gps.sql
+   (Se Avarias de Vendas ainda nao existir, execute antes o SQL 18.)
+3) O usuario que tinha Reverter decisoes (SALES_DAMAGE_OVERRIDE) passa a fazer a decisao final.
+4) Conceda SALES_DAMAGE_POST somente aos usuarios que podem marcar Avaria lancada.
+5) Rode npm run android:sync e gere o APK.
+6) Teste camera, GPS, Validade com 2 fotos, selecao em lote e o fluxo completo de status.
+
+A versao permanece 1.5.1 (versionCode 151).

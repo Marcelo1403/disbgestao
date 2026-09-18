@@ -325,3 +325,35 @@ Antes de usar o módulo, execute `supabase/20_v1_5_0_ativo_giro_sidebar.sql`.
 A v1.5.1 reúne tudo da v1.5.0 e aplica uma nova identidade visual corporativa ao Disb Gestão. A navegação continua organizada por áreas (Armazém, Entrega, Vendas, Puxada e Configurações), agora com sidebar grafite, cores de apoio por área, conteúdo claro, cards brancos, sombras discretas, tipografia mais limpa, botões sólidos, tabelas modernas e formulários padronizados.
 
 O objetivo do redesign é melhorar leitura, hierarquia e uso diário em desktop e celular sem alterar regras de negócio. O módulo Ativo de Giro da v1.5.0 permanece incluído integralmente.
+
+
+## v1.5.1 - Consolidação do fluxo de Avarias de Vendas
+
+Esta consolidação mantém o número **v1.5.1** e acrescenta as regras operacionais solicitadas para evidências e decisões de avarias.
+
+### Evidências por câmera
+
+- **Avarias de Vendas:** o aplicativo expõe somente a ação **Abrir câmera**; o botão de upload/galeria foi removido.
+- Cada foto de Avarias de Vendas registra **latitude, longitude, precisão e horário do GPS**.
+- Para motivos comuns é permitida **1 foto por produto**.
+- Para o motivo **Validade** são permitidas **até 2 fotos por produto**.
+- **Avarias de Entrega/Rota** e **Paletes Avariados no NRI** também passam a expor somente captura pela câmera, sem botão de upload de arquivo.
+
+### Novo fluxo de decisão de Avarias de Vendas
+
+1. O vendedor cria a solicitação e cada produto inicia como **Pendente**.
+2. O usuário com `SALES_DAMAGE_REVIEW` (decisão do Gerente de Vendas) pode **aprovar** ou **reprovar** produtos pendentes.
+3. Uma aprovação do Gerente de Vendas muda o produto para **Em análise**. Uma reprovação encerra o produto como **Reprovada**.
+4. O usuário que já possuía a permissão `SALES_DAMAGE_OVERRIDE` (antiga **Reverter decisões**) passa a fazer a **decisão final** dos itens Em análise, aprovando ou reprovando.
+5. A decisão final aprovada muda o produto para **Aprovada**.
+6. A nova permissão `SALES_DAMAGE_POST` permite marcar individualmente **Avaria lançada** depois do lançamento no sistema; o status passa para **Lançada**.
+
+As telas de decisão permitem **Selecionar tudo** para decisões em lote. Em **Minhas solicitações**, o vendedor vê o status atual do produto sem o histórico das decisões gerenciais.
+
+### Banco de dados
+
+Depois do SQL 18 já existente, execute:
+
+`supabase/21_v1_5_1_avarias_vendas_fluxo_final_camera_gps.sql`
+
+O SQL cria a tabela `sales_damage_item_photos`, adiciona auditoria da decisão final e do lançamento, mantém registros históricos já aprovados no status existente e redefine as RPCs do fluxo. As evidências antigas continuam visíveis, mas naturalmente não recebem GPS retroativo.

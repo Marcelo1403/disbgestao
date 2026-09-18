@@ -181,3 +181,39 @@ Antes de desligar os aplicativos antigos, valide:
 - [ ] Ativo de Giro continua aceitando múltiplas adições e consolidando os totais.
 - [ ] NRI e FEFO continuam aceitando múltiplos lotes.
 - [ ] `npm run android:sync` aplica `versionCode 151` e `versionName 1.5.1`.
+
+
+## v1.5.1 - Avarias: câmera, GPS e decisão final
+
+### Captura de evidências
+- [ ] Avarias de Vendas: não existe botão de upload/arquivo; existe somente **Abrir câmera**.
+- [ ] Avarias de Rota/Entrega: não existe botão de upload/arquivo; existe somente **Abrir câmera**.
+- [ ] Paletes Avariados no NRI: não existe botão de upload/arquivo; existe somente **Abrir câmera**.
+- [ ] Avarias de Vendas: uma foto só é aceita depois de capturar GPS válido.
+- [ ] Motivo diferente de Validade aceita no máximo 1 foto por produto.
+- [ ] Motivo Validade exige data de validade e aceita 1 ou 2 fotos por produto.
+- [ ] No detalhe de gestão, as fotos novas mostram GPS; foto histórica sem GPS aparece como legado/indisponível.
+
+### Minhas solicitações
+- [ ] O vendedor visualiza o status atual de cada produto: Pendente, Em análise, Aprovada, Reprovada ou Lançada.
+- [ ] Em **Minhas solicitações** não aparecem o histórico/justificativas das decisões do GV nem da decisão final.
+- [ ] Em **Minhas solicitações** não aparecem ações de aprovação, reprovação ou marcação de lançamento, mesmo se o mesmo usuário possuir permissões administrativas.
+
+### Fluxo da gestão
+- [ ] Solicitação nova inicia com produtos PENDENTE.
+- [ ] `SALES_DAMAGE_REVIEW`: aprovar produto PENDENTE muda para EM_ANALISE.
+- [ ] `SALES_DAMAGE_REVIEW`: reprovar produto PENDENTE muda para REPROVADO.
+- [ ] `SALES_DAMAGE_OVERRIDE`: aprovar produto EM_ANALISE muda para APROVADO.
+- [ ] `SALES_DAMAGE_OVERRIDE`: reprovar produto EM_ANALISE muda para REPROVADO.
+- [ ] A tela exibe **Selecionar tudo** e a decisão em lote afeta todos os itens elegíveis selecionados.
+- [ ] Produto APROVADO mostra **Avaria lançada** somente para usuário com `SALES_DAMAGE_POST`.
+- [ ] Confirmar **Avaria lançada** muda somente o produto escolhido para LANCADO.
+- [ ] O status consolidado da solicitação acompanha a combinação dos status dos produtos.
+- [ ] Aprovações históricas anteriores à atualização permanecem APROVADO; não são reabertas automaticamente.
+
+### Banco / atualização
+- [ ] Executar `supabase/21_v1_5_1_avarias_vendas_fluxo_final_camera_gps.sql` depois do SQL 18.
+- [ ] Confirmar no cadastro de permissões `SALES_DAMAGE_REVIEW`, `SALES_DAMAGE_OVERRIDE` e `SALES_DAMAGE_POST`.
+- [ ] Conceder `SALES_DAMAGE_POST` apenas aos usuários autorizados a confirmar lançamento no sistema.
+- [ ] `node --check app.js` sem erros.
+- [ ] `npm run android:sync` continua aplicando `versionCode 151` e `versionName 1.5.1`.
