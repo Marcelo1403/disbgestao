@@ -368,4 +368,110 @@ body:before{content:"";position:fixed;inset:0 0 auto 0;height:180px;background:l
 .mini-btn.success{color:#147749;border-color:#b9dfc8;background:#f1fbf5}.sales-proof-multi{display:flex;gap:10px;flex-wrap:wrap;padding:0 13px 12px}.sales-proof-multi a{margin:0}.sales-launch-action{display:flex;align-items:center;gap:10px;padding:0 13px 12px}.sales-launch-action small{color:var(--muted);font-size:9px}.sales-selection-bar{flex-wrap:wrap}.sales-select-all{margin:0}.sales-select-all input{width:17px;height:17px}.sales-review-item>.sales-decision{margin-left:13px;margin-right:13px;margin-bottom:12px}@media(max-width:640px){.sales-launch-action{align-items:flex-start;flex-direction:column}.sales-proof-multi a{width:100%}}
 
 /* v1.5.1 - melhoria da etapa Avaria lancada */
-.sales-launch-action{display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:12px;align-items:stretch;padding:0 13px 14px}.sales-launch-btn{width:100%;border:1px solid #b8dec7;background:linear-gradient(180deg,#f4fcf7 0%,#e9f8ef 100%);color:#146f43;border-radius:14px;padding:14px 16px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:4px;font-weight:900;box-shadow:0 8px 18px rgba(20,111,67,.08);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}.sales-launch-btn:hover{transform:translateY(-1px);box-shadow:0 12px 22px rgba(20,111,67,.12);border-color:#94c9ac}.sales-launch-btn span{font-size:13px;line-height:1.2}.sales-launch-btn small{font-size:10px;color:#44735a;font-weight:700}.sales-launch-help{border:1px solid #dce7df;background:#f8fbf9;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;justify-content:center;gap:4px}.sales-launch-help strong{font-size:11px;color:#183851}.sales-launch-help small{font-size:10px;color:#61798d}.sales-selection-bar{flex-wrap:wrap;align-items:center}.sales-selection-bar #salesDamageSelectionSummary{min-width:120px}@media(max-width:640px){.sales-launch-action{grid-template-columns:1fr}.sales-launch-btn{padding:15px 16px}.sales-launch-btn span{font-size:14px}}
+
+.sales-launch-action{
+  display:grid;
+  grid-template-columns:minmax(280px,360px) 1fr;
+  gap:12px;
+  align-items:stretch;
+  padding:0 13px 14px
+}
+
+.sales-launch-btn{
+  width:100%;
+  border:1px solid #c4b5fd;
+  background:linear-gradient(180deg,#f5f3ff 0%,#ede9fe 100%);
+  color:#6d28d9;
+  border-radius:14px;
+  padding:14px 16px;
+  text-align:left;
+  cursor:pointer;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-weight:900;
+  box-shadow:0 8px 18px rgba(109,40,217,.10);
+  transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease
+}
+
+.sales-launch-btn:hover{
+  transform:translateY(-1px);
+  box-shadow:0 12px 22px rgba(109,40,217,.18);
+  border-color:#a78bfa
+}
+
+.sales-launch-btn span{
+  font-size:13px;
+  line-height:1.2
+}
+
+.sales-launch-btn small{
+  font-size:10px;
+  color:#7c3aed;
+  font-weight:700
+}
+
+.sales-launch-help{
+  border:1px solid #dce7df;
+  background:#f8fbf9;
+  border-radius:14px;
+  padding:12px 14px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:4px
+}
+
+.sales-launch-help strong{
+  font-size:11px;
+  color:#183851
+}
+
+.sales-launch-help small{
+  font-size:10px;
+  color:#61798d
+}
+
+.sales-selection-bar{
+  flex-wrap:wrap;
+  align-items:center
+}
+
+.sales-selection-bar #salesDamageSelectionSummary{
+  min-width:120px
+}
+
+@media(max-width:640px){
+  .sales-launch-action{
+    grid-template-columns:1fr
+  }
+
+  .sales-launch-btn{
+    padding:15px 16px
+  }
+
+  .sales-launch-btn span{
+    font-size:14px
+  }
+}
+/* FORCAR BOTAO AVARIA LANCADA EM ROXO */
+.sales-launch-btn{
+  border:1px solid #c4b5fd !important;
+  background:linear-gradient(180deg,#f5f3ff 0%,#ede9fe 100%) !important;
+  color:#6d28d9 !important;
+  box-shadow:0 8px 18px rgba(109,40,217,.12) !important;
+}
+
+.sales-launch-btn span{
+  color:#6d28d9 !important;
+}
+
+.sales-launch-btn small{
+  color:#7c3aed !important;
+}
+
+.sales-launch-btn:hover{
+  border-color:#a78bfa !important;
+  background:linear-gradient(180deg,#ede9fe 0%,#ddd6fe 100%) !important;
+  box-shadow:0 12px 22px rgba(109,40,217,.18) !important;
+}
