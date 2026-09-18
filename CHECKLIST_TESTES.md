@@ -130,3 +130,19 @@ Antes de desligar os aplicativos antigos, valide:
 - [ ] Pesquisar pelo código também localiza o produto.
 - [ ] Não é possível adicionar produto sem selecionar uma opção da lista.
 - [ ] O produto adicionado mostra código e descrição e mantém a foto da avaria obrigatória.
+
+
+## v1.4.1 - Seletor NRI/FEFO e múltiplos lotes
+
+- [ ] NRI: pesquisar produto por código parcial e selecionar o item correto.
+- [ ] NRI: pesquisar produto por descrição e confirmar imagem/código/nome selecionados.
+- [ ] NRI: adicionar 2 ou mais lotes ao mesmo produto e mesma validade; os lotes devem aparecer juntos no item da carreta.
+- [ ] NRI: editar o item e confirmar que todos os lotes voltam como chips editáveis.
+- [ ] NRI: impedir cadastro sem produto selecionado e sem ao menos um lote.
+- [ ] FEFO: executar `supabase/19_v1_4_1_multiplos_lotes_fefo.sql` antes do teste.
+- [ ] FEFO: pesquisar produto por código e por descrição no novo seletor visual.
+- [ ] FEFO: adicionar 2 ou mais lotes para o mesmo produto/validade e salvar.
+- [ ] FEFO: editar o item e confirmar preservação dos lotes.
+- [ ] FEFO: conferir Lote(s) na tabela da contagem, relatório detalhado, pesquisa e CSV.
+- [ ] FEFO: impedir salvamento sem produto selecionado, validade ou lote.
+- [ ] Android: `npm run android:sync` deve aplicar `versionCode 141` e `versionName 1.4.1`.

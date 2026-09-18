@@ -307,3 +307,8 @@ Os campos de lote do sistema aceitam somente letras e números (A-Z e 0-9). Cara
 
 ### Seletor visual de produtos - Avarias de Entrega
 O campo Produto avariado do motorista de entrega agora pesquisa a base de produtos por codigo ou descricao, mostra foto, codigo e nome, exige selecao de um produto cadastrado e reutiliza as imagens locais do catalogo.
+
+
+## v1.4.1 - Seletor NRI/FEFO e múltiplos lotes
+
+A v1.4.1 padroniza a escolha de produtos do Cadastro de NRI e da Contagem FEFO com o seletor visual usado em Avarias: busca por código/descrição, imagem e item selecionado. Também permite registrar vários lotes para o mesmo produto e validade. No FEFO, a coluna `lot` é adicionada por `supabase/19_v1_4_1_multiplos_lotes_fefo.sql`, refletindo na contagem, relatórios e CSV.

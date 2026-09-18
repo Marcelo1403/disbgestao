@@ -1,1 +1,1 @@
-v1.4.0 - permissoes, Avarias de Vendas, clientes ate 5000, lotes alfanumericos e seletor visual de produtos em Vendas e Entrega
+v1.4.1 - seletor visual de produtos em NRI e FEFO; multiplos lotes por produto e validade
