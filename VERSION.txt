@@ -1,1 +1,1 @@
-v1.4.1 - seletor visual de produtos em NRI e FEFO; multiplos lotes por produto e validade
+v1.5.1 - redesign visual corporativo + Ativo de Giro + navegacao por areas

@@ -1,0 +1,18 @@
+DISB GESTAO v1.5.0
+
+1. Aplique os arquivos do patch sobre C:\disbgestao-git.
+2. No Supabase SQL Editor execute:
+   supabase\20_v1_5_0_ativo_giro_sidebar.sql
+3. Rode npm install.
+4. Rode npm run android:sync.
+5. Teste Armazem > Ativo de Giro:
+   - iniciar contagem;
+   - adicionar 20 em CAIXA/GFA para CERVEJA 600ML;
+   - adicionar depois mais 50 no mesmo item;
+   - confirmar TOTAL ATUAL = C 70;
+   - finalizar;
+   - abrir Historico / Totais e confirmar C 70.
+6. Teste a nova barra lateral por areas.
+7. Somente depois faca commit/push e gere o APK.
+
+Android esperado: versionCode 150 / versionName 1.5.0.

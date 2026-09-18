@@ -312,3 +312,16 @@ O campo Produto avariado do motorista de entrega agora pesquisa a base de produt
 ## v1.4.1 - Seletor NRI/FEFO e múltiplos lotes
 
 A v1.4.1 padroniza a escolha de produtos do Cadastro de NRI e da Contagem FEFO com o seletor visual usado em Avarias: busca por código/descrição, imagem e item selecionado. Também permite registrar vários lotes para o mesmo produto e validade. No FEFO, a coluna `lot` é adicionada por `supabase/19_v1_4_1_multiplos_lotes_fefo.sql`, refletindo na contagem, relatórios e CSV.
+
+## v1.5.0 - Ativo de Giro e navegação por áreas
+
+A v1.5.0 adiciona o módulo **Ativo de Giro**, com contagem cumulativa por ativo, múltiplas adições ao mesmo item, rastreabilidade de cada passagem e histórico consolidado dos totais. A barra lateral passa a organizar os módulos em **Armazém, Entrega, Vendas, Puxada e Configurações (Administração)**.
+
+Antes de usar o módulo, execute `supabase/20_v1_5_0_ativo_giro_sidebar.sql`.
+
+
+## v1.5.1 - Nova identidade visual
+
+A v1.5.1 reúne tudo da v1.5.0 e aplica uma nova identidade visual corporativa ao Disb Gestão. A navegação continua organizada por áreas (Armazém, Entrega, Vendas, Puxada e Configurações), agora com sidebar grafite, cores de apoio por área, conteúdo claro, cards brancos, sombras discretas, tipografia mais limpa, botões sólidos, tabelas modernas e formulários padronizados.
+
+O objetivo do redesign é melhorar leitura, hierarquia e uso diário em desktop e celular sem alterar regras de negócio. O módulo Ativo de Giro da v1.5.0 permanece incluído integralmente.

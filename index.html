@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.4.1">
+  <link rel="stylesheet" href="styles.css?v=1.5.1">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -16,12 +16,13 @@
         <div class="login-logo"><img src="assets/icon-192.png" alt="Disb Gestão"></div>
         <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
         <h1>Disb Gestão</h1>
-        <p>NRI, avarias, vendas, conferência, FEFO e Puxada em um único aplicativo.</p><div class="login-version">v1.4.1</div>
+        <p>NRI, Ativo de Giro, avarias, vendas, conferência, FEFO e Puxada em um único aplicativo.</p><div class="login-version">v1.5.1</div>
         <div class="feature-list">
           <span>✓ Cadastro por carreta e impressão de NRIs</span>
           <span>✓ Avarias de entrega e vendas com evidências</span>
           <span>✓ Conferência e comparativo de vasilhames</span>
           <span>✓ Contagem FEFO por validade e posição</span>
+          <span>✓ Ativo de Giro com adições cumulativas e histórico de totais</span>
           <span>✓ Puxada com GPS, etapas, farol e indicadores</span>
         </div>
       </div>
@@ -42,66 +43,107 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.4.1</div>
-      <div class="nav-module role-nri open" data-module="nri" data-permission-any="NRI_PENDING_VIEW,MARKETPLACE_RECEIVE,NRI_CREATE,NRI_PRINT,NRI_HISTORY,NRI_DAMAGE_HISTORY">
-        <button type="button" class="nav-module-toggle" aria-expanded="true"><span class="module-icon">▣</span><span class="module-name">NRI</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item role-nri" data-view="nri-carretas" data-permission="NRI_PENDING_VIEW"><span>▤</span>Recebimentos pendentes <b id="badgePullNri" class="badge">0</b></button>
-          <button class="nav-item role-nri" data-view="marketplace-recebimento" data-permission="MARKETPLACE_RECEIVE"><span>◷</span>Recebimento Marketplace</button>
-          <button class="nav-item role-nri" data-view="nri-cadastro" data-permission="NRI_CREATE"><span>＋</span>Cadastro por carreta</button>
-          <button class="nav-item role-nri" data-view="nri-pendentes" data-permission="NRI_PRINT"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
-          <button class="nav-item admin-only" data-view="nri-historico" data-permission="NRI_HISTORY"><span>⌕</span>Histórico NRI</button>
-          <button class="nav-item admin-only" data-view="nri-avarias-historico" data-permission="NRI_DAMAGE_HISTORY"><span>⚠</span>Paletes avariados</button>
+      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.5.1</div>
+      <div class="nav-area open" data-area="armazem" data-permission-any="NRI_PENDING_VIEW,MARKETPLACE_RECEIVE,NRI_CREATE,NRI_PRINT,NRI_HISTORY,NRI_DAMAGE_HISTORY,CONF_CREATE,CONF_OWN_HISTORY,CONF_HISTORY,CONF_DASHBOARD,FEFO_CREATE,FEFO_ACTIVE,FEFO_REPORT,ROTATING_ASSET_CREATE,ROTATING_ASSET_HISTORY">
+        <button type="button" class="nav-area-toggle" aria-expanded="true"><span class="area-icon">▦</span><span class="area-name">Armazém</span><span class="area-chevron">⌄</span></button>
+        <div class="nav-area-items">
+          <div class="nav-module role-nri open" data-module="nri" data-permission-any="NRI_PENDING_VIEW,MARKETPLACE_RECEIVE,NRI_CREATE,NRI_PRINT,NRI_HISTORY,NRI_DAMAGE_HISTORY">
+            <button type="button" class="nav-module-toggle" aria-expanded="true"><span class="module-icon">▣</span><span class="module-name">NRI</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-nri" data-view="nri-carretas" data-permission="NRI_PENDING_VIEW"><span>▤</span>Recebimentos pendentes <b id="badgePullNri" class="badge">0</b></button>
+              <button class="nav-item role-nri" data-view="marketplace-recebimento" data-permission="MARKETPLACE_RECEIVE"><span>◷</span>Recebimento Marketplace</button>
+              <button class="nav-item role-nri" data-view="nri-cadastro" data-permission="NRI_CREATE"><span>＋</span>Cadastro por carreta</button>
+              <button class="nav-item role-nri" data-view="nri-pendentes" data-permission="NRI_PRINT"><span>▣</span>Impressões pendentes <b id="badgePendentes" class="badge">0</b></button>
+              <button class="nav-item admin-only" data-view="nri-historico" data-permission="NRI_HISTORY"><span>⌕</span>Histórico NRI</button>
+              <button class="nav-item admin-only" data-view="nri-avarias-historico" data-permission="NRI_DAMAGE_HISTORY"><span>⚠</span>Paletes avariados</button>
+            </div>
+          </div>
+          <div class="nav-module role-conferencia" data-module="conferencia" data-permission-any="CONF_CREATE,CONF_OWN_HISTORY,CONF_HISTORY,CONF_DASHBOARD">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">✓</span><span class="module-name">Conferência</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-conferencia" data-view="conf-cadastro" data-permission="CONF_CREATE"><span>✓</span>Conferência de vasilhames</button>
+              <button class="nav-item role-conferencia" data-view="conf-minhas" data-permission="CONF_OWN_HISTORY"><span>↺</span>Minhas conferências</button>
+              <button class="nav-item admin-only" data-view="conf-historico" data-permission="CONF_HISTORY"><span>▤</span>Histórico conferências</button>
+              <button class="nav-item admin-only" data-view="conf-dashboard" data-permission="CONF_DASHBOARD"><span>◫</span>Dashboard conferência</button>
+            </div>
+          </div>
+          <div class="nav-module role-fefo" data-module="fefo" data-permission-any="FEFO_CREATE,FEFO_ACTIVE,FEFO_REPORT">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">▦</span><span class="module-name">Contagem FEFO</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-fefo" data-view="fefo-contagem" data-permission="FEFO_CREATE"><span>＋</span>Nova contagem</button>
+              <button class="nav-item role-fefo" data-view="fefo-andamento" data-permission="FEFO_ACTIVE"><span>↺</span>Em andamento <b id="badgeFefoAtivas" class="badge">0</b></button>
+              <button class="nav-item role-fefo" data-view="fefo-relatorios" data-permission="FEFO_REPORT"><span>▤</span>Relatórios</button>
+            </div>
+          </div>
+          <div class="nav-module role-rotating-asset" data-module="ativo-giro" data-permission-any="ROTATING_ASSET_CREATE,ROTATING_ASSET_HISTORY">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">↻</span><span class="module-name">Ativo de Giro</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-rotating-asset" data-view="ativo-giro-contagem" data-permission="ROTATING_ASSET_CREATE"><span>＋</span>Nova contagem</button>
+              <button class="nav-item role-rotating-asset" data-view="ativo-giro-historico" data-permission="ROTATING_ASSET_HISTORY"><span>▤</span>Histórico / Totais</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="nav-module role-avaria" data-module="avarias" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item role-avaria" data-view="avaria-cadastro" data-permission="DELIVERY_DAMAGE_CREATE"><span>＋</span>Registrar avaria</button>
-          <button class="nav-item admin-only" data-view="avaria-admin" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
+
+      <div class="nav-area" data-area="entrega" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
+        <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">⇢</span><span class="area-name">Entrega</span><span class="area-chevron">⌄</span></button>
+        <div class="nav-area-items">
+          <div class="nav-module role-avaria" data-module="avarias" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias de Entrega</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-avaria" data-view="avaria-cadastro" data-permission="DELIVERY_DAMAGE_CREATE"><span>＋</span>Registrar avaria</button>
+              <button class="nav-item admin-only" data-view="avaria-admin" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="nav-module role-sales-damage" data-module="avarias-vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">$</span><span class="module-name">Avarias de Vendas</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item role-sales-damage" data-view="sales-avaria-cadastro" data-permission="SALES_DAMAGE_CREATE"><span>＋</span>Nova solicitação</button>
-          <button class="nav-item role-sales-damage" data-view="sales-avaria-minhas" data-permission="SALES_DAMAGE_VIEW_OWN"><span>↺</span>Minhas solicitações</button>
-          <button class="nav-item role-sales-damage" data-view="sales-avaria-gestao" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE"><span>☑</span>Gestão de solicitações <b id="badgeSalesDamage" class="badge">0</b></button>
+
+      <div class="nav-area" data-area="vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
+        <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">$</span><span class="area-name">Vendas</span><span class="area-chevron">⌄</span></button>
+        <div class="nav-area-items">
+          <div class="nav-module role-sales-damage" data-module="avarias-vendas" data-permission-any="SALES_DAMAGE_CREATE,SALES_DAMAGE_VIEW_OWN,SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias de Vendas</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item role-sales-damage" data-view="sales-avaria-cadastro" data-permission="SALES_DAMAGE_CREATE"><span>＋</span>Nova solicitação</button>
+              <button class="nav-item role-sales-damage" data-view="sales-avaria-minhas" data-permission="SALES_DAMAGE_VIEW_OWN"><span>↺</span>Minhas solicitações</button>
+              <button class="nav-item role-sales-damage" data-view="sales-avaria-gestao" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE"><span>☑</span>Gestão de solicitações <b id="badgeSalesDamage" class="badge">0</b></button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="nav-module role-conferencia" data-module="conferencia" data-permission-any="CONF_CREATE,CONF_OWN_HISTORY,CONF_HISTORY,CONF_DASHBOARD">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">✓</span><span class="module-name">Conferência</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item role-conferencia" data-view="conf-cadastro" data-permission="CONF_CREATE"><span>✓</span>Conferência de vasilhames</button>
-          <button class="nav-item role-conferencia" data-view="conf-minhas" data-permission="CONF_OWN_HISTORY"><span>↺</span>Minhas conferências</button>
-          <button class="nav-item admin-only" data-view="conf-historico" data-permission="CONF_HISTORY"><span>▤</span>Histórico conferências</button>
-          <button class="nav-item admin-only" data-view="conf-dashboard" data-permission="CONF_DASHBOARD"><span>◫</span>Dashboard conferência</button>
+
+      <div class="nav-area" data-area="puxada" data-permission-any="PULL_TRIP,PULL_FAROL,PULL_HISTORY,PULL_DASHBOARD,PULL_TMA_ADJUST">
+        <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">↗</span><span class="area-name">Puxada</span><span class="area-chevron">⌄</span></button>
+        <div class="nav-area-items">
+          <div class="nav-module role-puxada" data-module="puxada" data-permission-any="PULL_TRIP,PULL_FAROL,PULL_HISTORY,PULL_DASHBOARD,PULL_TMA_ADJUST">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">↗</span><span class="module-name">Operação de Puxada</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item puxador-only" data-view="puxada-viagem" data-permission="PULL_TRIP"><span>▶</span>Viagem</button>
+              <button class="nav-item admin-only" data-view="puxada-farol" data-permission="PULL_FAROL"><span>◉</span>Farol de andamento <b id="badgePullAtivos" class="badge">0</b></button>
+              <button class="nav-item admin-only" data-view="puxada-historico" data-permission-any="PULL_HISTORY,PULL_TMA_ADJUST"><span>▤</span>Relatório / Histórico</button>
+              <button class="nav-item admin-only" data-view="puxada-dashboard" data-permission="PULL_DASHBOARD"><span>◫</span>Dashboards</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="nav-module role-fefo" data-module="fefo" data-permission-any="FEFO_CREATE,FEFO_ACTIVE,FEFO_REPORT">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">▦</span><span class="module-name">Contagem FEFO</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item role-fefo" data-view="fefo-contagem" data-permission="FEFO_CREATE"><span>＋</span>Nova contagem</button>
-          <button class="nav-item role-fefo" data-view="fefo-andamento" data-permission="FEFO_ACTIVE"><span>↺</span>Em andamento <b id="badgeFefoAtivas" class="badge">0</b></button>
-          <button class="nav-item role-fefo" data-view="fefo-relatorios" data-permission="FEFO_REPORT"><span>▤</span>Relatórios</button>
-        </div>
-      </div>
-      <div class="nav-module role-puxada" data-module="puxada" data-permission-any="PULL_TRIP,PULL_FAROL,PULL_HISTORY,PULL_DASHBOARD,PULL_GOALS,PULL_CONFIG,PULL_TMA_ADJUST">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">↗</span><span class="module-name">Puxada</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item puxador-only" data-view="puxada-viagem" data-permission="PULL_TRIP"><span>▶</span>Viagem</button>
-          <button class="nav-item admin-only" data-view="puxada-farol" data-permission="PULL_FAROL"><span>◉</span>Farol de andamento <b id="badgePullAtivos" class="badge">0</b></button>
-          <button class="nav-item admin-only" data-view="puxada-historico" data-permission-any="PULL_HISTORY,PULL_TMA_ADJUST"><span>▤</span>Relatório / Histórico</button>
-          <button class="nav-item admin-only" data-view="puxada-dashboard" data-permission="PULL_DASHBOARD"><span>◫</span>Dashboards</button>
-          <button class="nav-item admin-only" data-view="puxada-metas" data-permission="PULL_GOALS"><span>◎</span>Metas</button>
-          <button class="nav-item admin-only" data-view="puxada-config" data-permission="PULL_CONFIG"><span>⚙</span>Configurações</button>
-        </div>
-      </div>
-      <div class="nav-module admin-only" data-module="administracao" data-permission-any="ADMIN_USERS,ADMIN_BASES">
-        <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">⚙</span><span class="module-name">Administração</span><span class="module-chevron">⌄</span></button>
-        <div class="nav-module-items">
-          <button class="nav-item admin-only" data-view="usuarios" data-permission="ADMIN_USERS"><span>♙</span>Usuários</button>
-          <button class="nav-item admin-only" data-view="bases" data-permission="ADMIN_BASES"><span>⇅</span>Bases / importação</button>
+
+      <div class="nav-area" data-area="configuracoes" data-permission-any="PULL_GOALS,PULL_CONFIG,ADMIN_USERS,ADMIN_BASES">
+        <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">⚙</span><span class="area-name">Configurações</span><span class="area-subname">Administração</span><span class="area-chevron">⌄</span></button>
+        <div class="nav-area-items">
+          <div class="nav-module admin-only role-puxada" data-module="puxada-config-admin" data-permission-any="PULL_GOALS,PULL_CONFIG">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">↗</span><span class="module-name">Puxada</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item admin-only" data-view="puxada-metas" data-permission="PULL_GOALS"><span>◎</span>Metas</button>
+              <button class="nav-item admin-only" data-view="puxada-config" data-permission="PULL_CONFIG"><span>⚙</span>Configurações</button>
+            </div>
+          </div>
+          <div class="nav-module admin-only" data-module="administracao" data-permission-any="ADMIN_USERS,ADMIN_BASES">
+            <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">⚙</span><span class="module-name">Administração</span><span class="module-chevron">⌄</span></button>
+            <div class="nav-module-items">
+              <button class="nav-item admin-only" data-view="usuarios" data-permission="ADMIN_USERS"><span>♙</span>Usuários</button>
+              <button class="nav-item admin-only" data-view="bases" data-permission="ADMIN_BASES"><span>⇅</span>Bases / importação</button>
+            </div>
+          </div>
         </div>
       </div>
       <button id="btnSairMobile" class="sidebar-logout">Sair</button>
@@ -490,6 +532,59 @@
       </section>
 
       <!-- USERS -->
+      <!-- ATIVO DE GIRO -->
+      <section id="view-ativo-giro-contagem" class="view role-rotating-asset" data-permission="ROTATING_ASSET_CREATE">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / Ativo de Giro</div><h1>Contagem de Ativo de Giro</h1><p>Registre os ativos conforme forem encontrados. O mesmo item pode receber várias adições ao longo da contagem.</p></div><span class="page-chip">ATIVO DE GIRO</span></div>
+
+        <div id="assetStartCard" class="card">
+          <div class="form-block">
+            <div class="block-head"><span class="step">1</span><div><strong>Iniciar contagem do dia</strong><small>A contagem fica vinculada ao conferente, unidade e data.</small></div></div>
+            <div class="grid grid-3">
+              <div class="field"><label>Unidade *</label><select id="assetStartUnit"></select></div>
+              <div class="field"><label>Conferente</label><input id="assetStartCounter" readonly></div>
+              <div class="field"><label>Data</label><input id="assetStartDate" type="date" readonly></div>
+            </div>
+            <div class="actions right"><button id="btnAssetStart" type="button" class="btn primary">Iniciar contagem</button></div>
+          </div>
+        </div>
+
+        <div id="assetActiveArea" class="hidden">
+          <div class="asset-active-head card">
+            <div><span class="eyebrow">CONTAGEM EM ANDAMENTO</span><h2 id="assetActiveCode">AG-000000</h2><p id="assetActiveSummary">—</p></div>
+            <div class="asset-active-actions"><div class="asset-kpi"><small>Adições</small><strong id="assetActiveEntriesCount">0</strong></div><button id="btnAssetRefresh" class="btn secondary" type="button">Atualizar</button><button id="btnAssetCancelCount" class="btn danger" type="button">Cancelar</button><button id="btnAssetFinish" class="btn primary" type="button">Finalizar contagem</button></div>
+          </div>
+
+          <div class="card">
+            <div class="block-head"><span class="step">2</span><div><strong>Adicionar à contagem</strong><small>Preencha somente as colunas encontradas e clique em “Adicionar à contagem”. Você pode voltar ao mesmo item quantas vezes precisar.</small></div></div>
+            <div class="asset-count-table-wrap">
+              <div class="asset-count-row asset-count-header">
+                <div>COD. SAP</div><div>COD.</div><div>DESCRIÇÃO</div><div>PALET/GFA</div><div>LASTRO/GFA</div><div>CAIXA/GFA</div><div>AVULSO</div><div>UNIDADES</div><div>TOTAL ATUAL</div><div>AÇÃO</div>
+              </div>
+              <div id="assetProductGrid"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="list-head"><div><strong>Últimas adições</strong><small>Cada passagem é mantida separadamente para rastreabilidade. Os totais acima são a soma de todas as adições.</small></div><span id="assetEntryCounter" class="counter">0 adições</span></div>
+            <div class="table-wrap"><table class="asset-entry-table"><thead><tr><th>Hora</th><th>Ativo</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th><th>Ação</th></tr></thead><tbody id="tbodyAssetEntries"></tbody></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-ativo-giro-historico" class="view role-rotating-asset" data-permission="ROTATING_ASSET_HISTORY">
+        <div class="page-head"><div><div class="breadcrumb">Armazém / Ativo de Giro</div><h1>Histórico de Ativo de Giro</h1><p>Consulte as contagens finalizadas e os totais consolidados de cada ativo.</p></div><span class="page-chip">HISTÓRICO</span></div>
+        <div class="card">
+          <div class="grid grid-4 filters">
+            <div class="field span-2"><label>Pesquisar</label><input id="assetHistorySearch" placeholder="Código, ativo, conferente ou contagem"></div>
+            <div class="field"><label>Unidade</label><select id="assetHistoryUnit"><option value="">Todas</option></select></div>
+            <div class="field"><label>Data inicial</label><input id="assetHistoryFrom" type="date"></div>
+            <div class="field"><label>Data final</label><input id="assetHistoryTo" type="date"></div>
+            <div class="actions end"><button id="btnAssetHistoryRefresh" type="button" class="btn secondary">Atualizar</button></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Contagem</th><th>Data</th><th>Unidade</th><th>Conferente</th><th>Adições</th><th>Finalizada</th><th>Ação</th></tr></thead><tbody id="tbodyAssetHistory"></tbody></table></div>
+        </div>
+      </section>
+
       <section id="view-usuarios" class="view admin-only" data-permission="ADMIN_USERS">
         <div class="page-head"><div><div class="breadcrumb">Admin / Usuários</div><h1>Usuários e perfis</h1><p>Um único cadastro de usuários para todos os módulos.</p></div><span class="page-chip admin">ADMIN</span></div>
         <div class="admin-grid user-admin-grid"><div class="card user-form-card"><form id="formUsuario"><input id="usuarioOriginal" type="hidden"><div class="grid grid-2"><div class="field"><label>Usuário *</label><input id="usuarioLogin"></div><div class="field"><label>Nome *</label><input id="usuarioNome"></div><div class="field"><label>Cargo / Perfil *</label><select id="usuarioPerfil"><option value="COLABORADOR_ARMAZEM">Colaborador Armazém</option><option value="CONFERENTE">Conferente</option><option value="COLABORADOR_ENTREGA">Motorista</option><option value="MOTORISTA_PUXADOR">Motorista Puxador</option><option value="VENDEDOR">Vendedor</option><option value="GERENTE_VENDAS">Gerente de Vendas</option><option value="ADMIN">Admin</option></select></div><div class="field"><label>Senha</label><input id="usuarioSenha" type="password" placeholder="Obrigatória no novo usuário"></div></div><label class="check"><input id="usuarioAtivo" type="checkbox" checked> Usuário ativo</label><div class="permission-editor-head"><div><strong>Funcionalidades habilitadas</strong><small>O cargo define o padrão. Marque ou desmarque exceções específicas deste usuário.</small></div><button id="btnRestaurarPermissoes" type="button" class="btn secondary">Restaurar padrão do cargo</button></div><div id="usuarioPermissoes" class="permission-editor"><div class="empty-state">Carregando permissões…</div></div><div class="actions right"><button id="btnLimparUsuario" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar usuário</button></div></form></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Funcionalidades</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyUsuarios"></tbody></table></div></div></div>
@@ -514,7 +609,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="config.js?v=1.4.1"></script>
-  <script src="app.js?v=1.4.1"></script>
+  <script src="config.js?v=1.5.1"></script>
+  <script src="app.js?v=1.5.1"></script>
 </body>
 </html>

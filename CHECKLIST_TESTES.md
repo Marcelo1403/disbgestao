@@ -146,3 +146,38 @@ Antes de desligar os aplicativos antigos, valide:
 - [ ] FEFO: conferir Lote(s) na tabela da contagem, relatório detalhado, pesquisa e CSV.
 - [ ] FEFO: impedir salvamento sem produto selecionado, validade ou lote.
 - [ ] Android: `npm run android:sync` deve aplicar `versionCode 141` e `versionName 1.4.1`.
+
+## v1.5.0 - Ativo de Giro e barra lateral por áreas
+
+- [ ] Executar `supabase/20_v1_5_0_ativo_giro_sidebar.sql` depois do SQL 19.
+- [ ] Conferente/Colaborador de Armazém visualiza **Armazém > Ativo de Giro**.
+- [ ] Iniciar contagem informando a unidade.
+- [ ] Lista contém todos os ativos do formulário fornecido.
+- [ ] Registrar 20 em CAIXA/GFA para CERVEJA 600ML.
+- [ ] Voltar ao mesmo item e registrar mais 50 em CAIXA/GFA.
+- [ ] Total atual do item passa a C 70 sem apagar as duas adições.
+- [ ] Excluir uma adição recalcula o total.
+- [ ] Finalizar a contagem somente quando houver ao menos uma adição.
+- [ ] Histórico exibe contagem, data, unidade, conferente, número de adições e totais consolidados.
+- [ ] CSV do histórico contém os totais por ativo.
+- [ ] Barra lateral possui as áreas Armazém, Entrega, Vendas, Puxada e Configurações.
+- [ ] Cada área abre os módulos e cada módulo abre suas subtelas.
+- [ ] A tela atual abre automaticamente a área/módulo correspondentes.
+- [ ] Permissões continuam ocultando áreas e telas não autorizadas.
+- [ ] `node --check app.js` sem erros.
+- [ ] `npm run android:sync` aplica `versionCode 150` e `versionName 1.5.0`.
+
+
+## v1.5.1 - Redesign visual
+
+- [ ] Sidebar exibe as cinco áreas com contraste adequado e destaque da área/tela ativa.
+- [ ] Armazém usa azul como cor de apoio.
+- [ ] Entrega usa verde como cor de apoio.
+- [ ] Vendas usa laranja como cor de apoio.
+- [ ] Puxada usa roxo como cor de apoio.
+- [ ] Configurações usa cinza/azul ardósia como cor de apoio.
+- [ ] Cards, tabelas, inputs e botões seguem o novo padrão visual sem perda de funcionalidade.
+- [ ] Layout permanece utilizável em celular e tablet.
+- [ ] Ativo de Giro continua aceitando múltiplas adições e consolidando os totais.
+- [ ] NRI e FEFO continuam aceitando múltiplos lotes.
+- [ ] `npm run android:sync` aplica `versionCode 151` e `versionName 1.5.1`.

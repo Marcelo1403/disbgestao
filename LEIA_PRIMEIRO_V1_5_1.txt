@@ -1,0 +1,12 @@
+DISB GESTAO v1.5.1
+
+PACOTE COMBINADO: inclui toda a v1.5.0 + redesign visual.
+
+1. Se a v1.4.1 ainda estiver sem commit, salve-a primeiro no Git.
+2. Aplique este patch diretamente sobre C:\disbgestao-git. Nao e necessario aplicar o patch v1.5.0 separadamente.
+3. Execute no Supabase o SQL supabase/20_v1_5_0_ativo_giro_sidebar.sql caso ainda nao tenha sido executado.
+4. Rode npm install e npm run android:sync.
+5. Teste a barra lateral, Ativo de Giro, NRI, FEFO, Entrega, Vendas e Puxada.
+6. Faça commit/push.
+
+Android esperado: versionCode 151 / versionName 1.5.1.
