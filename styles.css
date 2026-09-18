@@ -454,24 +454,106 @@ body:before{content:"";position:fixed;inset:0 0 auto 0;height:180px;background:l
     font-size:14px
   }
 }
-/* FORCAR BOTAO AVARIA LANCADA EM ROXO */
-.sales-launch-btn{
-  border:1px solid #c4b5fd !important;
-  background:linear-gradient(180deg,#f5f3ff 0%,#ede9fe 100%) !important;
-  color:#6d28d9 !important;
-  box-shadow:0 8px 18px rgba(109,40,217,.12) !important;
+/* ==========================================================
+   v1.5.1 - COR FINAL DO BOTAO AVARIA LANCADA
+   Funciona com a classe antiga e com a nova
+   ========================================================== */
+
+button[data-sales-launch],
+.sales-launch-action button[data-sales-launch],
+.sales-launch-action .sales-launch-btn,
+.sales-launch-action .mini-btn.success{
+  width:100% !important;
+
+  border:1px solid #7c3aed !important;
+
+  background:#7c3aed !important;
+  background-image:none !important;
+
+  color:#ffffff !important;
+
+  border-radius:14px !important;
+
+  padding:14px 16px !important;
+
+  text-align:left !important;
+
+  cursor:pointer !important;
+
+  display:flex !important;
+  flex-direction:column !important;
+
+  gap:4px !important;
+
+  font-weight:900 !important;
+
+  box-shadow:0 8px 18px rgba(124,58,237,.22) !important;
+
+  transition:
+    transform .12s ease,
+    box-shadow .12s ease,
+    background .12s ease !important;
 }
 
-.sales-launch-btn span{
-  color:#6d28d9 !important;
+
+/* Texto principal */
+button[data-sales-launch] span,
+.sales-launch-action button[data-sales-launch] span,
+.sales-launch-action .sales-launch-btn span,
+.sales-launch-action .mini-btn.success span{
+  color:#ffffff !important;
+  font-size:13px !important;
+  line-height:1.2 !important;
 }
 
-.sales-launch-btn small{
-  color:#7c3aed !important;
+
+/* Texto menor */
+button[data-sales-launch] small,
+.sales-launch-action button[data-sales-launch] small,
+.sales-launch-action .sales-launch-btn small,
+.sales-launch-action .mini-btn.success small{
+  color:#ede9fe !important;
+  font-size:10px !important;
+  font-weight:700 !important;
 }
 
-.sales-launch-btn:hover{
-  border-color:#a78bfa !important;
-  background:linear-gradient(180deg,#ede9fe 0%,#ddd6fe 100%) !important;
-  box-shadow:0 12px 22px rgba(109,40,217,.18) !important;
+
+/* Mouse sobre o botao */
+button[data-sales-launch]:hover,
+.sales-launch-action button[data-sales-launch]:hover,
+.sales-launch-action .sales-launch-btn:hover,
+.sales-launch-action .mini-btn.success:hover{
+  background:#6d28d9 !important;
+  background-image:none !important;
+
+  border-color:#6d28d9 !important;
+
+  color:#ffffff !important;
+
+  transform:translateY(-1px) !important;
+
+  box-shadow:0 12px 24px rgba(109,40,217,.30) !important;
+}
+
+
+/* Ao clicar */
+button[data-sales-launch]:active,
+.sales-launch-action button[data-sales-launch]:active{
+  background:#5b21b6 !important;
+  transform:translateY(0) !important;
+}
+
+
+/* Mobile */
+@media(max-width:640px){
+
+  button[data-sales-launch],
+  .sales-launch-action button[data-sales-launch]{
+    padding:15px 16px !important;
+  }
+
+  button[data-sales-launch] span,
+  .sales-launch-action button[data-sales-launch] span{
+    font-size:14px !important;
+  }
 }
