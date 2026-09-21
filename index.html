@@ -394,7 +394,6 @@
                   <div class="field span-2 sales-product-field"><label>Produto *</label><div id="fefoProductPicker" class="sales-product-picker"><input id="fefoCodigo" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="fefoProductOptions" placeholder="Digite código ou descrição do produto"><button type="button" id="btnFefoProductClear" class="sales-product-clear hidden" aria-label="Limpar produto">×</button><div id="fefoProductOptions" class="sales-product-options hidden" role="listbox"></div></div><div id="fefoProductSelected" class="sales-product-selected muted">Digite para pesquisar e selecione um produto da base.</div></div>
                   <div class="field"><label>Validade *</label><input id="fefoValidade" inputmode="numeric" maxlength="10" placeholder="DD/MM/AAAA"><small id="fefoValidityHint" class="field-help">Informe a validade do produto.</small></div>
                   <div class="field"><label>Rua</label><input id="fefoRua" maxlength="40" autocomplete="off" placeholder="Ex.: 03"></div>
-                  <div class="field span-2 multi-lot-field"><label>Lote(s) *</label><div class="multi-lot-entry"><input id="fefoLote" placeholder="Digite um lote" pattern="[A-Za-z0-9]+" title="Use apenas letras e números" autocapitalize="characters" autocomplete="off" spellcheck="false"><button type="button" id="btnFefoAddLot" class="btn secondary">+ Adicionar lote</button></div><div id="fefoLotList" class="multi-lot-list empty"><span>Nenhum lote adicionado.</span></div><small class="field-help">Use vários lotes quando o mesmo produto tiver a mesma validade em lotes diferentes.</small></div>
                   <div class="field"><label>Palete</label><input id="fefoPalete" type="number" min="0" step="1" value="0"></div>
                   <div class="field"><label>Lastro</label><input id="fefoLastro" type="number" min="0" step="1" value="0"></div>
                   <div class="field"><label>Caixa</label><input id="fefoCaixa" type="number" min="0" step="1" value="0"></div>
@@ -407,7 +406,7 @@
 
           <div class="card">
             <div class="section-heading"><div><strong>Itens da contagem</strong><span>Ordenados por validade para facilitar o FEFO. Itens vencidos são destacados.</span></div><div class="actions"><button id="btnFefoRefreshItems" type="button" class="btn secondary">Atualizar</button></div></div>
-            <div class="table-wrap"><table class="fefo-table"><thead><tr><th>Produto</th><th>Validade</th><th>Lote(s)</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th><th>Ações</th></tr></thead><tbody id="tbodyFefoItems"></tbody></table></div>
+            <div class="table-wrap"><table class="fefo-table"><thead><tr><th>Produto</th><th>Validade</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th><th>Ações</th></tr></thead><tbody id="tbodyFefoItems"></tbody></table></div>
             <div class="fefo-final-actions"><button id="btnFefoCancelCount" type="button" class="btn secondary">Cancelar contagem</button><button id="btnFefoFinish" type="button" class="btn primary">Finalizar Contagem</button></div>
           </div>
         </div>
@@ -610,6 +609,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.5.1"></script>
-  <script src="app.js?v=1.5.1-launch-bulk"></script>
+  <script src="app.js?v=1.5.1-fefo-sem-lote"></script>
 </body>
 </html>
