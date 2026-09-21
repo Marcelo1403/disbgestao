@@ -617,3 +617,23 @@ button[data-sales-launch]:focus-visible,
   .asset-qty-input{height:58px!important;font-size:23px!important}
   .asset-running-total{grid-template-columns:1fr!important}
 }
+
+/* ========================================================================== 
+   v1.5.1 - Ativo de Giro: abas Total / Patio / Refugo no detalhe do historico
+   ========================================================================== */
+.asset-history-view-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:2px 0 10px;padding:5px;border:1px solid #e2e8f0;border-radius:13px;background:#f8fafc}
+.asset-history-view-tab{min-height:42px;border:1px solid transparent;border-radius:10px;background:transparent;color:#64748b;font-size:10px;font-weight:1000;letter-spacing:.045em;cursor:pointer;transition:background .14s,color .14s,border-color .14s,box-shadow .14s}
+.asset-history-view-tab:hover{background:#fff;color:#334155;border-color:#e2e8f0}
+.asset-history-view-tab.active{background:#172033;color:#fff;border-color:#172033;box-shadow:0 6px 16px rgba(15,23,42,.13)}
+.asset-history-view-tab.patio.active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 6px 16px rgba(37,99,235,.18)}
+.asset-history-view-tab.refugo.active{background:#dc2626;border-color:#dc2626;color:#fff;box-shadow:0 6px 16px rgba(220,38,38,.17)}
+.asset-history-view-caption{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px;padding:0 3px}
+.asset-history-view-caption strong{font-size:12px;color:#172033}.asset-history-view-caption span{font-size:9px;color:#748094;text-align:right}
+.asset-location-badge.total{background:#f1f5f9;border:1px solid #cbd5e1;color:#334155}
+.asset-history-empty-view{text-align:center!important;color:#7b8798!important;padding:24px!important}
+@media(max-width:640px){
+  .asset-history-view-tabs{position:sticky;top:0;z-index:5;background:#fff;padding:6px;margin-top:0}
+  .asset-history-view-tab{min-height:46px;font-size:10.5px}
+  .asset-history-view-caption{align-items:flex-start;flex-direction:column;gap:3px;padding:2px 1px}
+  .asset-history-view-caption span{text-align:left;line-height:1.35}
+}

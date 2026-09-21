@@ -2931,10 +2931,46 @@ function rotatingAssetTotalRows(entries){
   return rows;
 }
 function onRotatingAssetHistoryClick(e){const view=e.target.closest('[data-asset-history-view]');if(view)return openRotatingAssetHistory(view.dataset.assetHistoryView);const csv=e.target.closest('[data-asset-history-csv]');if(csv)return downloadRotatingAssetHistoryCsv(csv.dataset.assetHistoryCsv);}
+function rotatingAssetHistoryViewRows(entries,view='TOTAL'){
+  const mode=String(view||'TOTAL').toUpperCase();
+  const order=new Map(rotatingAssetProducts.map((p,i)=>[p.id,i]));
+  const entryMeta=new Map();
+  (entries||[]).forEach(e=>{if(!entryMeta.has(e.product_id))entryMeta.set(e.product_id,e);});
+  const productIds=[...new Set((entries||[]).map(e=>e.product_id))].sort((a,b)=>(order.get(a)??999)-(order.get(b)??999));
+  const totals=mode==='TOTAL'?aggregateRotatingAssetEntries(entries):aggregateRotatingAssetEntries(entries,mode);
+  return productIds.map(productId=>{
+    const meta=rotatingAssetProducts.find(p=>p.id===productId)||entryMeta.get(productId)||{};
+    const t=totals.get(productId);
+    if(!t||!t.entries)return null;
+    return {...t,location:mode};
+  }).filter(Boolean);
+}
+function rotatingAssetHistoryViewLabel(view){const mode=String(view||'TOTAL').toUpperCase();return mode==='REFUGO'?'Refugo':mode==='PATIO'?'Pátio':'Total';}
+function rotatingAssetHistoryViewClass(view){const mode=String(view||'TOTAL').toUpperCase();return mode==='REFUGO'?'refugo':mode==='PATIO'?'patio':'total';}
+function rotatingAssetHistoryTableRowsHtml(rows,view){
+  const label=rotatingAssetHistoryViewLabel(view),cls=rotatingAssetHistoryViewClass(view);
+  if(!rows.length)return '<tr><td colspan="9" class="asset-history-empty-view">Nenhum ativo encontrado nesta página.</td></tr>';
+  return rows.map(r=>`<tr><td>${esc(r.sap_code||'—')}</td><td>${esc(r.asset_code||'—')}</td><td><strong>${esc(r.description)}</strong><small>${r.entries} adição${r.entries===1?'':'ões'}</small></td><td><span class="asset-location-badge ${cls}">${label}</span></td><td>${r.pallet_gfa}</td><td>${r.layer_gfa}</td><td>${r.box_gfa}</td><td>${r.loose}</td><td>${r.units}</td></tr>`).join('');
+}
 function openRotatingAssetHistory(id){
-  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const entries=rotatingAssetEntriesByCount.get(id)||[],rows=rotatingAssetTotalRows(entries),patio=aggregateRotatingAssetGrandTotal(entries,'PATIO'),refugo=aggregateRotatingAssetGrandTotal(entries,'REFUGO');
-  const body=`<div class="detail-grid asset-history-detail-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(c.count_date)}</strong></div><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Adições</small><strong>${entries.length}</strong></div></div><div class="asset-history-total-cards"><div class="asset-history-total-card patio"><span>Pátio</span><strong>${assetTotalLabel(patio)}</strong><small>${patio.entries} adição${patio.entries===1?'':'ões'}</small></div><div class="asset-history-total-card refugo"><span>Refugo</span><strong>${assetTotalLabel(refugo)}</strong><small>${refugo.entries} adição${refugo.entries===1?'':'ões'}</small></div></div><div class="table-wrap"><table class="asset-history-total-table"><thead><tr><th>COD. SAP</th><th>COD.</th><th>Descrição</th><th>Local</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.sap_code||'—')}</td><td>${esc(r.asset_code||'—')}</td><td><strong>${esc(r.description)}</strong><small>${r.entries} adição${r.entries===1?'':'ões'}</small></td><td><span class="asset-location-badge ${assetLocationClass(r.location)}">${assetLocationLabel(r.location)}</span></td><td>${r.pallet_gfa}</td><td>${r.layer_gfa}</td><td>${r.box_gfa}</td><td>${r.loose}</td><td>${r.units}</td></tr>`).join('')}</tbody></table></div>`;
+  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;
+  const entries=rotatingAssetEntriesByCount.get(id)||[],patio=aggregateRotatingAssetGrandTotal(entries,'PATIO'),refugo=aggregateRotatingAssetGrandTotal(entries,'REFUGO');
+  const total=aggregateRotatingAssetGrandTotal(entries);
+  const initialRows=rotatingAssetHistoryViewRows(entries,'TOTAL');
+  const body=`<div class="detail-grid asset-history-detail-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(c.count_date)}</strong></div><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Adições</small><strong>${entries.length}</strong></div></div><div class="asset-history-total-cards"><div class="asset-history-total-card patio"><span>Pátio</span><strong>${assetTotalLabel(patio)}</strong><small>${patio.entries} adição${patio.entries===1?'':'ões'}</small></div><div class="asset-history-total-card refugo"><span>Refugo</span><strong>${assetTotalLabel(refugo)}</strong><small>${refugo.entries} adição${refugo.entries===1?'':'ões'}</small></div></div><div class="asset-history-view-tabs" role="tablist" aria-label="Visualização dos totais do Ativo de Giro"><button type="button" class="asset-history-view-tab active" data-asset-history-tab="TOTAL">TOTAL</button><button type="button" class="asset-history-view-tab patio" data-asset-history-tab="PATIO">PÁTIO</button><button type="button" class="asset-history-view-tab refugo" data-asset-history-tab="REFUGO">REFUGO</button></div><div class="asset-history-view-caption"><strong id="assetHistoryViewTitle">Total</strong><span id="assetHistoryViewSummary">Pátio + Refugo • ${assetTotalLabel(total)}</span></div><div class="table-wrap"><table class="asset-history-total-table"><thead><tr><th>COD. SAP</th><th>COD.</th><th>Descrição</th><th>Visão</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th></tr></thead><tbody id="assetHistoryViewTbody">${rotatingAssetHistoryTableRowsHtml(initialRows,'TOTAL')}</tbody></table></div>`;
   openModal(`Ativo de Giro • ${c.count_code}`,`${fmtDate(c.count_date)} • ${c.unit}`,body,[{label:'Baixar CSV',class:'primary',onClick:()=>downloadRotatingAssetHistoryCsv(c.id)},{label:'Fechar',class:'secondary',onClick:closeModal}]);
+  const modalBody=$('modalBody');
+  const renderView=view=>{
+    const mode=String(view||'TOTAL').toUpperCase(),rows=rotatingAssetHistoryViewRows(entries,mode);
+    const totals=mode==='PATIO'?patio:mode==='REFUGO'?refugo:total;
+    const title=rotatingAssetHistoryViewLabel(mode);
+    const summary=mode==='TOTAL'?`Pátio + Refugo • ${assetTotalLabel(totals)}`:`${totals.entries} adição${totals.entries===1?'':'ões'} • ${assetTotalLabel(totals)}`;
+    const tbody=$('assetHistoryViewTbody');if(tbody)tbody.innerHTML=rotatingAssetHistoryTableRowsHtml(rows,mode);
+    if($('assetHistoryViewTitle'))$('assetHistoryViewTitle').textContent=title;
+    if($('assetHistoryViewSummary'))$('assetHistoryViewSummary').textContent=summary;
+    modalBody?.querySelectorAll('[data-asset-history-tab]').forEach(btn=>{const active=btn.dataset.assetHistoryTab===mode;btn.classList.toggle('active',active);btn.setAttribute('aria-selected',active?'true':'false');});
+  };
+  modalBody?.querySelectorAll('[data-asset-history-tab]').forEach(btn=>btn.addEventListener('click',()=>renderView(btn.dataset.assetHistoryTab)));
 }
 function downloadRotatingAssetHistoryCsv(id){
   const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const rows=rotatingAssetTotalRows(rotatingAssetEntriesByCount.get(id)||[]);downloadCsv(`ativo_giro_${String(c.count_date||'').replaceAll('-','')}_${c.count_code}.csv`,[['contagem','data','unidade','conferente','cod_sap','cod','descricao','local','palet_gfa','lastro_gfa','caixa_gfa','avulso','unidades'],...rows.map(r=>[c.count_code,c.count_date,c.unit,c.counter_name,r.sap_code,r.asset_code,r.description,assetLocationLabel(r.location),r.pallet_gfa,r.layer_gfa,r.box_gfa,r.loose,r.units])]);
