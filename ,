@@ -1,0 +1,9 @@
+warning: in the working copy of 'VERSION.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'sw.js', LF will be replaced by CRLF the next time Git touches it
+ VERSION.txt |  2 [32m+[m[31m-[m
+ app.js      | 14 [32m+++++[m[31m---------[m
+ index.html  |  5 [32m++[m[31m---[m
+ sw.js       |  4 [32m++[m[31m--[m
+ 4 files changed, 10 insertions(+), 15 deletions(-)
