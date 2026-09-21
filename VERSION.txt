@@ -1,1 +1,1 @@
-v1.5.1 - redesign + Ativo de Giro por Pátio/Refugo com abas Total/Pátio/Refugo + fluxo final de Avarias de Vendas + FEFO sem lote na contagem
+v1.5.1 - descarte de pendencia NRI + fluxo Avarias de Entrega ate Entregue + Entregue em Avarias de Vendas + comprovante WhatsApp e contatos de clientes + FEFO sem coluna de lote em relatorios/CSV

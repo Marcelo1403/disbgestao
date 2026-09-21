@@ -16,7 +16,7 @@ const ROLE_LABELS = {
 
 const PERMISSION_CATALOG = [
   ['NRI','NRI_PENDING_VIEW','Recebimentos e impressões pendentes'],['NRI','MARKETPLACE_RECEIVE','Recebimento Marketplace'],['NRI','NRI_CREATE','Cadastrar NRI'],['NRI','NRI_PRINT','Imprimir NRI'],['NRI','NRI_HISTORY','Histórico NRI'],['NRI','NRI_DAMAGE_HISTORY','Paletes avariados'],
-  ['Avarias de Entrega','DELIVERY_DAMAGE_CREATE','Registrar avaria'],['Avarias de Entrega','DELIVERY_DAMAGE_VIEW_ALL','Visualizar todas'],['Avarias de Entrega','DELIVERY_DAMAGE_REVIEW','Aprovar / reprovar'],
+  ['Avarias de Entrega','DELIVERY_DAMAGE_CREATE','Registrar avaria'],['Avarias de Entrega','DELIVERY_DAMAGE_VIEW_ALL','Visualizar todas'],['Avarias de Entrega','DELIVERY_DAMAGE_REVIEW','Aprovar / reprovar'],['Avarias de Entrega','DELIVERY_DAMAGE_POST','Lançar / entregar'],
   ['Avarias de Vendas','SALES_DAMAGE_CREATE','Cadastrar solicitação'],['Avarias de Vendas','SALES_DAMAGE_VIEW_OWN','Visualizar próprias'],['Avarias de Vendas','SALES_DAMAGE_VIEW_ALL','Visualizar todas'],['Avarias de Vendas','SALES_DAMAGE_REVIEW','Decisão do Gerente de Vendas'],['Avarias de Vendas','SALES_DAMAGE_OVERRIDE','Decisão final'],['Avarias de Vendas','SALES_DAMAGE_POST','Marcar avaria lançada'],
   ['Conferência','CONF_CREATE','Realizar conferência'],['Conferência','CONF_OWN_HISTORY','Minhas conferências'],['Conferência','CONF_HISTORY','Histórico completo'],['Conferência','CONF_DASHBOARD','Dashboard'],
   ['Contagem FEFO','FEFO_CREATE','Nova contagem'],['Contagem FEFO','FEFO_ACTIVE','Contagens em andamento'],['Contagem FEFO','FEFO_REPORT','Relatórios'],
@@ -78,6 +78,8 @@ let deliveryDamageProductSearchTimer = null;
 let signatureDirty = false;
 let drawingSignature = false;
 let currentAvariaDetail = null;
+let customerContactRows = [];
+let deliveryDamageReceiptContext = null;
 let salesDamageItems = [];
 let salesDamageEditingId = null;
 let salesDamagePhotos = [];
@@ -144,6 +146,7 @@ const viewMeta = {
   'puxada-metas':['Metas da Puxada','Metas globais por ano'],
   'puxada-config':['Configurações da Puxada','GPS, raio de auditoria e veículos'],
   'usuarios':['Usuários e perfis','Controle de acesso'],
+  'contatos-clientes':['Contatos de clientes','WhatsApp e comprovantes de avaria'],
   'bases':['Bases / importação','Migração do Google Sheets']
 };
 
@@ -366,6 +369,9 @@ function bindBaseEvents(){
   $('usuarioPerfil')?.addEventListener('change',()=>renderUserPermissionEditor(null,true));
   $('btnRestaurarPermissoes')?.addEventListener('click',()=>renderUserPermissionEditor(null,true));
   $('btnImportarBase').addEventListener('click',importBaseCsv);
+  $('customerContactSearch')?.addEventListener('input',renderCustomerContactAdmin);
+  $('btnCustomerContactRefresh')?.addEventListener('click',()=>loadCustomerContactAdmin());
+  $('tbodyCustomerContacts')?.addEventListener('click',onCustomerContactAdminClick);
   bindPullEvents();
 }
 
@@ -431,7 +437,7 @@ async function startApp(){
   if(canNri()) { await loadPending(); if(hasPerm('MARKETPLACE_RECEIVE'))await loadMarketplaceModule(true); if(hasPerm('NRI_PENDING_VIEW'))await loadPullNriPending(true); }
   if(canFefo()) { await refreshFefoBadge(true); }
   if(canRotatingAsset()) { await loadRotatingAssetProducts(true); if(hasPerm('ROTATING_ASSET_CREATE'))await loadRotatingAssetCurrent(true); }
-  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW')) loadAdminAvarias(true);
+  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST')) loadAdminAvarias(true);
   if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST')) loadSalesDamageManage(true);
   const visible=[...document.querySelectorAll('.nav-item[data-view]')].find(x=>!x.classList.contains('hidden')&&!x.closest('.nav-module')?.classList.contains('hidden')&&!x.closest('.nav-area')?.classList.contains('hidden'));
   openView(visible?.dataset.view||'nri-cadastro',true);
@@ -439,7 +445,7 @@ async function startApp(){
 function isAdmin(){return profile?.role==='ADMIN';}
 function isPullDriver(){return profile?.role==='MOTORISTA_PUXADOR';}
 function canNri(){return hasAnyPerm('NRI_PENDING_VIEW,MARKETPLACE_RECEIVE,NRI_CREATE,NRI_PRINT,NRI_HISTORY,NRI_DAMAGE_HISTORY');}
-function canAvaria(){return hasAnyPerm('DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW');}
+function canAvaria(){return hasAnyPerm('DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST');}
 function canConference(){return hasAnyPerm('CONF_CREATE,CONF_OWN_HISTORY,CONF_HISTORY,CONF_DASHBOARD');}
 function canFefo(){return hasAnyPerm('FEFO_CREATE,FEFO_ACTIVE,FEFO_REPORT');}
 function canRotatingAsset(){return hasAnyPerm('ROTATING_ASSET_CREATE,ROTATING_ASSET_HISTORY');}
@@ -536,6 +542,7 @@ function openView(name,force=false){
   if(name==='ativo-giro-contagem')loadRotatingAssetCurrent();
   if(name==='ativo-giro-historico')loadRotatingAssetHistory();
   if(name==='usuarios')loadUsers();
+  if(name==='contatos-clientes')loadCustomerContactAdmin();
   if(name==='marketplace-recebimento')loadMarketplaceModule();
   if(name==='nri-carretas'||name.startsWith('puxada-')) pullOnView(name);
 }
@@ -545,7 +552,7 @@ function setupRealtime(){
   teardownRealtime();
   realtimeChannel=sb.channel(`ops-${authUser.id}`);
   if(canNri()) { realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'nris'},()=>debounceReload('nri')); realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'marketplace_receipts'},()=>debounceReload('marketplace')); }
-  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW')) realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'damage_requests'},()=>debounceReload('avaria'));
+  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST')) realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'damage_requests'},()=>debounceReload('avaria'));
   if(canSalesDamage()){
     realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'sales_damage_requests'},()=>debounceReload('sales_damage'));
     realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'sales_damage_items'},()=>debounceReload('sales_damage'));
@@ -565,7 +572,7 @@ function teardownRealtime(){if(realtimeChannel&&sb){sb.removeChannel(realtimeCha
 const reloadTimers={}; function debounceReload(type){clearTimeout(reloadTimers[type]);reloadTimers[type]=setTimeout(()=>{
   if(type==='nri'&&canNri())loadPending(true);
   if(type==='marketplace'&&canNri()){if(hasPerm('MARKETPLACE_RECEIVE'))loadMarketplaceModule(true);if(hasPerm('NRI_PENDING_VIEW'))loadPullNriPending(true);}
-  if(type==='avaria'&&hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW'))loadAdminAvarias(true);
+  if(type==='avaria'&&hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))loadAdminAvarias(true);
   if(type==='sales_damage'){if(hasPerm('SALES_DAMAGE_VIEW_OWN'))loadSalesDamageMy(true);if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))loadSalesDamageManage(true);}
   if(type==='conf'){if(activeView==='conf-minhas'&&hasPerm('CONF_OWN_HISTORY'))loadMyConferences(true);if(activeView==='conf-dashboard'&&hasPerm('CONF_DASHBOARD'))loadDashboard(true);}
   if(type==='fefo'&&canFefo()){refreshFefoBadge(true);if(activeView==='fefo-contagem'&&hasPerm('FEFO_CREATE'))loadFefoCurrent(true);if(activeView==='fefo-andamento'&&hasPerm('FEFO_ACTIVE'))loadFefoActiveCounts(true);if(activeView==='fefo-relatorios'&&hasPerm('FEFO_REPORT'))loadFefoReports(true);}
@@ -970,7 +977,7 @@ async function submitAvaria(e){
 async function uploadStorage(path,blob){const {error}=await sb.storage.from('avarias').upload(path,blob,{contentType:'image/jpeg',upsert:false});if(error)throw error;}
 let adminAvarias=[];let lotNriMap=new Map();
 async function loadAdminAvarias(silent=false){
-  if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW'))return;
+  if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))return;
   try{
     const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').order('created_at',{ascending:false}).limit(1000);
     if(error)throw error;adminAvarias=data||[];
@@ -2168,7 +2175,7 @@ renderPullFarol = function(){
 filteredPullHistoryRows = function(){const q=norm($('pullHistBusca')?.value||''),factory=$('pullHistFactory')?.value||'',type=$('pullHistType')?.value||'';return pullHistory.filter(t=>(!type||t.cycle_type===type)&&(!factory||t.factory===factory)&&(!q||norm([t.trip_code,t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.ended_by_name,t.cycle_type].join(' ')).includes(q)));};
 function pullHistoryStages(){const type=$('pullHistType')?.value||'';if(type)return pullStepsForCycle(type);return [...pullStepsForCycle('PULL'),...pullStepsForCycle('TRANSFER')];}
 renderPullHistoryHead = function(){const head=$('pullHistoryHead');if(!head)return;const stages=pullHistoryStages().map((s,i)=>`<th class="pull-history-stage-head"><span>${pullMainStepNumber(s)||i+1}</span>${esc((!$('pullHistType')?.value?`${s.flow_type==='TRANSFER'?'Transferência':'Puxada'} · `:'')+s.name)}</th>`).join('');head.innerHTML=`<th>Viagem / Tipo</th><th>Origem</th><th>Placa / Fábrica-destino</th><th>Motoristas</th>${stages}<th>TMV Ida</th><th>TMA Fábrica</th><th>TMV Volta</th><th>TMA Revenda</th><th>Ciclo</th><th>NRI</th><th>Ações</th>`;};
-renderPullHistory = function(){if(!$('tbodyPullHistory'))return;const hf=$('pullHistFactory');if(hf){const old=hf.value,vals=[...new Set(pullHistory.map(t=>t.factory).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));hf.innerHTML='<option value="">Todas</option>'+vals.map(v=>`<option>${esc(v)}</option>`).join('');if(vals.includes(old))hf.value=old;}renderPullHistoryHead();const rows=filteredPullHistoryRows(),lookup=pullHistoryEventLookup(),stages=pullHistoryStages(),totalCols=4+stages.length+7;$('tbodyPullHistory').innerHTML=rows.length?rows.map(t=>{const m=pullTripMetrics(t),stageCells=stages.map(step=>{if((step.flow_type||'PULL')!==(t.cycle_type||'PULL'))return '<td class="pull-history-stage-cell">—</td>';const ev=pullHistoryStageEvent(lookup,t.id,step);return `<td class="pull-history-stage-cell">${ev?`<strong>${fmtDateTime(ev.recorded_at)}</strong><small>${esc(ev.user_name||'—')} • GPS ±${Math.round(Number(ev.gps_accuracy)||0)} m</small>`:'—'}</td>`;}).join(''),transfer=t.cycle_type==='TRANSFER';return `<tr><td><strong>${esc(t.trip_code)}</strong><small>${transfer?'Transferência':'Puxada'} • ${pullTripStatusLabel(t)}</small></td><td>${esc(t.origin_unit||'—')}</td><td>${esc(t.plate)}<small>${esc(t.factory)}</small></td><td>${esc(t.driver1_name)}${transfer?'':`<small>${esc(t.driver2_name)}</small>`}</td>${stageCells}<td>${fmtMinutes(m.TMV_OUT)}</td><td>${fmtMinutes(m.FACTORY)}</td><td>${fmtMinutes(m.TMV_RETURN)}</td><td>${m.UNIT==null?'—':fmtMinutes(m.UNIT)}</td><td>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</td><td>${transfer?'—':t.nri_status==='COMPLETED'?'<span class="status ok">Concluído</span>':t.nri_status==='PENDING'?'<span class="status pending">Pendente</span>':'—'}</td><td><div class="mini-actions"><button class="mini-btn" data-hist-detail="${t.id}">Detalhar</button>${hasPerm('PULL_TMA_ADJUST')&&!transfer&&t.next_started_at?`<button class="mini-btn" data-tma-adjust="${t.id}">Ajustar TMA</button>`:''}</div></td></tr>`;}).join(''):`<tr><td colspan="${totalCols}">Nenhum ciclo.</td></tr>`;};
+renderPullHistory = function(){if(!$('tbodyPullHistory'))return;const hf=$('pullHistFactory');if(hf){const old=hf.value,vals=[...new Set(pullHistory.map(t=>t.factory).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));hf.innerHTML='<option value="">Todas</option>'+vals.map(v=>`<option>${esc(v)}</option>`).join('');if(vals.includes(old))hf.value=old;}renderPullHistoryHead();const rows=filteredPullHistoryRows(),lookup=pullHistoryEventLookup(),stages=pullHistoryStages(),totalCols=4+stages.length+7;$('tbodyPullHistory').innerHTML=rows.length?rows.map(t=>{const m=pullTripMetrics(t),stageCells=stages.map(step=>{if((step.flow_type||'PULL')!==(t.cycle_type||'PULL'))return '<td class="pull-history-stage-cell">—</td>';const ev=pullHistoryStageEvent(lookup,t.id,step);return `<td class="pull-history-stage-cell">${ev?`<strong>${fmtDateTime(ev.recorded_at)}</strong><small>${esc(ev.user_name||'—')} • GPS ±${Math.round(Number(ev.gps_accuracy)||0)} m</small>`:'—'}</td>`;}).join(''),transfer=t.cycle_type==='TRANSFER';return `<tr><td><strong>${esc(t.trip_code)}</strong><small>${transfer?'Transferência':'Puxada'} • ${pullTripStatusLabel(t)}</small></td><td>${esc(t.origin_unit||'—')}</td><td>${esc(t.plate)}<small>${esc(t.factory)}</small></td><td>${esc(t.driver1_name)}${transfer?'':`<small>${esc(t.driver2_name)}</small>`}</td>${stageCells}<td>${fmtMinutes(m.TMV_OUT)}</td><td>${fmtMinutes(m.FACTORY)}</td><td>${fmtMinutes(m.TMV_RETURN)}</td><td>${m.UNIT==null?'—':fmtMinutes(m.UNIT)}</td><td>${m.CYCLE==null?'Aguardando':fmtMinutes(m.CYCLE)}</td><td>${transfer?'—':nriPendingHistoryBadge(t.nri_status)}</td><td><div class="mini-actions"><button class="mini-btn" data-hist-detail="${t.id}">Detalhar</button>${hasPerm('PULL_TMA_ADJUST')&&!transfer&&t.next_started_at?`<button class="mini-btn" data-tma-adjust="${t.id}">Ajustar TMA</button>`:''}</div></td></tr>`;}).join(''):`<tr><td colspan="${totalCols}">Nenhum ciclo.</td></tr>`;};
 exportPullHistoryCsv = function(){const rows=filteredPullHistoryRows();if(!rows.length)return toast('Não há ciclos para exportar com os filtros atuais.','error');const lookup=pullHistoryEventLookup(),stages=pullHistoryStages(),headers=['Viagem','Tipo','Status','Origem','Placa','Fábrica/Destino','Parceiro','Motorista 1','Motorista 2',...stages.map(s=>`${s.flow_type==='TRANSFER'?'Transferência':'Puxada'} - ${s.name}`),'TMV Ida','TMA Fábrica','TMV Volta','TMA Revenda bruto','Horas a diminuir','TMA Revenda ajustado','Ciclo','NRI'],matrix=rows.map(t=>{const m=pullTripMetrics(t),stageValues=stages.map(step=>{if((step.flow_type||'PULL')!==(t.cycle_type||'PULL'))return '';const ev=pullHistoryStageEvent(lookup,t.id,step);return ev?`${fmtDateTime(ev.recorded_at)} | ${ev.user_name||''} | GPS ${Number(ev.latitude).toFixed(6)}, ${Number(ev.longitude).toFixed(6)} | ±${Math.round(Number(ev.gps_accuracy)||0)} m`:'';});return [t.trip_code,t.cycle_type==='TRANSFER'?'Transferência':'Puxada',pullTripStatusLabel(t),t.origin_unit,t.plate,t.factory,t.carrier||'Ambev',t.driver1_name,t.cycle_type==='TRANSFER'?'':t.driver2_name,...stageValues,fmtMinutes(m.TMV_OUT),fmtMinutes(m.FACTORY),fmtMinutes(m.TMV_RETURN),fmtMinutes(m.UNIT_RAW),fmtMinutes(Number(t.tma_adjust_minutes||0)),fmtMinutes(m.UNIT),fmtMinutes(m.CYCLE),t.cycle_type==='TRANSFER'?'':t.nri_status||''];});downloadCsv(`historico_ciclos_${localIsoDate(new Date())}.csv`,[headers,...matrix]);};
 pullTripStatusLabel = function(t){if(t.status==='IN_PROGRESS')return 'Em andamento';if(t.cycle_type==='TRANSFER'&&t.ended_at)return 'Transferência finalizada';return t.kpi_status==='WAITING_NEXT_START'?'Viagem finalizada • aguardando próxima saída':t.kpi_status==='CLOSED'?'Ciclo KPI fechado':'Cancelado';};
 pullTripMetrics = function(t){const transfer=t.cycle_type==='TRANSFER',adj=Math.max(0,Number(t.tma_adjust_minutes||0));if(transfer)return {TMV_OUT:null,FACTORY:null,TMV_RETURN:null,UNIT_RAW:null,UNIT:null,CYCLE:t.started_at&&t.ended_at?minutesBetween(t.started_at,t.ended_at):null};const unitRaw=t.ended_at&&t.next_started_at?Math.max(0,minutesBetween(t.ended_at,t.next_started_at)):null;return {TMV_OUT:t.started_at&&t.arrived_factory_at?minutesBetween(t.started_at,t.arrived_factory_at):null,FACTORY:t.arrived_factory_at&&t.left_factory_at?minutesBetween(t.arrived_factory_at,t.left_factory_at):null,TMV_RETURN:t.left_factory_at&&t.ended_at?minutesBetween(t.left_factory_at,t.ended_at):null,UNIT_RAW:unitRaw,UNIT:unitRaw==null?null:Math.max(0,unitRaw-adj),CYCLE:t.started_at&&t.next_started_at?Math.max(0,minutesBetween(t.started_at,t.next_started_at)-adj):null};};
@@ -2780,8 +2787,8 @@ saveFefoItem = async function(e){
 clearFefoItemForm = function(){fefoEditingItemId=null;if($('fefoItemId'))$('fefoItemId').value='';clearOperationalProductSelection('fefo',false);if($('fefoValidade'))$('fefoValidade').value='';if($('fefoRua'))$('fefoRua').value='';['fefoPalete','fefoLastro','fefoCaixa','fefoUnidadeQtd'].forEach(id=>{if($(id))$(id).value='0';});if($('fefoItemFormTitle'))$('fefoItemFormTitle').textContent='Adicionar produto';if($('btnFefoSaveItem'))$('btnFefoSaveItem').textContent='Salvar Produto';if($('btnFefoCancelEdit'))$('btnFefoCancelEdit').classList.add('hidden');if($('fefoValidityHint')){$('fefoValidityHint').textContent='Informe a validade do produto.';$('fefoValidityHint').className='field-help';}};
 editFefoItem = function(id){const x=fefoItems.find(r=>r.id===id);if(!x)return;fefoEditingItemId=x.id;$('fefoItemId').value=x.id;selectOperationalProductByCode('fefo',x.product_code);$('fefoValidade').value=formatFefoDateInput(x.validity_date);$('fefoRua').value=x.street||'';$('fefoPalete').value=x.pallet||0;$('fefoLastro').value=x.layer||0;$('fefoCaixa').value=x.box||0;$('fefoUnidadeQtd').value=x.loose_unit||0;$('fefoItemFormTitle').textContent='Atualizar Produto';$('btnFefoSaveItem').textContent='Atualizar Produto';$('btnFefoCancelEdit').classList.remove('hidden');paintFefoValidityHint();$('formFefoItem').scrollIntoView({behavior:'smooth',block:'start'});};
 filteredFefoReports = function(){const q=String($('fefoReportSearch')?.value||'').trim().toLowerCase(),unit=$('fefoReportUnit')?.value||'',from=$('fefoReportFrom')?.value||'',to=$('fefoReportTo')?.value||'';return fefoReports.filter(c=>{const at=String(c.completed_at||c.started_at||'').slice(0,10),items=fefoItemsByCount.get(c.id)||[];if(unit&&c.unit!==unit)return false;if(from&&at<from)return false;if(to&&at>to)return false;if(q){const hay=[c.count_code,c.unit,c.counter_name,c.counter_username,...items.flatMap(i=>[i.product_code,i.product_name,i.lot,i.street,fmtDate(i.validity_date)])].join(' ').toLowerCase();if(!hay.includes(q))return false;}return true;});};
-openFefoReport = function(id){const c=fefoReports.find(x=>x.id===id)||fefoActiveCounts.find(x=>x.id===id);if(!c)return;const items=[...(fefoItemsByCount.get(c.id)||[])].sort(fefoItemSort),earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];const body=`<div class="detail-grid"><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Responsável</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(c.started_at)}</strong></div><div class="detail-card"><small>Finalização</small><strong>${fmtDateTime(c.completed_at)}</strong></div><div class="detail-card"><small>Itens</small><strong>${items.length}</strong></div><div class="detail-card"><small>Menor validade</small><strong>${earliest?fmtDate(earliest):'—'}</strong></div></div><div class="table-wrap"><table class="fefo-table"><thead><tr><th>Código</th><th>Produto</th><th>Validade</th><th>Lote(s)</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th></tr></thead><tbody>${items.map(x=>{const v=fefoValidityInfo(x.validity_date);return `<tr><td><strong>${esc(x.product_code)}</strong></td><td>${esc(x.product_name)}</td><td><span class="fefo-validity ${v.className}">${fmtDate(x.validity_date)}</span><small>${esc(v.label)}</small></td><td class="fefo-lot-cell">${esc(x.lot||'—')}</td><td>${esc(x.street||'—')}</td><td>${Number(x.pallet||0)}</td><td>${Number(x.layer||0)}</td><td>${Number(x.box||0)}</td><td>${Number(x.loose_unit||0)}</td></tr>`;}).join('')||'<tr><td colspan="9">Nenhum item.</td></tr>'}</tbody></table></div>`;openModal(`FEFO • ${c.count_code}`,c.status==='COMPLETED'?'Contagem finalizada':'Contagem em andamento',body,[{label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(c,items)},{label:'Fechar',class:'secondary',onClick:closeModal}]);};
-fefoCsvText = function(items){const rows=[['codigo','nome','validade','lotes','rua','palete','lastro','caixa','unidade'],...[...(items||[])].sort(fefoItemSort).map(x=>[x.product_code,x.product_name,fmtDate(x.validity_date),x.lot||'',x.street||'',Number(x.pallet||0),Number(x.layer||0),Number(x.box||0),Number(x.loose_unit||0)])];return '\uFEFF'+rows.map(r=>r.map(fefoCsvCell).join(';')).join('\r\n');};
+openFefoReport = function(id){const c=fefoReports.find(x=>x.id===id)||fefoActiveCounts.find(x=>x.id===id);if(!c)return;const items=[...(fefoItemsByCount.get(c.id)||[])].sort(fefoItemSort),earliest=items.map(x=>x.validity_date).filter(Boolean).sort()[0];const body=`<div class="detail-grid"><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Responsável</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Início</small><strong>${fmtDateTime(c.started_at)}</strong></div><div class="detail-card"><small>Finalização</small><strong>${fmtDateTime(c.completed_at)}</strong></div><div class="detail-card"><small>Itens</small><strong>${items.length}</strong></div><div class="detail-card"><small>Menor validade</small><strong>${earliest?fmtDate(earliest):'—'}</strong></div></div><div class="table-wrap"><table class="fefo-table"><thead><tr><th>Código</th><th>Produto</th><th>Validade</th><th>Rua</th><th>Palete</th><th>Lastro</th><th>Caixa</th><th>Unidade</th></tr></thead><tbody>${items.map(x=>{const v=fefoValidityInfo(x.validity_date);return `<tr><td><strong>${esc(x.product_code)}</strong></td><td>${esc(x.product_name)}</td><td><span class="fefo-validity ${v.className}">${fmtDate(x.validity_date)}</span><small>${esc(v.label)}</small></td><td>${esc(x.street||'—')}</td><td>${Number(x.pallet||0)}</td><td>${Number(x.layer||0)}</td><td>${Number(x.box||0)}</td><td>${Number(x.loose_unit||0)}</td></tr>`;}).join('')||'<tr><td colspan="8">Nenhum item.</td></tr>'}</tbody></table></div>`;openModal(`FEFO • ${c.count_code}`,c.status==='COMPLETED'?'Contagem finalizada':'Contagem em andamento',body,[{label:'Baixar CSV',class:'primary',onClick:()=>downloadFefoCsv(c,items)},{label:'Fechar',class:'secondary',onClick:closeModal}]);};
+fefoCsvText = function(items){const rows=[['codigo','nome','validade','rua','palete','lastro','caixa','unidade'],...[...(items||[])].sort(fefoItemSort).map(x=>[x.product_code,x.product_name,fmtDate(x.validity_date),x.street||'',Number(x.pallet||0),Number(x.layer||0),Number(x.box||0),Number(x.loose_unit||0)])];return '\uFEFF'+rows.map(r=>r.map(fefoCsvCell).join(';')).join('\r\n');};
 
 
 // ATIVO DE GIRO ----------------------------------------------------------------
@@ -2977,6 +2984,298 @@ function downloadRotatingAssetHistoryCsv(id){
 }
 function humanRotatingAssetError(e){
   const m=String(e?.message||e||'Erro no Ativo de Giro');const map={ATIVO_GIRO_CONTAGEM_NAO_ENCONTRADA:'Contagem de Ativo de Giro não encontrada.',ATIVO_GIRO_CONTAGEM_FINALIZADA:'Esta contagem já foi finalizada ou cancelada.',ATIVO_GIRO_PRODUTO_INVALIDO:'Ativo inválido ou inativo.',ATIVO_GIRO_LOCAL_INVALIDO:'Selecione Pátio ou Refugo.',ATIVO_GIRO_QUANTIDADE_OBRIGATORIA:'Informe ao menos uma quantidade maior que zero.',ATIVO_GIRO_LANCAMENTO_NAO_ENCONTRADO:'Adição não encontrada.',ATIVO_GIRO_CONTAGEM_SEM_LANCAMENTOS:'Adicione ao menos uma quantidade antes de finalizar.',UNIDADE_INVALIDA:'Selecione uma unidade válida.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/location.*rotating_asset_entries|add_rotating_asset_entry/i.test(m))return 'A atualização Pátio/Refugo do Ativo de Giro ainda não foi aplicada no Supabase. Execute o SQL 23_v1_5_1_ativo_giro_patio_refugo.sql.';if(/rotating_asset|relation .* does not exist/i.test(m))return 'O módulo Ativo de Giro ainda não foi criado no Supabase. Execute o SQL 20_v1_5_0_ativo_giro_sidebar.sql.';return humanError(e);
+}
+
+
+// V1.5.1 - FLUXO DE AVARIAS, COMPROVANTE WHATSAPP, CONTATOS E DESCARTE NRI ------
+function statusBadge(s){
+  const status=String(s||'').toUpperCase();
+  const cls={PENDENTE:'pending',EM_ANALISE:'analysis',PARCIAL:'partial',APROVADO:'approved',LANCADO:'launched',ENTREGUE:'delivered',REPROVADO:'rejected',REPROVADO_ADMIN:'rejected',REMOVIDO:'rejected',IMPRESSO:'approved',COMPLETED:'approved',DISCARDED:'discarded'}[status]||'pending';
+  const labels={EM_ANALISE:'EM ANÁLISE',LANCADO:'LANÇADO NO SISTEMA',ENTREGUE:'ENTREGUE',REPROVADO_ADMIN:'REPROVADO',DISCARDED:'PENDÊNCIA DESCARTADA'};
+  return `<span class="status ${cls}">${esc(labels[status]||status||'—')}</span>`;
+}
+
+function nriPendingHistoryBadge(status){
+  if(status==='COMPLETED')return '<span class="status approved">Concluído</span>';
+  if(status==='PENDING')return '<span class="status pending">Pendente</span>';
+  if(status==='DISCARDED')return '<span class="status discarded">Pendência descartada</span>';
+  return '—';
+}
+
+loadPullNriPending = async function(silent=false){
+  if(!hasPerm('NRI_PENDING_VIEW'))return;
+  try{
+    const [pr,mr]=await Promise.all([
+      sb.from('pull_trips').select('*').eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),
+      sb.from('marketplace_receipts').select('*').eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)
+    ]);
+    if(pr.error)throw pr.error;if(mr.error)throw mr.error;
+    const rows=[...(pr.data||[]).map(x=>({...x,_source:'PULL',_sort:x.ended_at})),...(mr.data||[]).map(x=>({...x,_source:'MARKETPLACE',_sort:x.ended_at}))].sort((a,b)=>new Date(b._sort)-new Date(a._sort));
+    $('badgePullNri').textContent=rows.length;
+    const el=$('pullNriCards');
+    if(!rows.length){el.className='pull-card-grid empty-state';el.textContent='Nenhum recebimento pendente.';return;}
+    const canCreate=hasPerm('NRI_CREATE');
+    const actions=(source,attr,id)=>canCreate?`<div class="pending-nri-actions"><button class="btn primary" ${attr}="${id}">Cadastrar NRIs</button><button class="btn secondary pending-discard-btn" data-discard-nri-source="${source}" data-discard-nri-id="${id}">Descartar pendência</button></div>`:`<div class="notice compact">Somente consulta • sem permissão para cadastrar ou descartar pendência de NRI.</div>`;
+    el.className='pull-card-grid';
+    el.innerHTML=rows.map(x=>x._source==='PULL'
+      ?`<article class="pull-card"><div class="pull-card-head"><div><small>PUXADA • ${esc(x.trip_code)}</small><strong>${esc(x.plate)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fábrica:</b> ${esc(x.factory)}</span><span><b>Motorista:</b> ${esc(x.ended_by_name||'—')}</span><span><b>Recebida:</b> ${fmtDateTime(x.ended_at)}</span><span><b>Unidade:</b> ${esc(x.origin_unit)}</span></div>${actions('PULL','data-pull-nri',x.id)}</article>`
+      :`<article class="pull-card marketplace"><div class="pull-card-head"><div><small>MARKETPLACE • ${esc(x.receipt_code)}</small><strong>${esc(x.supplier_name)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fornecedor:</b> ${esc(x.supplier_name)}</span><span><b>Conferente:</b> ${esc(x.checker_name)}</span><span><b>Finalizado:</b> ${fmtDateTime(x.ended_at)}</span><span><b>Unidade:</b> ${esc(x.unit)}</span><span><b>Tempo:</b> ${fmtDurationSeconds(x.duration_seconds||0)}</span></div>${actions('MARKETPLACE','data-market-nri',x.id)}</article>`
+    ).join('');
+    el._pendingRows=rows;
+  }catch(e){if(!silent)toast(humanNriPendingError(e),'error');}
+};
+
+onPullNriCardsClick = async function(e){
+  const discard=e.target.closest('[data-discard-nri-id]');
+  if(discard){
+    if(!hasPerm('NRI_CREATE'))return toast('Seu usuário não possui permissão para descartar esta pendência.','error');
+    const source=discard.dataset.discardNriSource,id=discard.dataset.discardNriId;
+    if(!confirm('Descartar somente a pendência de emissão de NRI? O histórico da Puxada ou do recebimento Marketplace será preservado.'))return;
+    discard.disabled=true;
+    try{
+      const {error}=await sb.rpc('discard_nri_pending',{p_source_type:source,p_source_id:id,p_reason:'Recebimento já chegou com NRI.'});
+      if(error)throw error;
+      toast('Pendência de NRI descartada. O histórico do recebimento foi preservado.','success');
+      await loadPullNriPending(true);
+    }catch(err){toast(humanNriPendingError(err),'error');}
+    finally{discard.disabled=false;}
+    return;
+  }
+  const p=e.target.closest('[data-pull-nri]'),m=e.target.closest('[data-market-nri]');
+  if(!p&&!m)return;
+  if(!hasPerm('NRI_CREATE'))return toast('Seu usuário possui apenas consulta dos recebimentos pendentes.','error');
+  const rows=$('pullNriCards')._pendingRows||[];
+  if(p){const t=rows.find(x=>x._source==='PULL'&&x.id===p.dataset.pullNri);if(t)prefillNriFromPull(t);}
+  else{const r=rows.find(x=>x._source==='MARKETPLACE'&&x.id===m.dataset.marketNri);if(r)prefillNriFromMarketplace(r);}
+};
+
+function humanNriPendingError(e){
+  const m=String(e?.message||e||'Erro na pendência de NRI');
+  const map={PENDENCIA_NRI_NAO_ENCONTRADA:'Esta pendência já foi concluída, descartada ou não existe.',TIPO_ORIGEM_INVALIDO:'Origem de recebimento inválida.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};
+  const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];
+  if(/discard_nri_pending|DISCARDED/i.test(m))return 'A atualização para descarte de pendência de NRI ainda não foi aplicada no Supabase. Execute o SQL 24_v1_5_1_fluxo_avarias_comprovante_contatos_nri.sql.';
+  return humanError(e);
+}
+
+function normalizeWhatsappPhone(value){
+  let d=String(value||'').replace(/\D/g,'');
+  if(d.startsWith('00'))d=d.slice(2);
+  if((d.length===10||d.length===11)&&!d.startsWith('55'))d='55'+d;
+  return /^55\d{10,11}$/.test(d)?d:'';
+}
+function formatWhatsappPhone(value){
+  let d=normalizeWhatsappPhone(value);if(!d)return String(value||'');d=d.slice(2);
+  return d.length===11?`(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`:`(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+}
+async function getCustomerContacts(customerId,customerCode=''){
+  let query=sb.from('customer_contacts').select('id,customer_id,customer_code,phone_normalized,label,source,updated_at,updated_by_name').order('updated_at',{ascending:false});
+  if(customerId)query=query.eq('customer_id',customerId);
+  else if(customerCode)query=query.eq('customer_code',normalizeCode(customerCode));
+  else return [];
+  const {data,error}=await query;if(error)throw error;return data||[];
+}
+function deliveryDamageReceiptMessage(ctx){
+  const items=(ctx.items||[]).map(x=>`• ${x.product_name||x.product||'Produto'} — ${fmtNum(x.quantity)} ${x.unit==='CAIXA'?'caixa'+(num(x.quantity)===1?'':'s'):'unidade'+(num(x.quantity)===1?'':'s')}`).join('\n');
+  return `*Comprovante de Avaria*\n\nCliente: ${ctx.customer.name}\nPDV: ${ctx.customer.code}\nMapa: ${ctx.map_number}\nData: ${fmtDate(ctx.date)}\n\n*Produto(s) avariado(s):*\n${items}\n\nObservação: O produto avariado será enviado junto ao próximo pedido realizado pelo cliente.`;
+}
+function whatsappReceiptUrl(phone,ctx){
+  const normalized=normalizeWhatsappPhone(phone);return normalized?`https://wa.me/${normalized}?text=${encodeURIComponent(deliveryDamageReceiptMessage(ctx))}`:'';
+}
+function openWhatsappReceipt(phone,ctx){
+  const url=whatsappReceiptUrl(phone,ctx);if(!url)return toast('Número de WhatsApp inválido. Informe DDD + telefone.','error');
+  const opened=window.open(url,'_blank');if(!opened)window.location.href=url;
+}
+function openAllWhatsappReceipts(contacts,ctx){
+  const phones=[...new Set((contacts||[]).map(x=>normalizeWhatsappPhone(x.phone_normalized)).filter(Boolean))];
+  if(!phones.length)return toast('Nenhum WhatsApp válido cadastrado para este cliente.','error');
+  if(phones.length===1)return openWhatsappReceipt(phones[0],ctx);
+  if(!confirm(`Abrir o comprovante para ${phones.length} contatos? O WhatsApp solicitará a confirmação de cada envio.`))return;
+  phones.forEach((phone,i)=>setTimeout(()=>{const url=whatsappReceiptUrl(phone,ctx);if(url)window.open(url,'_blank');},i*450));
+}
+async function saveCustomerContactForReceipt(ctx,phone,label=''){
+  const normalized=normalizeWhatsappPhone(phone);if(!normalized)return toast('Informe um telefone válido com DDD.','error');
+  try{
+    const {error}=await sb.rpc('save_customer_contact',{p_customer_id:ctx.customer.id,p_customer_code:ctx.customer.code,p_phone:normalized,p_label:String(label||'').trim()});if(error)throw error;
+    toast('Contato salvo no cliente.','success');
+    await openDeliveryDamageReceipt(ctx);
+  }catch(e){toast(humanCustomerContactError(e),'error');}
+}
+async function openDeliveryDamageReceipt(ctx){
+  deliveryDamageReceiptContext=ctx;
+  let contacts=[];let contactError='';
+  try{contacts=await getCustomerContacts(ctx.customer.id,ctx.customer.code);}catch(e){contactError=humanCustomerContactError(e);}
+  const last=contacts.reduce((max,x)=>!max||String(x.updated_at)>String(max)?x.updated_at:max,'');
+  const contactHtml=contacts.length?contacts.map((c,i)=>`<div class="receipt-contact-row"><div><strong>${esc(c.label||`Contato ${i+1}`)}</strong><span>${esc(formatWhatsappPhone(c.phone_normalized))}</span></div><button type="button" class="btn whatsapp-btn" data-send-receipt-phone="${esc(c.phone_normalized)}">Enviar comprovante</button></div>`).join(''):`<div class="empty-state">Nenhum WhatsApp cadastrado para este cliente.</div>`;
+  const sendAll=contacts.length>1?`<div class="receipt-send-all"><button type="button" id="btnDeliveryReceiptSendAll" class="btn whatsapp-btn">Enviar para todos os ${contacts.length} contatos</button><small>O WhatsApp abre cada conversa com o comprovante preenchido; confirme o envio em cada contato.</small></div>`:'';
+  const body=`<div class="receipt-proof-card"><div class="receipt-proof-head"><div><small>COMPROVANTE DE AVARIA</small><strong>PDV ${esc(ctx.customer.code)} • ${esc(ctx.customer.name)}</strong><span>Mapa ${esc(ctx.map_number)} • ${fmtDate(ctx.date)}</span></div><span class="status approved">REGISTRADA</span></div><div class="receipt-products">${(ctx.items||[]).map(x=>`<div><strong>${esc(x.product_name||x.product||'Produto')}</strong><span>${fmtNum(x.quantity)} ${x.unit==='CAIXA'?'Caixa':'Unidade'}${num(x.quantity)===1?'':'s'}</span></div>`).join('')}</div><p class="receipt-observation"><strong>Observação:</strong> O produto avariado será enviado junto ao próximo pedido realizado pelo cliente.</p></div><div class="section-title">WhatsApp do cliente</div>${contactError?`<div class="notice error">${esc(contactError)}</div>`:''}${sendAll}<div class="receipt-contact-list">${contactHtml}</div><div class="contact-last-update">${last?`Atualizado por último em ${fmtDate(last)}`:'Ainda sem atualização de contato.'}</div><div class="manual-contact-card"><strong>Novo contato</strong><small>Se o número não estiver na lista, digite abaixo. Ele será salvo automaticamente para este cliente.</small><div class="grid grid-3"><div class="field span-2"><label>WhatsApp</label><input id="deliveryReceiptNewPhone" inputmode="tel" placeholder="Ex.: (84) 99999-9999"></div><div class="field"><label>Identificação</label><input id="deliveryReceiptNewLabel" placeholder="Ex.: Recebedor"></div></div><div class="actions right"><button type="button" id="btnDeliveryReceiptAddPhone" class="btn secondary">Salvar novo contato</button></div></div>`;
+  openModal('Avaria registrada',`Comprovante para ${ctx.customer.name}`,body,[{label:'Fechar',class:'secondary',onClick:closeModal}]);
+  $('btnDeliveryReceiptSendAll')?.addEventListener('click',()=>openAllWhatsappReceipts(contacts,ctx));
+  $('modalBody')?.querySelectorAll('[data-send-receipt-phone]').forEach(b=>b.addEventListener('click',()=>openWhatsappReceipt(b.dataset.sendReceiptPhone,ctx)));
+  $('btnDeliveryReceiptAddPhone')?.addEventListener('click',()=>saveCustomerContactForReceipt(ctx,$('deliveryReceiptNewPhone')?.value||'',$('deliveryReceiptNewLabel')?.value||''));
+}
+
+async function submitAvaria(e){
+  e.preventDefault();
+  let customer=selectedCustomer();
+  if(!customer){const code=normalizeCode($('avPdv').value);if(code){try{const found=await fetchCustomersByCode(code);renderDeliveryCustomerMatches(found);customer=selectedCustomer();}catch(err){console.warn('Busca PDV ao salvar avaria',err);}}}
+  if(!customer)return toast(currentCustomerMatches().length>1?'Selecione qual cliente corresponde ao PDV informado.':'Informe um PDV válido.','error');
+  if(!$('avMapa').value.trim())return toast('Informe o mapa.','error');
+  if(!avariaItems.length)return toast('Adicione ao menos um produto avariado.','error');
+  if(!signatureDirty)return toast('A assinatura do cliente é obrigatória.','error');
+  const btn=$('btnSalvarAvaria');btn.disabled=true;btn.textContent='Enviando…';
+  const receiptCtx={customer:{...customer},date:$('avData').value,map_number:$('avMapa').value.trim(),items:avariaItems.map(x=>({product:x.product,product_code:x.product_code,product_name:x.product_name,quantity:x.quantity,unit:x.unit,reason:x.reason}))};
+  try{
+    const reqKey=uuid(),sigBlob=await canvasBlob($('signatureCanvas'),.82),signaturePath=`${authUser.id}/${reqKey}/assinatura.jpg`;await uploadStorage(signaturePath,sigBlob);
+    const uploaded=[];
+    for(let i=0;i<avariaItems.length;i++){
+      const x=avariaItems[i],photos=[];
+      for(let j=0;j<x.photos.length;j++){
+        const p=x.photos[j],path=`${authUser.id}/${reqKey}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadStorage(path,p.blob);photos.push({photo_path:path,latitude:p.gps.latitude,longitude:p.gps.longitude,accuracy:p.gps.accuracy||'',gps_at:p.gps.capturedAt});
+      }
+      uploaded.push({...x,photos});
+    }
+    const payload={date:receiptCtx.date,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:receiptCtx.map_number,signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first.photo_path,latitude:first.latitude,longitude:first.longitude,accuracy:first.accuracy,gps_at:first.gps_at};})};
+    const {data,error}=await sb.rpc('create_damage_request',{p_payload:payload});if(error)throw error;
+    receiptCtx.request_id=data;toast('Avaria registrada com sucesso.','success');clearAvariaRequest();await openDeliveryDamageReceipt(receiptCtx);
+  }catch(err){toast(humanDeliveryDamageError(err),'error');}
+  finally{btn.disabled=false;btn.textContent='Registrar requisição';}
+}
+
+async function loadAdminAvarias(silent=false){
+  if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))return;
+  try{
+    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').order('created_at',{ascending:false}).limit(1000);if(error)throw error;adminAvarias=data||[];
+    const lots=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(i=>String(i.lot||'').toUpperCase()).filter(Boolean))];lotNriMap=new Map();
+    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
+    renderAdminAvarias();
+    if($('badgeAvarias'))$('badgeAvarias').textContent=adminAvarias.filter(r=>(r.damage_items||[]).some(i=>['PENDENTE','APROVADO','LANCADO'].includes(i.status))).length;
+  }catch(e){if(!silent)toast(humanDeliveryDamageError(e),'error');}
+}
+function renderAdminAvarias(){
+  const arr=filteredAdminAvarias();
+  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(String(i.lot).toUpperCase())).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status approved">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status rejected">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
+}
+function selectedDeliveryDamageIds(kind){return [...($('modalBody')?.querySelectorAll(`.delivery-review-check[data-review-kind="${kind}"]:checked`)||[])].map(x=>x.value);}
+async function showAvariaDetail(id){
+  const r=adminAvarias.find(x=>x.id===id);if(!r)return;currentAvariaDetail=r;const items=[...(r.damage_items||[])].sort((a,b)=>Number(a.item_order||0)-Number(b.item_order||0));
+  const paths=[r.signature_path,...items.flatMap(i=>itemEvidencePhotos(i).map(p=>p.photo_path))].filter(Boolean);
+  const signedPairs=await Promise.all(paths.map(async path=>{const {data}=await sb.storage.from('avarias').createSignedUrl(path,3600);return [path,data?.signedUrl||''];}));
+  const signed=new Map(signedPairs),signatureUrl=signed.get(r.signature_path)||'',canReview=hasPerm('DELIVERY_DAMAGE_REVIEW'),canPost=hasPerm('DELIVERY_DAMAGE_POST');
+  const productsHtml=items.map((i,idx)=>{
+    const match=lotNriMap.get(String(i.lot).toUpperCase())||[],photos=itemEvidencePhotos(i),reviewable=canReview&&i.status==='PENDENTE',launchable=canPost&&i.status==='APROVADO',deliverable=canPost&&i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||''),selectable=reviewable||launchable||deliverable,kind=reviewable?'review':launchable?'launch':deliverable?'deliver':'';
+    const photoHtml=photos.map((p,pidx)=>`<div class="damage-photo-card"><div class="damage-photo-title"><strong>Foto ${pidx+1}</strong><span class="status approved">GPS ✓</span></div><img src="${esc(signed.get(p.photo_path)||'')}" alt="Foto ${pidx+1} da avaria"><iframe class="map-frame" src="https://www.google.com/maps?q=${encodeURIComponent(p.latitude+','+p.longitude)}&output=embed" loading="lazy"></iframe><small>GPS: ${p.latitude}, ${p.longitude} • ±${Math.round(p.gps_accuracy||0)} m</small></div>`).join('');
+    const decision=i.reviewed_at?`<div class="sales-decision ${i.status==='REPROVADO'?'rejected':'approved'}"><strong>Decisão</strong><span>${esc(i.reviewer_name||'—')} • ${fmtDateTime(i.reviewed_at)}</span><p>${esc(i.review_note||'Sem justificativa registrada.')}</p></div>`:'';
+    const launched=i.launched_at?`<div class="sales-decision launched"><strong>Lançado no Sistema</strong><span>${esc(i.launched_by_name||'—')} • ${fmtDateTime(i.launched_at)}</span></div>`:'';
+    const delivered=i.delivered_at?`<div class="sales-decision delivered"><strong>Entregue</strong><span>${esc(i.delivered_by_name||'—')} • ${fmtDateTime(i.delivered_at)}</span></div>`:'';
+    const postAction=launchable?`<div class="sales-launch-action"><button type="button" class="delivery-launch-btn" data-delivery-launch="${i.id}"><span>✓ Registrar como lançado no sistema</span><small>Confirme depois de lançar esta avaria no sistema</small></button></div>`:deliverable?`<div class="sales-launch-action"><button type="button" class="delivery-delivered-btn" data-delivery-delivered="${i.id}"><span>✓ Marcar como entregue</span><small>Somente o usuário que registrou o lançamento pode confirmar a entrega</small></button></div>`:(canPost&&i.status==='LANCADO'?`<div class="sales-launch-help"><strong>Aguardando o usuário do lançamento</strong><small>${esc(i.launched_by_name||'Outro usuário')} deve marcar esta avaria como entregue.</small></div>`:'');
+    return `<div class="damage-admin-item" data-item="${i.id}"><div class="damage-product-head">${selectable?`<label class="damage-check"><input type="checkbox" class="delivery-review-check" value="${i.id}" data-review-kind="${kind}"><span></span></label>`:''}<div><small>PRODUTO ${idx+1}</small><strong>${esc(i.product_text)}</strong></div>${statusBadge(i.status)}</div><div class="damage-summary-grid"><div><small>LOTE</small><strong>${esc(i.lot)}</strong></div><div><small>QUANTIDADE</small><strong>${fmtNum(i.quantity)} ${esc(i.quantity_unit)}</strong></div><div><small>MOTIVO</small><strong>${esc(i.reason)}</strong></div><div><small>EVIDÊNCIAS</small><strong>${photos.length} foto(s)</strong></div></div><div class="damage-lot-row">${match.length?`<span class="status approved">Lote compatível</span><span>${match.slice(0,4).map(n=>esc(n.nri)).join(', ')}</span>`:'<span class="status rejected">Lote não encontrado</span>'}</div><details class="damage-evidence"><summary><span>Ver evidências</span><small>${photos.length} foto(s) • localização por foto</small></summary><div class="damage-photo-grid">${photoHtml||'<div class="empty-state">Sem foto disponível.</div>'}</div></details>${postAction}${decision}${launched}${delivered}</div>`;
+  }).join('');
+  const pending=items.filter(i=>i.status==='PENDENTE').length,approved=items.filter(i=>i.status==='APROVADO').length,launched=items.filter(i=>i.status==='LANCADO').length,canDeliverCount=items.filter(i=>i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||'')).length,selectableCount=(canReview?pending:0)+(canPost?approved+canDeliverCount:0);
+  const body=`<div class="damage-request-hero"><div><small>OCORRÊNCIA</small><strong>PDV ${esc(r.customer_code)} · ${esc(r.customer_name)}</strong><span>${esc(r.city)} • Mapa ${esc(r.map_number)} • ${esc(r.delivery_name)}</span></div><div class="damage-counts"><b>${items.length}</b><span>produtos</span><b>${pending+approved+launched}</b><span>em fluxo</span></div></div><div class="detail-grid damage-request-grid"><div class="detail-card"><small>PDV</small><strong>${esc(r.customer_name)}</strong></div><div class="detail-card"><small>Código</small><strong>${esc(r.customer_code)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(r.city)}</strong></div><div class="detail-card"><small>Mapa</small><strong>${esc(r.map_number)}</strong></div><div class="detail-card"><small>Motorista</small><strong>${esc(r.delivery_name)}</strong></div></div>${selectableCount?`<div class="damage-selection-bar"><span id="avariaSelectionSummary">0 selecionados</span><small>${pending&&canReview?'Pendentes: aprovação ou reprovação. ':''}${approved&&canPost?'Aprovados: prontos para lançamento. ':''}${canDeliverCount&&canPost?'Lançados por você: prontos para marcar como entregues.':''}</small></div>`:''}${pending&&canReview?`<div class="sales-review-justification"><div class="field"><label>Justificativa da decisão *</label><textarea id="deliveryDamageDecisionJustification" rows="3" maxlength="500" placeholder="Descreva o motivo da aprovação ou reprovação."></textarea></div></div>`:''}${productsHtml}<details class="signature-details"><summary>Ver assinatura do cliente</summary><img src="${esc(signatureUrl)}" alt="Assinatura"></details>`;
+  const actions=[];
+  if(canReview&&pending)actions.push({label:'Reprovar selecionados',class:'danger',onClick:()=>reviewAvaria('REPROVADO',false)},{label:'Aprovar selecionados',class:'success',onClick:()=>reviewAvaria('APROVADO',false)});
+  if(canPost&&approved)actions.push({label:'✓ Marcar selecionados como lançados',class:'success',onClick:markDeliveryDamageLaunchedBulk});
+  if(canPost&&canDeliverCount)actions.push({label:'✓ Marcar selecionados como entregues',class:'primary',onClick:markDeliveryDamageDeliveredBulk});
+  openModal(`Avaria • PDV ${r.customer_code}`,`${fmtDate(r.occurrence_date)} • ${r.delivery_name}`,body,actions);
+  const checks=[...($('modalBody')?.querySelectorAll('.delivery-review-check')||[])];const update=()=>{const n=checks.filter(x=>x.checked).length;const el=$('avariaSelectionSummary');if(el)el.textContent=`${n} selecionado${n===1?'':'s'}`;};checks.forEach(c=>c.addEventListener('change',update));
+  $('modalBody')?.querySelectorAll('[data-delivery-launch]').forEach(b=>b.addEventListener('click',()=>markDeliveryDamageLaunched(b.dataset.deliveryLaunch)));
+  $('modalBody')?.querySelectorAll('[data-delivery-delivered]').forEach(b=>b.addEventListener('click',()=>markDeliveryDamageDelivered(b.dataset.deliveryDelivered)));
+}
+async function reviewAvaria(status,all=false){
+  if(!currentAvariaDetail)return;let ids=all?(currentAvariaDetail.damage_items||[]).filter(i=>i.status==='PENDENTE').map(i=>i.id):selectedDeliveryDamageIds('review');if(!ids.length)return toast('Selecione ao menos um produto pendente.','error');
+  const note=String($('deliveryDamageDecisionJustification')?.value||'').trim();if(!note)return toast('Informe a justificativa da decisão.','error');
+  try{const {error}=await sb.rpc('review_damage_items',{p_item_ids:ids,p_status:status,p_note:note});if(error)throw error;toast(`${ids.length} produto(s) ${status==='APROVADO'?'aprovado(s)':'reprovado(s)'}.`,'success');closeModal();await loadAdminAvarias(true);}catch(e){toast(humanDeliveryDamageError(e),'error');}
+}
+async function markDeliveryDamageLaunched(itemId){
+  if(!hasPerm('DELIVERY_DAMAGE_POST'))return toast('Seu usuário não possui permissão para registrar o lançamento.','error');if(!confirm('Confirmar que esta avaria foi lançada no sistema?'))return;
+  try{const {error}=await sb.rpc('mark_damage_item_launched',{p_item_id:itemId});if(error)throw error;toast('Avaria marcada como Lançada no Sistema.','success');const id=currentAvariaDetail?.id;closeModal();await loadAdminAvarias(true);if(id)await showAvariaDetail(id);}catch(e){toast(humanDeliveryDamageError(e),'error');}
+}
+async function markDeliveryDamageLaunchedBulk(){
+  const ids=selectedDeliveryDamageIds('launch');if(!ids.length)return toast('Selecione ao menos um produto aprovado.','error');if(!confirm(`Confirmar o lançamento de ${ids.length} produto(s) no sistema?`))return;
+  try{for(const id of ids){const {error}=await sb.rpc('mark_damage_item_launched',{p_item_id:id});if(error)throw error;}toast(`${ids.length} produto(s) marcado(s) como Lançado no Sistema.`,'success');const req=currentAvariaDetail?.id;closeModal();await loadAdminAvarias(true);if(req)await showAvariaDetail(req);}catch(e){toast(humanDeliveryDamageError(e),'error');}
+}
+async function markDeliveryDamageDelivered(itemId){
+  if(!hasPerm('DELIVERY_DAMAGE_POST'))return toast('Seu usuário não possui permissão para confirmar a entrega.','error');if(!confirm('Confirmar que esta avaria foi entregue ao cliente?'))return;
+  try{const {error}=await sb.rpc('mark_damage_item_delivered',{p_item_id:itemId});if(error)throw error;toast('Avaria marcada como Entregue.','success');const id=currentAvariaDetail?.id;closeModal();await loadAdminAvarias(true);if(id)await showAvariaDetail(id);}catch(e){toast(humanDeliveryDamageError(e),'error');}
+}
+async function markDeliveryDamageDeliveredBulk(){
+  const ids=selectedDeliveryDamageIds('deliver');if(!ids.length)return toast('Selecione ao menos um produto lançado por você.','error');if(!confirm(`Confirmar a entrega de ${ids.length} produto(s)?`))return;
+  try{for(const id of ids){const {error}=await sb.rpc('mark_damage_item_delivered',{p_item_id:id});if(error)throw error;}toast(`${ids.length} produto(s) marcado(s) como Entregue.`,'success');const req=currentAvariaDetail?.id;closeModal();await loadAdminAvarias(true);if(req)await showAvariaDetail(req);}catch(e){toast(humanDeliveryDamageError(e),'error');}
+}
+function humanDeliveryDamageError(e){
+  const m=String(e?.message||e||'Erro em Avarias de Entrega');const map={JUSTIFICATIVA_OBRIGATORIA:'Informe a justificativa da decisão.',NENHUM_ITEM_PENDENTE:'Nenhum produto pendente foi selecionado.',ITEM_NAO_APROVADO:'Somente avarias aprovadas podem ser marcadas como lançadas.',ITEM_NAO_LANCADO:'Somente avarias lançadas podem ser marcadas como entregues.',SOMENTE_USUARIO_LANCAMENTO:'Somente o usuário que marcou a avaria como lançada pode confirmar a entrega.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/mark_damage_item_launched|mark_damage_item_delivered|delivery_damage_items/i.test(m))return 'A atualização do fluxo de Avarias ainda não foi aplicada no Supabase. Execute o SQL 24_v1_5_1_fluxo_avarias_comprovante_contatos_nri.sql.';return humanError(e);
+}
+
+function salesDamageStatusLabel(status){return ({PENDENTE:'Pendente',EM_ANALISE:'Em análise',PARCIAL:'Parcial',APROVADO:'Aprovado',REPROVADO:'Reprovado',LANCADO:'Lançado no Sistema',ENTREGUE:'Entregue'})[status]||status||'—';}
+function salesItemStatusBadge(i){return statusBadge(i.status);}
+function salesRequestItemsSummary(r){const items=r.sales_damage_items||[],counts={};items.forEach(x=>counts[x.status]=(counts[x.status]||0)+1);const open=(counts.PENDENTE||0)+(counts.EM_ANALISE||0)+(counts.APROVADO||0)+(counts.LANCADO||0);return `<strong>${items.length} produto(s)</strong><small>${open?`${open} aguardando conclusão`:'Fluxo concluído'}</small>`;}
+async function loadSalesDamageManage(silent=false){
+  if(!hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))return;
+  try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').order('created_at',{ascending:false}).limit(2000);if(error)throw error;salesDamageManageRequests=data||[];renderSalesDamageManage();if($('badgeSalesDamage'))$('badgeSalesDamage').textContent=salesDamageManageRequests.filter(r=>(r.sales_damage_items||[]).some(i=>['PENDENTE','EM_ANALISE','APROVADO','LANCADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
+}
+async function showSalesDamageDetail(id){
+  try{
+    let r=salesDamageFindRequest(id);if(!r){const q=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('id',id).single();if(q.error)throw q.error;r=q.data;}currentSalesDamageDetail=r;
+    const items=[...(r.sales_damage_items||[])].sort((a,b)=>Number(a.item_order||0)-Number(b.item_order||0)),signedByItem=new Map();
+    for(const i of items){const photos=salesDamageItemPhotos(i);const signed=await Promise.all(photos.map(async ph=>{const {data}=await sb.storage.from('avarias-vendas').createSignedUrl(ph.photo_path,3600);return {...ph,url:data?.signedUrl||''};}));signedByItem.set(i.id,signed);}
+    const canReview=hasPerm('SALES_DAMAGE_REVIEW'),canFinalize=hasPerm('SALES_DAMAGE_OVERRIDE'),canPost=hasPerm('SALES_DAMAGE_POST'),sellerView=activeView==='sales-avaria-minhas';
+    const products=items.map((i,idx)=>{
+      const reviewable=!sellerView&&canReview&&i.status==='PENDENTE',finalizable=!sellerView&&canFinalize&&i.status==='EM_ANALISE',launchable=!sellerView&&canPost&&i.status==='APROVADO',deliverable=!sellerView&&canPost&&i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||''),selectable=reviewable||finalizable||launchable||deliverable,selectionKind=reviewable?'pending':finalizable?'final':launchable?'launch':deliverable?'delivered':'',photos=signedByItem.get(i.id)||[],allGps=photos.length>0&&photos.every(p=>p.latitude!=null&&p.longitude!=null&&Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude)));
+      const gallery=photos.map((p,pidx)=>`<a href="${esc(p.url||'#')}" target="_blank" rel="noopener"><img src="${esc(p.url||'')}" alt="Foto ${pidx+1} do produto ${idx+1}"><span>Foto ${pidx+1}${p.latitude!=null&&p.longitude!=null?` • GPS ${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}${p.accuracy!=null?` • ±${Math.round(Number(p.accuracy)||0)} m`:''}`:' • GPS não registrado'}</span></a>`).join('');
+      const managerDecision=!sellerView&&i.reviewed_at?`<div class="sales-decision ${i.status==='REPROVADO'&&!i.final_reviewed_at?'rejected':'approved'}"><strong>Decisão do Gerente de Vendas</strong><span>${esc(i.reviewer_name||'—')} • ${fmtDateTime(i.reviewed_at)}</span><p>${esc(i.review_justification||'Sem justificativa registrada.')}</p></div>`:'';
+      const finalDecision=!sellerView&&i.final_reviewed_at?`<div class="sales-decision ${i.status==='REPROVADO'?'rejected':'approved'}"><strong>Decisão final</strong><span>${esc(i.final_reviewer_name||'—')} • ${fmtDateTime(i.final_reviewed_at)}</span><p>${esc(i.final_justification||'Sem justificativa registrada.')}</p></div>`:'';
+      const launched=!sellerView&&i.launched_at?`<div class="sales-decision launched"><strong>Lançado no Sistema</strong><span>${esc(i.launched_by_name||'—')} • ${fmtDateTime(i.launched_at)}</span></div>`:'';
+      const delivered=!sellerView&&i.delivered_at?`<div class="sales-decision delivered"><strong>Entregue</strong><span>${esc(i.delivered_by_name||'—')} • ${fmtDateTime(i.delivered_at)}</span></div>`:'';
+      const postAction=launchable?`<div class="sales-launch-action"><button type="button" class="sales-launch-btn" data-sales-launch="${i.id}"><span>✓ Registrar avaria como lançada no sistema</span><small>Toque aqui após registrar esta avaria no sistema</small></button></div>`:deliverable?`<div class="sales-launch-action"><button type="button" class="sales-delivered-btn" data-sales-delivered="${i.id}"><span>✓ Marcar avaria como entregue</span><small>Somente o usuário do lançamento pode confirmar a entrega</small></button></div>`:(!sellerView&&canPost&&i.status==='LANCADO'?`<div class="sales-launch-help"><strong>Aguardando o usuário do lançamento</strong><small>${esc(i.launched_by_name||'Outro usuário')} deve confirmar a entrega.</small></div>`:'');
+      return `<article class="damage-admin-item sales-review-item" data-sales-detail-item="${i.id}"><div class="damage-product-head">${selectable?`<label class="damage-check"><input type="checkbox" class="sales-review-check" value="${i.id}" data-review-kind="${selectionKind}"><span></span></label>`:''}<div><small>PRODUTO ${idx+1}</small><strong>${esc(i.product_text)}</strong></div>${salesItemStatusBadge(i)}</div><div class="damage-summary-grid"><div><small>QUANTIDADE</small><strong>${fmtNum(i.quantity)} ${i.quantity_unit==='CAIXA'?'Caixa':'Unidade'}${num(i.quantity)===1?'':'s'}</strong></div><div><small>MOTIVO</small><strong>${esc(salesReasonLabel(i.reason))}</strong></div><div><small>VALIDADE</small><strong>${i.validity_date?fmtDate(i.validity_date):'—'}</strong></div><div><small>EVIDÊNCIA</small><strong>${photos.length} foto${photos.length===1?'':'s'} • ${allGps?'GPS ✓':'GPS legado/indisponível'}</strong></div></div><div class="sales-proof sales-proof-multi">${gallery||'<span class="muted-text">Sem foto disponível.</span>'}</div>${postAction}${managerDecision}${finalDecision}${launched}${delivered}</article>`;
+    }).join('');
+    const pending=items.filter(i=>i.status==='PENDENTE').length,analysis=items.filter(i=>i.status==='EM_ANALISE').length,approved=items.filter(i=>i.status==='APROVADO').length,launched=items.filter(i=>i.status==='LANCADO').length,deliverable=items.filter(i=>i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||'')).length,selectableCount=sellerView?0:items.filter(i=>(canReview&&i.status==='PENDENTE')||(canFinalize&&i.status==='EM_ANALISE')||(canPost&&i.status==='APROVADO')||(canPost&&i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||''))).length;
+    const needsJustification=(!sellerView&&canReview&&pending)||(!sellerView&&canFinalize&&analysis);
+    const body=`<div class="damage-request-hero sales-request-hero"><div><small>${esc(r.request_code)}</small><strong>PDV ${esc(r.customer_code)} · ${esc(r.customer_name)}</strong><span>${esc(r.city||'—')} • ${esc(r.branch||'—')} • Vendedor: ${esc(r.seller_name)}</span></div><div class="damage-counts"><b>${items.length}</b><span>produtos</span><b>${pending+analysis+approved+launched}</b><span>em fluxo</span></div></div><div class="detail-grid damage-request-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(r.occurrence_date)}</strong></div><div class="detail-card"><small>Vendedor</small><strong>${esc(r.seller_name)}</strong></div><div class="detail-card"><small>Código PDV</small><strong>${esc(r.customer_code)}</strong></div><div class="detail-card"><small>Filial</small><strong>${esc(r.branch||'—')}</strong></div></div>${selectableCount?`<div class="damage-selection-bar sales-selection-bar"><label class="check sales-select-all"><input id="salesDamageSelectAll" type="checkbox"> Selecionar tudo</label><span id="salesDamageSelectionSummary">0 selecionados</span><small>${pending&&canReview?'Pendentes: decisão do Gerente de Vendas. ':''}${analysis&&canFinalize?'Em análise: decisão final. ':''}${approved&&canPost?'Aprovados: prontos para lançamento. ':''}${deliverable&&canPost?'Lançados por você: prontos para entrega.':''}</small></div>`:''}${needsJustification?`<div class="sales-review-justification"><div class="field"><label>Justificativa da decisão *</label><textarea id="salesDamageDecisionJustification" rows="3" maxlength="500" placeholder="Descreva o motivo da aprovação ou reprovação."></textarea><small>A justificativa fica registrada na auditoria da solicitação.</small></div></div>`:''}${products}`;
+    const actions=[];if(!sellerView&&canReview&&pending)actions.push({label:'GV • Reprovar selecionados',class:'danger',onClick:()=>reviewSalesDamage('REPROVADO')},{label:'GV • Aprovar selecionados',class:'success',onClick:()=>reviewSalesDamage('APROVADO')});if(!sellerView&&canFinalize&&analysis)actions.push({label:'Final • Reprovar selecionados',class:'danger',onClick:()=>finalizeSalesDamage('REPROVADO')},{label:'Final • Aprovar selecionados',class:'success',onClick:()=>finalizeSalesDamage('APROVADO')});if(!sellerView&&canPost&&approved)actions.push({label:'✓ Marcar selecionados como lançados',class:'success',onClick:markSalesDamageLaunchedBulk});if(!sellerView&&canPost&&deliverable)actions.push({label:'✓ Marcar selecionados como entregues',class:'primary',onClick:markSalesDamageDeliveredBulk});
+    openModal(`Avaria de Vendas • ${r.request_code}`,`${fmtDate(r.occurrence_date)} • ${r.seller_name} • ${salesDamageStatusLabel(r.status)}`,body,actions);
+    const checks=[...($('modalBody')?.querySelectorAll('.sales-review-check')||[])],selectAll=$('salesDamageSelectAll');const update=()=>{const n=checks.filter(x=>x.checked).length;if($('salesDamageSelectionSummary'))$('salesDamageSelectionSummary').textContent=`${n} selecionado${n===1?'':'s'}`;if(selectAll){selectAll.checked=checks.length>0&&n===checks.length;selectAll.indeterminate=n>0&&n<checks.length;}};checks.forEach(x=>x.addEventListener('change',update));selectAll?.addEventListener('change',()=>{checks.forEach(x=>x.checked=selectAll.checked);update();});$('modalBody')?.querySelectorAll('[data-sales-launch]').forEach(b=>b.addEventListener('click',()=>markSalesDamageLaunched(b.dataset.salesLaunch)));$('modalBody')?.querySelectorAll('[data-sales-delivered]').forEach(b=>b.addEventListener('click',()=>markSalesDamageDelivered(b.dataset.salesDelivered)));
+  }catch(e){toast(humanSalesDamageError(e),'error');}
+}
+async function markSalesDamageDelivered(itemId){
+  if(!hasPerm('SALES_DAMAGE_POST'))return toast('Seu usuário não possui permissão para confirmar a entrega.','error');if(!confirm('Confirmar que esta avaria foi entregue ao cliente?'))return;
+  try{const {error}=await sb.rpc('mark_sales_damage_item_delivered',{p_item_id:itemId});if(error)throw error;toast('Produto marcado como Entregue.','success');const requestId=currentSalesDamageDetail?.id;closeModal();await loadSalesDamageManage(true);if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(requestId)await showSalesDamageDetail(requestId);}catch(e){toast(humanSalesDamageError(e),'error');}
+}
+async function markSalesDamageDeliveredBulk(){
+  const ids=selectedSalesReviewIds('delivered');if(!ids.length)return toast('Selecione ao menos um produto lançado por você.','error');if(!confirm(`Confirmar a entrega de ${ids.length} produto(s)?`))return;
+  try{for(const itemId of ids){const {error}=await sb.rpc('mark_sales_damage_item_delivered',{p_item_id:itemId});if(error)throw error;}toast(`${ids.length} produto(s) marcado(s) como Entregue.`,'success');const requestId=currentSalesDamageDetail?.id;closeModal();await loadSalesDamageManage(true);if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(requestId)await showSalesDamageDetail(requestId);}catch(e){toast(humanSalesDamageError(e),'error');}
+}
+function humanSalesDamageError(e){
+  const m=String(e?.message||e||'Erro em Avarias de Vendas');const map={PDV_INVALIDO:'PDV inválido ou não localizado.',PRODUTO_OBRIGATORIO:'Adicione ao menos um produto avariado.',QUANTIDADE_INVALIDA:'Informe uma quantidade maior que zero.',UNIDADE_INVALIDA:'Selecione Caixa ou Unidade.',MOTIVO_OBRIGATORIO:'Informe o motivo da avaria.',VALIDADE_OBRIGATORIA:'Para o motivo Validade, informe a data de validade.',FOTO_OBRIGATORIA:'Cada produto precisa de ao menos uma foto.',FOTOS_EXCEDIDAS:'Validade permite até 2 fotos; os demais motivos permitem 1 foto.',GPS_FOTO_OBRIGATORIO:'Todas as fotos precisam de localização GPS.',JUSTIFICATIVA_OBRIGATORIA:'A justificativa é obrigatória para esta decisão.',NENHUM_ITEM_PENDENTE:'Nenhum dos produtos selecionados está pendente.',NENHUM_ITEM_EM_ANALISE:'Selecione ao menos um produto em análise.',ITEM_NAO_APROVADO:'Somente produtos aprovados podem ser marcados como lançados.',ITEM_NAO_LANCADO:'Somente produtos lançados podem ser marcados como entregues.',SOMENTE_USUARIO_LANCAMENTO:'Somente o usuário que marcou a avaria como lançada pode confirmar a entrega.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/mark_sales_damage_item_delivered|delivered_at|sales_damage_item_photos|finalize_sales_damage_items|mark_sales_damage_item_launched/i.test(m))return 'A atualização do fluxo completo de Avarias ainda não foi aplicada no Supabase. Execute o SQL 24_v1_5_1_fluxo_avarias_comprovante_contatos_nri.sql.';if(/sales_damage|avarias-vendas|relation .*does not exist/i.test(m))return 'O módulo Avarias de Vendas ainda não foi criado no Supabase. Execute os SQLs anteriores e depois o SQL 24.';return humanError(e);
+}
+
+async function loadCustomerContactAdmin(silent=false){
+  if(!hasPerm('ADMIN_BASES'))return;
+  try{
+    customerContactRows=await fetchReferencePages(()=>sb.from('customer_contacts').select('id,customer_id,customer_code,phone_normalized,label,source,updated_at,updated_by_name').order('updated_at',{ascending:false}),10000);
+    renderCustomerContactAdmin();
+  }catch(e){if(!silent)toast(humanCustomerContactError(e),'error');}
+}
+function customerContactsForCustomer(id){return customerContactRows.filter(x=>String(x.customer_id)===String(id));}
+function customerContactLastUpdated(rows){return rows.reduce((max,x)=>!max||String(x.updated_at)>String(max)?x.updated_at:max,'');}
+function renderCustomerContactAdmin(){
+  const body=$('tbodyCustomerContacts');if(!body)return;const q=norm($('customerContactSearch')?.value||'');
+  let customers=refs.customers.filter(c=>{const contacts=customerContactsForCustomer(c.id),hay=[c.code,c.name,c.city,c.branch,...contacts.map(x=>formatWhatsappPhone(x.phone_normalized))].join(' ');return !q||norm(hay).includes(q);});
+  if(!q)customers=customers.filter(c=>customerContactsForCustomer(c.id).length).slice(0,300);else customers=customers.slice(0,300);
+  body.innerHTML=customers.length?customers.map(c=>{const contacts=customerContactsForCustomer(c.id),last=customerContactLastUpdated(contacts),phones=contacts.length?contacts.map(x=>`<span class="contact-phone-chip">${esc(formatWhatsappPhone(x.phone_normalized))}</span>`).join(' '):'<span class="muted-text">Sem contato</span>';return `<tr><td><strong>${esc(c.code)}</strong></td><td><strong>${esc(c.name)}</strong></td><td>${esc(c.city||'—')}<small>${esc(c.branch||'—')}</small></td><td><div class="contact-phone-list">${phones}</div></td><td>${last?`Atualizado por último em <strong>${fmtDate(last)}</strong>`:'—'}</td><td><button type="button" class="mini-btn" data-customer-contact-manage="${esc(c.id)}">Gerenciar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhum cliente encontrado.</td></tr>';
+}
+function onCustomerContactAdminClick(e){const b=e.target.closest('[data-customer-contact-manage]');if(b)openCustomerContactAdmin(b.dataset.customerContactManage);}
+function customerRefById(id){return refs.customers.find(c=>String(c.id)===String(id));}
+async function openCustomerContactAdmin(customerId){
+  const c=customerRefById(customerId);if(!c)return toast('Cliente não encontrado na base carregada.','error');const contacts=customerContactsForCustomer(customerId),last=customerContactLastUpdated(contacts);
+  const rows=contacts.length?contacts.map(x=>`<div class="admin-contact-row"><div><strong>${esc(x.label||'Contato')}</strong><span>${esc(formatWhatsappPhone(x.phone_normalized))}</span><small>${esc(x.source||'APP')} • atualizado por ${esc(x.updated_by_name||'—')} em ${fmtDate(x.updated_at)}</small></div><button type="button" class="mini-btn danger" data-contact-delete="${x.id}">Excluir</button></div>`).join(''):'<div class="empty-state">Este cliente ainda não possui contato cadastrado.</div>';
+  const body=`<div class="detail-grid"><div class="detail-card"><small>PDV</small><strong>${esc(c.code)}</strong></div><div class="detail-card"><small>Cliente</small><strong>${esc(c.name)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(c.city||'—')}</strong></div><div class="detail-card"><small>Última atualização</small><strong>${last?fmtDate(last):'—'}</strong></div></div><div class="section-title">WhatsApp(s)</div><div class="admin-contact-list">${rows}</div><div class="manual-contact-card"><strong>Adicionar / atualizar contato</strong><div class="grid grid-3"><div class="field span-2"><label>WhatsApp</label><input id="adminCustomerContactPhone" inputmode="tel" placeholder="DDD + telefone"></div><div class="field"><label>Identificação</label><input id="adminCustomerContactLabel" placeholder="Ex.: Financeiro"></div></div><div class="actions right"><button type="button" id="btnAdminCustomerContactSave" class="btn primary">Salvar contato</button></div></div>`;
+  openModal(`Contatos • PDV ${c.code}`,c.name,body,[{label:'Fechar',class:'secondary',onClick:closeModal}]);
+  $('btnAdminCustomerContactSave')?.addEventListener('click',async()=>{const phone=$('adminCustomerContactPhone')?.value||'',label=$('adminCustomerContactLabel')?.value||'';const normalized=normalizeWhatsappPhone(phone);if(!normalized)return toast('Informe um telefone válido com DDD.','error');try{const {error}=await sb.rpc('save_customer_contact',{p_customer_id:c.id,p_customer_code:c.code,p_phone:normalized,p_label:String(label).trim()});if(error)throw error;toast('Contato salvo.','success');await loadCustomerContactAdmin(true);await openCustomerContactAdmin(c.id);}catch(e){toast(humanCustomerContactError(e),'error');}});
+  $('modalBody')?.querySelectorAll('[data-contact-delete]').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Excluir este contato do cliente?'))return;try{const {error}=await sb.rpc('delete_customer_contact',{p_contact_id:b.dataset.contactDelete});if(error)throw error;toast('Contato excluído.','success');await loadCustomerContactAdmin(true);await openCustomerContactAdmin(c.id);}catch(e){toast(humanCustomerContactError(e),'error');}}));
+}
+function humanCustomerContactError(e){
+  const m=String(e?.message||e||'Erro nos contatos de clientes');const map={TELEFONE_INVALIDO:'Informe um telefone válido com DDD.',CLIENTE_NAO_ENCONTRADO:'Cliente não encontrado.',FORBIDDEN:'Seu usuário não possui permissão para alterar este contato.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/customer_contacts|save_customer_contact|delete_customer_contact/i.test(m))return 'A base de contatos ainda não foi criada no Supabase. Execute o SQL 24_v1_5_1_fluxo_avarias_comprovante_contatos_nri.sql.';return humanError(e);
 }
 
 })();

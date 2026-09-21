@@ -553,7 +553,7 @@ button[data-sales-launch]:focus-visible,
   }
 }
 
-/* ========================================================================== 
+/* ==========================================================================
    v1.5.1 - Ativo de Giro: local Patio/Refugo + usabilidade mobile
    ========================================================================== */
 .asset-count-row{
@@ -618,7 +618,7 @@ button[data-sales-launch]:focus-visible,
   .asset-running-total{grid-template-columns:1fr!important}
 }
 
-/* ========================================================================== 
+/* ==========================================================================
    v1.5.1 - Ativo de Giro: abas Total / Patio / Refugo no detalhe do historico
    ========================================================================== */
 .asset-history-view-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:2px 0 10px;padding:5px;border:1px solid #e2e8f0;border-radius:13px;background:#f8fafc}
@@ -636,4 +636,71 @@ button[data-sales-launch]:focus-visible,
   .asset-history-view-tab{min-height:46px;font-size:10.5px}
   .asset-history-view-caption{align-items:flex-start;flex-direction:column;gap:3px;padding:2px 1px}
   .asset-history-view-caption span{text-align:left;line-height:1.35}
+}
+
+/* ==========================================================================
+   v1.5.1 - Fluxo de avarias + comprovante WhatsApp + contatos + descarte NRI
+   ========================================================================== */
+.status.analysis{background:#eef2ff!important;color:#4338ca!important;border:1px solid #c7d2fe!important}
+.status.approved{background:#ecfdf3!important;color:#067647!important;border:1px solid #abefc6!important}
+.status.launched{background:#f4f0ff!important;color:#6938ef!important;border:1px solid #d9d6fe!important}
+.status.delivered{background:#ecfdf8!important;color:#087a61!important;border:1px solid #a6f4c5!important}
+.status.rejected{background:#fff1f3!important;color:#c01048!important;border:1px solid #fecdd6!important}
+.status.discarded{background:#f2f4f7!important;color:#475467!important;border:1px solid #d0d5dd!important}
+
+.pending-nri-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center}
+.pending-nri-actions .btn{min-height:44px;justify-content:center}
+.pending-discard-btn{border-color:#d0d5dd!important;color:#475467!important;background:#fff!important;white-space:nowrap}
+.pending-discard-btn:hover{background:#f2f4f7!important;border-color:#98a2b3!important}
+
+.receipt-proof-card{border:1px solid #dbe5ef;border-radius:15px;background:#fff;padding:15px;margin-bottom:16px;box-shadow:0 5px 18px rgba(15,23,42,.045)}
+.receipt-proof-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #edf1f5}
+.receipt-proof-head>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.receipt-proof-head small{font-size:9px;font-weight:1000;color:#667085;letter-spacing:.055em}
+.receipt-proof-head strong{font-size:16px;line-height:1.25;color:#172033}
+.receipt-proof-head span:not(.status){font-size:10px;color:#667085}
+.receipt-products{display:flex;flex-direction:column;gap:7px;padding:12px 0}
+.receipt-products>div{display:flex;justify-content:space-between;gap:14px;border:1px solid #edf1f5;border-radius:10px;padding:9px 11px;background:#f9fbfd}
+.receipt-products strong{font-size:11px;color:#172033}
+.receipt-products span{font-size:10px;font-weight:800;color:#475467;white-space:nowrap}
+.receipt-observation{margin:0;padding:11px 12px;border-radius:10px;background:#fff8e8;border:1px solid #f6d990;color:#6b4d00;font-size:10.5px;line-height:1.45}
+.receipt-send-all{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;margin:0 0 10px;border:1px solid #b7ebc6;background:#f3fff7;border-radius:12px}
+.receipt-send-all small{font-size:9px;color:#53705d;line-height:1.35}
+.receipt-contact-list{display:flex;flex-direction:column;gap:8px}
+.receipt-contact-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
+.receipt-contact-row>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.receipt-contact-row strong{font-size:11px;color:#172033}
+.receipt-contact-row span{font-size:10px;color:#667085}
+.whatsapp-btn{background:#128c4b!important;border-color:#128c4b!important;color:#fff!important;white-space:nowrap}
+.whatsapp-btn:hover{background:#0e753e!important;border-color:#0e753e!important}
+.contact-last-update{padding:8px 2px 2px;font-size:9px;color:#667085}
+.manual-contact-card{margin-top:14px;padding:13px;border:1px solid #dbe5ef;border-radius:13px;background:#f8fafc}
+.manual-contact-card>strong{display:block;font-size:12px;color:#172033;margin-bottom:3px}
+.manual-contact-card>small{display:block;font-size:9px;color:#667085;line-height:1.4;margin-bottom:10px}
+
+.customer-contact-admin-card .section-heading{margin-bottom:12px}
+.customer-contact-note{margin:0 0 12px;color:#667085;font-size:10px;line-height:1.45}
+.customer-contact-table{min-width:980px}
+.contact-phone-list{display:flex;gap:5px;flex-wrap:wrap;min-width:160px}
+.contact-phone-chip{display:inline-flex;align-items:center;padding:5px 8px;border-radius:999px;background:#eff8ff;border:1px solid #b2ddff;color:#175cd3;font-size:9px;font-weight:900;white-space:nowrap}
+.admin-contact-list{display:flex;flex-direction:column;gap:8px}
+.admin-contact-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid #e2e8f0;border-radius:11px;background:#fff}
+.admin-contact-row>div{display:flex;flex-direction:column;gap:2px}
+.admin-contact-row strong{font-size:11px}.admin-contact-row span{font-size:10px}.admin-contact-row small{font-size:8.5px;color:#667085}
+
+.delivery-launch-btn,.delivery-delivered-btn,.sales-delivered-btn{min-height:38px;font-weight:900}
+.delivery-launch-btn{background:#7c3aed!important;color:#fff!important;border-color:#7c3aed!important}
+.delivery-delivered-btn,.sales-delivered-btn{background:#087a61!important;color:#fff!important;border-color:#087a61!important}
+.sales-decision.launched{background:#f4f0ff;border-color:#d9d6fe;color:#6938ef}
+.sales-decision.delivered{background:#ecfdf8;border-color:#a6f4c5;color:#087a61}
+
+@media(max-width:700px){
+  .pending-nri-actions{grid-template-columns:1fr}
+  .pending-nri-actions .btn{width:100%}
+  .receipt-proof-head,.receipt-contact-row,.receipt-send-all,.admin-contact-row{align-items:stretch;flex-direction:column}
+  .receipt-contact-row .btn,.receipt-send-all .btn{width:100%;justify-content:center}
+  .receipt-products>div{align-items:flex-start;flex-direction:column;gap:3px}
+  .receipt-products span{white-space:normal}
+  .manual-contact-card .grid{grid-template-columns:1fr!important}
+  .manual-contact-card .span-2{grid-column:auto!important}
 }

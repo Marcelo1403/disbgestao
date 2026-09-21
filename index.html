@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.5.1-ativo-tabs">
+  <link rel="stylesheet" href="styles.css?v=1.5.1-avarias-contatos-fefo">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -85,14 +85,14 @@
         </div>
       </div>
 
-      <div class="nav-area" data-area="entrega" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
+      <div class="nav-area" data-area="entrega" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST">
         <button type="button" class="nav-area-toggle" aria-expanded="false"><span class="area-icon">⇢</span><span class="area-name">Entrega</span><span class="area-chevron">⌄</span></button>
         <div class="nav-area-items">
-          <div class="nav-module role-avaria" data-module="avarias" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
+          <div class="nav-module role-avaria" data-module="avarias" data-permission-any="DELIVERY_DAMAGE_CREATE,DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST">
             <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">!</span><span class="module-name">Avarias de Entrega</span><span class="module-chevron">⌄</span></button>
             <div class="nav-module-items">
               <button class="nav-item role-avaria" data-view="avaria-cadastro" data-permission="DELIVERY_DAMAGE_CREATE"><span>＋</span>Registrar avaria</button>
-              <button class="nav-item admin-only" data-view="avaria-admin" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
+              <button class="nav-item admin-only" data-view="avaria-admin" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST"><span>☑</span>Todas as avarias <b id="badgeAvarias" class="badge">0</b></button>
             </div>
           </div>
         </div>
@@ -141,6 +141,7 @@
             <button type="button" class="nav-module-toggle" aria-expanded="false"><span class="module-icon">⚙</span><span class="module-name">Administração</span><span class="module-chevron">⌄</span></button>
             <div class="nav-module-items">
               <button class="nav-item admin-only" data-view="usuarios" data-permission="ADMIN_USERS"><span>♙</span>Usuários</button>
+              <button class="nav-item admin-only" data-view="contatos-clientes" data-permission="ADMIN_BASES"><span>☎</span>Contatos de clientes</button>
               <button class="nav-item admin-only" data-view="bases" data-permission="ADMIN_BASES"><span>⇅</span>Bases / importação</button>
             </div>
           </div>
@@ -206,7 +207,7 @@
 
       <!-- NRI - RECEBIMENTOS AGUARDANDO CADASTRO -->
       <section id="view-nri-carretas" class="view role-nri" data-permission="NRI_PENDING_VIEW">
-        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Recebimentos pendentes</h1><p>Puxadas e recebimentos Marketplace finalizados que aguardam cadastro dos NRIs.</p></div><span class="page-chip">RECEBIMENTO → NRI</span></div>
+        <div class="page-head"><div><div class="breadcrumb">Armazém / NRI</div><h1>Recebimentos pendentes</h1><p>Puxadas e recebimentos Marketplace finalizados que aguardam cadastro dos NRIs. Quando o veículo já chegar com NRI, descarte somente a pendência.</p></div><span class="page-chip">RECEBIMENTO → NRI</span></div>
         <div class="card"><div class="actions right"><button id="btnAtualizarPullNri" class="btn secondary">Atualizar</button></div><div id="pullNriCards" class="pull-card-grid empty-state">Nenhum recebimento pendente.</div></div>
       </section>
 
@@ -318,7 +319,7 @@
               <div class="actions right"><button type="button" id="btnSalesDamageCancelItem" class="btn secondary hidden">Cancelar edição</button><button type="button" id="btnSalesDamageAddItem" class="btn primary">+ Adicionar produto</button></div>
             </div>
 
-            <div class="list-card"><div class="list-head"><div><strong>Produtos da solicitação</strong><small>Cada produto seguirá o fluxo Pendente → Em análise → Aprovado/Reprovado → Lançado.</small></div><span id="salesDamageItemCounter" class="counter">0 produtos</span></div><div id="salesDamageItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
+            <div class="list-card"><div class="list-head"><div><strong>Produtos da solicitação</strong><small>Cada produto seguirá o fluxo Pendente → Em análise → Aprovado/Reprovado → Lançado no Sistema → Entregue.</small></div><span id="salesDamageItemCounter" class="counter">0 produtos</span></div><div id="salesDamageItemList" class="item-list empty-state">Nenhum produto adicionado.</div></div>
             <div class="actions right"><button type="button" id="btnSalesDamageClear" class="btn secondary">Limpar</button><button type="submit" id="btnSalesDamageSubmit" class="btn primary">Enviar solicitação</button></div>
           </form>
         </div>
@@ -327,13 +328,13 @@
       <!-- AVARIAS DE VENDAS - MINHAS -->
       <section id="view-sales-avaria-minhas" class="view role-sales-damage" data-permission="SALES_DAMAGE_VIEW_OWN">
         <div class="page-head"><div><div class="breadcrumb">Vendas / Avarias</div><h1>Minhas solicitações</h1><p>Acompanhe apenas o status atual de cada produto solicitado.</p></div><span class="page-chip sales">VENDAS</span></div>
-        <div class="card"><div class="grid grid-3"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageMySearch" placeholder="Código da solicitação, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageMyStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageMy"></tbody></table></div></div>
+        <div class="card"><div class="grid grid-3"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageMySearch" placeholder="Código da solicitação, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageMyStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado no Sistema</option><option value="ENTREGUE">Entregue</option></select></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageMy"></tbody></table></div></div>
       </section>
 
       <!-- AVARIAS DE VENDAS - GESTAO -->
       <section id="view-sales-avaria-gestao" class="view role-sales-damage" data-permission-any="SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST">
-        <div class="page-head"><div><div class="breadcrumb">Gerência de Vendas / Avarias</div><h1>Gestão de solicitações</h1><p>Fluxo em duas etapas: decisão do Gerente de Vendas, decisão final e confirmação de avaria lançada.</p></div><span class="page-chip sales manager">GERÊNCIA</span></div>
-        <div class="card"><div class="grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageManageSearch" placeholder="Solicitação, vendedor, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageManageStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado</option></select></div><div class="actions end"><button id="btnSalesDamageRefresh" type="button" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>Vendedor</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageManage"></tbody></table></div></div>
+        <div class="page-head"><div><div class="breadcrumb">Gerência de Vendas / Avarias</div><h1>Gestão de solicitações</h1><p>Fluxo: decisão do Gerente de Vendas, decisão final, lançamento no sistema e confirmação de entrega.</p></div><span class="page-chip sales manager">GERÊNCIA</span></div>
+        <div class="card"><div class="grid grid-4"><div class="field span-2"><label>Pesquisar</label><input id="salesDamageManageSearch" placeholder="Solicitação, vendedor, PDV, produto, motivo..."></div><div class="field"><label>Status</label><select id="salesDamageManageStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="EM_ANALISE">Em análise</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="REPROVADO">Reprovado</option><option value="LANCADO">Lançado no Sistema</option><option value="ENTREGUE">Entregue</option></select></div><div class="actions end"><button id="btnSalesDamageRefresh" type="button" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Solicitação</th><th>Vendedor</th><th>PDV</th><th>Produtos</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodySalesDamageManage"></tbody></table></div></div>
       </section>
 
       <!-- HISTORICO DE PALETES AVARIADOS -->
@@ -423,9 +424,9 @@
       </section>
 
       <!-- ADMIN AVARIAS -->
-      <section id="view-avaria-admin" class="view admin-only" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW">
-        <div class="page-head"><div><div class="breadcrumb">Admin / Avarias</div><h1>Todas as avarias</h1><p>Aprove todos, alguns ou um único produto por requisição.</p></div><span class="page-chip admin">ADMIN</span></div>
-        <div class="card"><div class="filters grid grid-3"><div class="field"><label>Buscar</label><input id="avAdminBusca" placeholder="PDV, cliente, lote, produto, mapa..."></div><div class="field"><label>Status</label><select id="avAdminStatus"><option value="">Todos</option><option>PENDENTE</option><option>PARCIAL</option><option>APROVADO</option><option>REPROVADO</option></select></div><div class="actions end"><button id="btnAtualizarAvarias" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Data / PDV / Mapa</th><th>Motorista</th><th>Produtos</th><th>Lotes</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyAvariasAdmin"></tbody></table></div></div>
+      <section id="view-avaria-admin" class="view admin-only" data-permission-any="DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Avarias</div><h1>Todas as avarias</h1><p>Fluxo da avaria de entrega: Pendente → Aprovado/Reprovado → Lançado no Sistema → Entregue.</p></div><span class="page-chip admin">ADMIN</span></div>
+        <div class="card"><div class="filters grid grid-3"><div class="field"><label>Buscar</label><input id="avAdminBusca" placeholder="PDV, cliente, lote, produto, mapa..."></div><div class="field"><label>Status</label><select id="avAdminStatus"><option value="">Todos</option><option value="PENDENTE">Pendente</option><option value="PARCIAL">Parcial</option><option value="APROVADO">Aprovado</option><option value="LANCADO">Lançado no Sistema</option><option value="ENTREGUE">Entregue</option><option value="REPROVADO">Reprovado</option></select></div><div class="actions end"><button id="btnAtualizarAvarias" class="btn secondary">Atualizar</button></div></div><div class="table-wrap"><table><thead><tr><th>Data / PDV / Mapa</th><th>Motorista</th><th>Produtos</th><th>Lotes</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodyAvariasAdmin"></tbody></table></div></div>
       </section>
 
       <!-- HISTORICO NRI -->
@@ -589,6 +590,16 @@
         <div class="admin-grid user-admin-grid"><div class="card user-form-card"><form id="formUsuario"><input id="usuarioOriginal" type="hidden"><div class="grid grid-2"><div class="field"><label>Usuário *</label><input id="usuarioLogin"></div><div class="field"><label>Nome *</label><input id="usuarioNome"></div><div class="field"><label>Cargo / Perfil *</label><select id="usuarioPerfil"><option value="COLABORADOR_ARMAZEM">Colaborador Armazém</option><option value="CONFERENTE">Conferente</option><option value="COLABORADOR_ENTREGA">Motorista</option><option value="MOTORISTA_PUXADOR">Motorista Puxador</option><option value="VENDEDOR">Vendedor</option><option value="GERENTE_VENDAS">Gerente de Vendas</option><option value="ADMIN">Admin</option></select></div><div class="field"><label>Senha</label><input id="usuarioSenha" type="password" placeholder="Obrigatória no novo usuário"></div></div><label class="check"><input id="usuarioAtivo" type="checkbox" checked> Usuário ativo</label><div class="permission-editor-head"><div><strong>Funcionalidades habilitadas</strong><small>O cargo define o padrão. Marque ou desmarque exceções específicas deste usuário.</small></div><button id="btnRestaurarPermissoes" type="button" class="btn secondary">Restaurar padrão do cargo</button></div><div id="usuarioPermissoes" class="permission-editor"><div class="empty-state">Carregando permissões…</div></div><div class="actions right"><button id="btnLimparUsuario" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar usuário</button></div></form></div><div class="card"><div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Funcionalidades</th><th>Status</th><th>Ação</th></tr></thead><tbody id="tbodyUsuarios"></tbody></table></div></div></div>
       </section>
 
+      <!-- CONTATOS DE CLIENTES -->
+      <section id="view-contatos-clientes" class="view admin-only" data-permission="ADMIN_BASES">
+        <div class="page-head"><div><div class="breadcrumb">Admin / Clientes</div><h1>Contatos de clientes</h1><p>Consulte, cadastre e remova números usados para envio do comprovante de avaria pelo WhatsApp.</p></div><span class="page-chip admin">WHATSAPP</span></div>
+        <div class="card customer-contact-admin-card">
+          <div class="grid grid-3"><div class="field span-2"><label>Pesquisar cliente</label><input id="customerContactSearch" placeholder="Código PDV, cliente, cidade ou telefone"></div><div class="actions end"><button id="btnCustomerContactRefresh" type="button" class="btn secondary">Atualizar</button></div></div>
+          <div class="notice compact customer-contact-note">Contatos digitados pelo motorista ficam salvos automaticamente. O campo <strong>Atualizado por último em</strong> mostra a data da última alteração dos números daquele cliente.</div>
+          <div class="table-wrap"><table class="customer-contact-table"><thead><tr><th>PDV</th><th>Cliente</th><th>Cidade / Filial</th><th>WhatsApp(s)</th><th>Atualizado</th><th>Ação</th></tr></thead><tbody id="tbodyCustomerContacts"></tbody></table></div>
+        </div>
+      </section>
+
       <!-- BASES -->
       <section id="view-bases" class="view admin-only" data-permission="ADMIN_BASES">
         <div class="page-head"><div><div class="breadcrumb">Admin / Dados</div><h1>Bases e importações</h1><p>Importe CSVs exportados do Google Sheets para migrar as bases sem digitação manual.</p></div><span class="page-chip admin">MIGRAÇÃO</span></div>
@@ -609,6 +620,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.5.1"></script>
-  <script src="app.js?v=1.5.1-ativo-tabs"></script>
+  <script src="app.js?v=1.5.1-avarias-contatos-fefo"></script>
 </body>
 </html>
