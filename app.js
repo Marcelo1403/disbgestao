@@ -467,10 +467,8 @@ function toggleNavArea(area){
   if(!area)return;
   const shouldOpen=!area.classList.contains('open');
   document.querySelectorAll('.nav-area').forEach(a=>setNavAreaOpen(a,shouldOpen&&a===area));
-  if(shouldOpen){
-    const visibleModules=[...area.querySelectorAll(':scope > .nav-area-items > .nav-module')].filter(m=>!m.classList.contains('hidden'));
-    if(visibleModules.length&&!visibleModules.some(m=>m.classList.contains('open')))setNavModuleOpen(visibleModules[0],true);
-  }
+  // Ao trocar/abrir uma área, todos os módulos começam recolhidos.
+  document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,false));
   saveNavNavigation();
 }
 function toggleNavModule(module){
@@ -489,26 +487,29 @@ function setNavModuleOpen(module,open){
 }
 function saveNavNavigation(){
   const area=document.querySelector('.nav-area.open')?.dataset.area||'';
-  const module=document.querySelector('.nav-module.open')?.dataset.module||'';
-  try{localStorage.setItem('disb_nav_area_open',area);localStorage.setItem('disb_nav_module_open',module);}catch(_e){}
+  try{
+    localStorage.setItem('disb_nav_area_open',area);
+    // Submódulos não são persistidos abertos entre sessões/trocas de área.
+    localStorage.removeItem('disb_nav_module_open');
+  }catch(_e){}
 }
 function restoreNavNavigation(){
-  let areaKey='',moduleKey='';
-  try{areaKey=localStorage.getItem('disb_nav_area_open')||'';moduleKey=localStorage.getItem('disb_nav_module_open')||'';}catch(_e){}
+  let areaKey='';
+  try{areaKey=localStorage.getItem('disb_nav_area_open')||'';localStorage.removeItem('disb_nav_module_open');}catch(_e){}
   const areas=[...document.querySelectorAll('.nav-area')].filter(a=>!a.classList.contains('hidden'));
-  let area=areas.find(a=>a.dataset.area===areaKey)||areas[0]||null;
+  const area=areas.find(a=>a.dataset.area===areaKey)||areas[0]||null;
   document.querySelectorAll('.nav-area').forEach(a=>setNavAreaOpen(a,a===area));
-  const modules=[...document.querySelectorAll('.nav-module')].filter(m=>!m.classList.contains('hidden')&&(!area||m.closest('.nav-area')===area));
-  let module=modules.find(m=>m.dataset.module===moduleKey)||modules[0]||null;
-  document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,m===module));
+  document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,false));
   saveNavNavigation();
 }
 function openModuleForView(name){
   const item=document.querySelector(`.nav-item[data-view="${name}"]`);
-  const module=item?.closest('.nav-module');
   const area=item?.closest('.nav-area');
+  const currentArea=document.querySelector('.nav-area.open');
+  // Ao mudar de área por navegação programática, os submódulos também começam recolhidos.
+  if(area&&currentArea!==area)document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,false));
+  // Se o usuário clicou em uma tela dentro de um módulo já aberto da mesma área, ele permanece aberto.
   if(area)document.querySelectorAll('.nav-area').forEach(a=>setNavAreaOpen(a,a===area));
-  if(module)document.querySelectorAll('.nav-module').forEach(m=>setNavModuleOpen(m,m===module));
   saveNavNavigation();
 }
 function openView(name,force=false){
@@ -2787,15 +2788,37 @@ fefoCsvText = function(items){const rows=[['codigo','nome','validade','lotes','r
 function assetQty(v){return Math.max(0,Math.trunc(num(v)));}
 function assetInputId(productId,field){return `asset-${productId}-${field}`;}
 function assetInputValue(productId,field){return assetQty($(assetInputId(productId,field))?.value||0);}
-function assetTotalLabel(t){return `P ${t.pallet_gfa||0} • L ${t.layer_gfa||0} • C ${t.box_gfa||0} • A ${t.loose||0} • U ${t.units||0}`;}
-function aggregateRotatingAssetEntries(entries){
-  const out=new Map();
+function normalizeAssetLocation(v){return String(v||'PATIO').toUpperCase()==='REFUGO'?'REFUGO':'PATIO';}
+function assetLocationLabel(v){return normalizeAssetLocation(v)==='REFUGO'?'Refugo':'Pátio';}
+function assetLocationClass(v){return normalizeAssetLocation(v)==='REFUGO'?'refugo':'patio';}
+function assetLocationValue(productId){
+  const row=document.querySelector(`[data-asset-product="${CSS.escape(String(productId))}"]`);
+  return normalizeAssetLocation(row?.dataset.assetLocation||'PATIO');
+}
+function assetTotalLabel(t){return `P ${t?.pallet_gfa||0} • L ${t?.layer_gfa||0} • C ${t?.box_gfa||0} • A ${t?.loose||0} • U ${t?.units||0}`;}
+function blankAssetTotal(extra={}){return {product_id:'',sap_code:'',asset_code:'',description:'',pallet_gfa:0,layer_gfa:0,box_gfa:0,loose:0,units:0,entries:0,...extra};}
+function aggregateRotatingAssetEntries(entries,location=''){
+  const loc=location?normalizeAssetLocation(location):'';const out=new Map();
   (entries||[]).forEach(e=>{
+    const entryLoc=normalizeAssetLocation(e.location);if(loc&&entryLoc!==loc)return;
     let t=out.get(e.product_id);
-    if(!t){t={product_id:e.product_id,sap_code:e.sap_code||'',asset_code:e.asset_code||'',description:e.product_description||'',pallet_gfa:0,layer_gfa:0,box_gfa:0,loose:0,units:0,entries:0};out.set(e.product_id,t);}
+    if(!t){t=blankAssetTotal({product_id:e.product_id,sap_code:e.sap_code||'',asset_code:e.asset_code||'',description:e.product_description||''});out.set(e.product_id,t);}
     t.pallet_gfa+=Number(e.pallet_gfa||0);t.layer_gfa+=Number(e.layer_gfa||0);t.box_gfa+=Number(e.box_gfa||0);t.loose+=Number(e.loose||0);t.units+=Number(e.units||0);t.entries++;
   });
   return out;
+}
+function aggregateRotatingAssetGrandTotal(entries,location){
+  const map=aggregateRotatingAssetEntries(entries,location),total=blankAssetTotal({location:normalizeAssetLocation(location)});
+  map.forEach(t=>{total.pallet_gfa+=t.pallet_gfa;total.layer_gfa+=t.layer_gfa;total.box_gfa+=t.box_gfa;total.loose+=t.loose;total.units+=t.units;total.entries+=t.entries;});
+  return total;
+}
+function assetLocationChoice(productId){
+  return `<div class="asset-location-choice choice-toggle" data-asset-location-choice="${productId}"><button type="button" class="choice-btn success-choice active" data-asset-location="PATIO" data-asset-location-product="${productId}">Pátio</button><button type="button" class="choice-btn danger-choice" data-asset-location="REFUGO" data-asset-location-product="${productId}">Refugo</button></div>`;
+}
+function setRotatingAssetLocation(productId,location){
+  const row=document.querySelector(`[data-asset-product="${CSS.escape(String(productId))}"]`);if(!row)return;
+  const loc=normalizeAssetLocation(location);row.dataset.assetLocation=loc;
+  row.querySelectorAll('[data-asset-location]').forEach(b=>b.classList.toggle('active',normalizeAssetLocation(b.dataset.assetLocation)===loc));
 }
 async function loadRotatingAssetProducts(silent=false){
   if(!canRotatingAsset()||!sb)return;
@@ -2831,18 +2854,18 @@ function renderRotatingAssetCurrent(){
   const active=!!rotatingAssetActiveCount;
   $('assetStartCard').classList.toggle('hidden',active);$('assetActiveArea').classList.toggle('hidden',!active);
   if(!active){if($('assetProductGrid'))$('assetProductGrid').innerHTML='';if($('tbodyAssetEntries'))$('tbodyAssetEntries').innerHTML='';return;}
-  const totals=aggregateRotatingAssetEntries(rotatingAssetEntries);
+  const patioTotals=aggregateRotatingAssetEntries(rotatingAssetEntries,'PATIO'),refugoTotals=aggregateRotatingAssetEntries(rotatingAssetEntries,'REFUGO');
   $('assetActiveCode').textContent=rotatingAssetActiveCount.count_code||'AG';
   $('assetActiveSummary').textContent=`${rotatingAssetActiveCount.unit} • ${fmtDate(rotatingAssetActiveCount.count_date)} • ${rotatingAssetActiveCount.counter_name}`;
   $('assetActiveEntriesCount').textContent=String(rotatingAssetEntries.length);$('assetEntryCounter').textContent=`${rotatingAssetEntries.length} adições`;
   $('btnAssetFinish').disabled=!rotatingAssetEntries.length;
   $('assetProductGrid').innerHTML=rotatingAssetProducts.length?rotatingAssetProducts.map(p=>{
-    const t=totals.get(p.id)||{pallet_gfa:0,layer_gfa:0,box_gfa:0,loose:0,units:0,entries:0};
+    const patio=patioTotals.get(p.id)||blankAssetTotal(),refugo=refugoTotals.get(p.id)||blankAssetTotal();
     const qty=(field,label)=>`<label class="asset-mobile-label">${label}</label><input id="${assetInputId(p.id,field)}" class="asset-qty-input" type="number" min="0" step="1" inputmode="numeric" value="0">`;
-    return `<div class="asset-count-row" data-asset-product="${p.id}"><div data-label="COD. SAP">${esc(p.sap_code||'—')}</div><div data-label="COD.">${esc(p.asset_code||'—')}</div><div class="asset-desc" data-label="DESCRIÇÃO"><strong>${esc(p.description)}</strong><small>${t.entries} adição${t.entries===1?'':'ões'}</small></div><div data-label="PALET/GFA">${qty('pallet','PALET/GFA')}</div><div data-label="LASTRO/GFA">${qty('layer','LASTRO/GFA')}</div><div data-label="CAIXA/GFA">${qty('box','CAIXA/GFA')}</div><div data-label="AVULSO">${qty('loose','AVULSO')}</div><div data-label="UNIDADES">${qty('units','UNIDADES')}</div><div class="asset-running-total" data-label="TOTAL ATUAL"><strong>${assetTotalLabel(t)}</strong></div><div data-label="AÇÃO"><button type="button" class="btn primary asset-add-btn" data-asset-add="${p.id}">Adicionar à contagem</button></div></div>`;
+    return `<div class="asset-count-row" data-asset-product="${p.id}" data-asset-location="PATIO"><div data-label="COD. SAP">${esc(p.sap_code||'—')}</div><div data-label="COD.">${esc(p.asset_code||'—')}</div><div class="asset-desc" data-label="DESCRIÇÃO"><strong>${esc(p.description)}</strong><small>Pátio: ${patio.entries} • Refugo: ${refugo.entries} adição${patio.entries+refugo.entries===1?'':'ões'}</small></div><div class="asset-location-cell" data-label="LOCAL"><label class="asset-mobile-label">LOCAL DO ATIVO</label>${assetLocationChoice(p.id)}</div><div data-label="PALET/GFA">${qty('pallet','PALET/GFA')}</div><div data-label="LASTRO/GFA">${qty('layer','LASTRO/GFA')}</div><div data-label="CAIXA/GFA">${qty('box','CAIXA/GFA')}</div><div data-label="AVULSO">${qty('loose','AVULSO')}</div><div data-label="UNIDADES">${qty('units','UNIDADES')}</div><div class="asset-running-total" data-label="TOTAL ATUAL"><div class="asset-total-location patio"><span>Pátio</span><strong>${assetTotalLabel(patio)}</strong></div><div class="asset-total-location refugo"><span>Refugo</span><strong>${assetTotalLabel(refugo)}</strong></div></div><div data-label="AÇÃO"><button type="button" class="btn primary asset-add-btn" data-asset-add="${p.id}">Adicionar à contagem</button></div></div>`;
   }).join(''):'<div class="empty-state">Nenhum ativo cadastrado. Execute o SQL 20.</div>';
   const recent=[...rotatingAssetEntries].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,80);
-  $('tbodyAssetEntries').innerHTML=recent.length?recent.map(e=>`<tr><td>${new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(e.created_at))}</td><td><strong>${esc(e.product_description)}</strong><small>${esc(e.sap_code||'—')} • ${esc(e.asset_code||'—')}</small></td><td>${Number(e.pallet_gfa||0)}</td><td>${Number(e.layer_gfa||0)}</td><td>${Number(e.box_gfa||0)}</td><td>${Number(e.loose||0)}</td><td>${Number(e.units||0)}</td><td><button class="mini-btn danger" data-asset-delete="${e.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="8">Nenhuma adição registrada.</td></tr>';
+  $('tbodyAssetEntries').innerHTML=recent.length?recent.map(e=>`<tr><td>${new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(e.created_at))}</td><td><strong>${esc(e.product_description)}</strong><small>${esc(e.sap_code||'—')} • ${esc(e.asset_code||'—')}</small></td><td><span class="asset-location-badge ${assetLocationClass(e.location)}">${assetLocationLabel(e.location)}</span></td><td>${Number(e.pallet_gfa||0)}</td><td>${Number(e.layer_gfa||0)}</td><td>${Number(e.box_gfa||0)}</td><td>${Number(e.loose||0)}</td><td>${Number(e.units||0)}</td><td><button class="mini-btn danger" data-asset-delete="${e.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="9">Nenhuma adição registrada.</td></tr>';
 }
 async function startRotatingAssetCount(){
   const unit=$('assetStartUnit')?.value||'';if(!unit)return toast('Selecione a unidade da contagem.','error');
@@ -2850,24 +2873,27 @@ async function startRotatingAssetCount(){
   try{const {data,error}=await sb.rpc('start_rotating_asset_count',{p_unit:unit,p_count_date:$('assetStartDate')?.value||localIsoDate(new Date())});if(error)throw error;rotatingAssetActiveCount=data;rotatingAssetEntries=[];await loadRotatingAssetProducts(true);renderRotatingAssetCurrent();toast(`Contagem ${data.count_code} iniciada.`,'success');}
   catch(e){toast(humanRotatingAssetError(e),'error');await loadRotatingAssetCurrent(true);}finally{btn.disabled=false;btn.textContent=old;}
 }
-function onRotatingAssetProductGridClick(e){const b=e.target.closest('[data-asset-add]');if(b)addRotatingAssetEntry(b.dataset.assetAdd,b);}
+function onRotatingAssetProductGridClick(e){
+  const loc=e.target.closest('[data-asset-location]');if(loc){setRotatingAssetLocation(loc.dataset.assetLocationProduct,loc.dataset.assetLocation);return;}
+  const b=e.target.closest('[data-asset-add]');if(b)addRotatingAssetEntry(b.dataset.assetAdd,b);
+}
 async function addRotatingAssetEntry(productId,btn){
   if(!rotatingAssetActiveCount)return toast('Inicie uma contagem primeiro.','error');
   const product=rotatingAssetProducts.find(p=>p.id===productId);if(!product)return toast('Ativo não encontrado.','error');
-  const args={p_count_id:rotatingAssetActiveCount.id,p_product_id:product.id,p_pallet_gfa:assetInputValue(product.id,'pallet'),p_layer_gfa:assetInputValue(product.id,'layer'),p_box_gfa:assetInputValue(product.id,'box'),p_loose:assetInputValue(product.id,'loose'),p_units:assetInputValue(product.id,'units')};
+  const args={p_count_id:rotatingAssetActiveCount.id,p_product_id:product.id,p_pallet_gfa:assetInputValue(product.id,'pallet'),p_layer_gfa:assetInputValue(product.id,'layer'),p_box_gfa:assetInputValue(product.id,'box'),p_loose:assetInputValue(product.id,'loose'),p_units:assetInputValue(product.id,'units'),p_location:assetLocationValue(product.id)};
   if(args.p_pallet_gfa+args.p_layer_gfa+args.p_box_gfa+args.p_loose+args.p_units<=0)return toast('Informe ao menos uma quantidade maior que zero.','error');
   const old=btn.textContent;btn.disabled=true;btn.textContent='Adicionando…';
-  try{const {error}=await sb.rpc('add_rotating_asset_entry',args);if(error)throw error;['pallet','layer','box','loose','units'].forEach(f=>{const el=$(assetInputId(product.id,f));if(el)el.value='0';});rotatingAssetEntries=await fetchRotatingAssetEntries([rotatingAssetActiveCount.id]);renderRotatingAssetCurrent();toast(`${product.description}: adição registrada.`,'success');}
+  try{const {error}=await sb.rpc('add_rotating_asset_entry',args);if(error)throw error;['pallet','layer','box','loose','units'].forEach(f=>{const el=$(assetInputId(product.id,f));if(el)el.value='0';});rotatingAssetEntries=await fetchRotatingAssetEntries([rotatingAssetActiveCount.id]);renderRotatingAssetCurrent();toast(`${product.description} • ${assetLocationLabel(args.p_location)}: adição registrada.`,'success');}
   catch(e){toast(humanRotatingAssetError(e),'error');}finally{btn.disabled=false;btn.textContent=old;}
 }
 function onRotatingAssetEntriesClick(e){const b=e.target.closest('[data-asset-delete]');if(b)deleteRotatingAssetEntry(b.dataset.assetDelete);}
 async function deleteRotatingAssetEntry(id){
-  const entry=rotatingAssetEntries.find(x=>x.id===id);if(!entry)return;if(!window.confirm(`Excluir esta adição de ${entry.product_description}?\n\nOs totais serão recalculados.`))return;
+  const entry=rotatingAssetEntries.find(x=>x.id===id);if(!entry)return;if(!window.confirm(`Excluir esta adição de ${entry.product_description} (${assetLocationLabel(entry.location)})?\n\nOs totais serão recalculados.`))return;
   try{const {error}=await sb.rpc('delete_rotating_asset_entry',{p_entry_id:id});if(error)throw error;rotatingAssetEntries=await fetchRotatingAssetEntries([rotatingAssetActiveCount.id]);renderRotatingAssetCurrent();toast('Adição excluída e totais recalculados.','success');}catch(e){toast(humanRotatingAssetError(e),'error');}
 }
 async function finishRotatingAssetCount(){
   if(!rotatingAssetActiveCount)return;if(!rotatingAssetEntries.length)return toast('Adicione ao menos uma quantidade antes de finalizar.','error');
-  if(!window.confirm(`Finalizar ${rotatingAssetActiveCount.count_code}?\n\nOs totais serão gravados no histórico.`))return;
+  if(!window.confirm(`Finalizar ${rotatingAssetActiveCount.count_code}?\n\nOs totais de Pátio e Refugo serão gravados separadamente no histórico.`))return;
   const btn=$('btnAssetFinish'),old=btn.textContent;btn.disabled=true;btn.textContent='Finalizando…';
   try{const {error}=await sb.rpc('finish_rotating_asset_count',{p_count_id:rotatingAssetActiveCount.id});if(error)throw error;toast('Contagem finalizada e enviada ao histórico.','success');rotatingAssetActiveCount=null;rotatingAssetEntries=[];renderRotatingAssetCurrent();if(hasPerm('ROTATING_ASSET_HISTORY'))loadRotatingAssetHistory(true);}
   catch(e){toast(humanRotatingAssetError(e),'error');}finally{btn.disabled=false;btn.textContent=old;}
@@ -2886,25 +2912,35 @@ async function loadRotatingAssetHistory(silent=false){
 }
 function filteredRotatingAssetHistory(){
   const q=String($('assetHistorySearch')?.value||'').trim().toLowerCase(),unit=$('assetHistoryUnit')?.value||'',from=$('assetHistoryFrom')?.value||'',to=$('assetHistoryTo')?.value||'';
-  return rotatingAssetHistory.filter(c=>{if(unit&&c.unit!==unit)return false;if(from&&c.count_date<from)return false;if(to&&c.count_date>to)return false;if(q){const entries=rotatingAssetEntriesByCount.get(c.id)||[];const hay=[c.count_code,c.unit,c.counter_name,c.counter_username,...entries.flatMap(e=>[e.sap_code,e.asset_code,e.product_description])].join(' ').toLowerCase();if(!hay.includes(q))return false;}return true;});
+  return rotatingAssetHistory.filter(c=>{if(unit&&c.unit!==unit)return false;if(from&&c.count_date<from)return false;if(to&&c.count_date>to)return false;if(q){const entries=rotatingAssetEntriesByCount.get(c.id)||[];const hay=[c.count_code,c.unit,c.counter_name,c.counter_username,...entries.flatMap(e=>[e.sap_code,e.asset_code,e.product_description,assetLocationLabel(e.location)])].join(' ').toLowerCase();if(!hay.includes(q))return false;}return true;});
 }
 function renderRotatingAssetHistory(){
-  if(!$('tbodyAssetHistory'))return;const rows=filteredRotatingAssetHistory();$('tbodyAssetHistory').innerHTML=rows.length?rows.map(c=>{const entries=rotatingAssetEntriesByCount.get(c.id)||[];return `<tr><td><strong>${esc(c.count_code)}</strong></td><td>${fmtDate(c.count_date)}</td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${entries.length}</td><td>${fmtDateTime(c.completed_at)}</td><td><div class="mini-actions"><button class="mini-btn" data-asset-history-view="${c.id}">Ver totais</button><button class="mini-btn" data-asset-history-csv="${c.id}">CSV</button></div></td></tr>`;}).join(''):'<tr><td colspan="7">Nenhuma contagem encontrada.</td></tr>';
+  if(!$('tbodyAssetHistory'))return;const rows=filteredRotatingAssetHistory();$('tbodyAssetHistory').innerHTML=rows.length?rows.map(c=>{const entries=rotatingAssetEntriesByCount.get(c.id)||[],patio=aggregateRotatingAssetGrandTotal(entries,'PATIO'),refugo=aggregateRotatingAssetGrandTotal(entries,'REFUGO');return `<tr><td><strong>${esc(c.count_code)}</strong></td><td>${fmtDate(c.count_date)}</td><td>${esc(c.unit)}</td><td>${esc(c.counter_name)}</td><td>${entries.length}</td><td><div class="asset-history-location-summary patio"><strong>${patio.entries} adições</strong><small>${assetTotalLabel(patio)}</small></div></td><td><div class="asset-history-location-summary refugo"><strong>${refugo.entries} adições</strong><small>${assetTotalLabel(refugo)}</small></div></td><td>${fmtDateTime(c.completed_at)}</td><td><div class="mini-actions"><button class="mini-btn" data-asset-history-view="${c.id}">Ver totais</button><button class="mini-btn" data-asset-history-csv="${c.id}">CSV</button></div></td></tr>`;}).join(''):'<tr><td colspan="9">Nenhuma contagem encontrada.</td></tr>';
 }
 function rotatingAssetTotalRows(entries){
-  const map=aggregateRotatingAssetEntries(entries);const order=new Map(rotatingAssetProducts.map((p,i)=>[p.id,i]));return [...map.values()].sort((a,b)=>(order.get(a.product_id)??999)-(order.get(b.product_id)??999)||a.description.localeCompare(b.description,'pt-BR'));
+  const order=new Map(rotatingAssetProducts.map((p,i)=>[p.id,i])),entryMeta=new Map();(entries||[]).forEach(e=>{if(!entryMeta.has(e.product_id))entryMeta.set(e.product_id,e);});
+  const productIds=[...new Set((entries||[]).map(e=>e.product_id))].sort((a,b)=>(order.get(a)??999)-(order.get(b)??999));
+  const patio=aggregateRotatingAssetEntries(entries,'PATIO'),refugo=aggregateRotatingAssetEntries(entries,'REFUGO'),rows=[];
+  productIds.forEach(productId=>{
+    const meta=rotatingAssetProducts.find(p=>p.id===productId)||entryMeta.get(productId)||{};
+    [['PATIO',patio],['REFUGO',refugo]].forEach(([location,map])=>{
+      const t=map.get(productId)||blankAssetTotal({product_id:productId,sap_code:meta.sap_code||'',asset_code:meta.asset_code||'',description:meta.description||meta.product_description||''});
+      rows.push({...t,location});
+    });
+  });
+  return rows;
 }
 function onRotatingAssetHistoryClick(e){const view=e.target.closest('[data-asset-history-view]');if(view)return openRotatingAssetHistory(view.dataset.assetHistoryView);const csv=e.target.closest('[data-asset-history-csv]');if(csv)return downloadRotatingAssetHistoryCsv(csv.dataset.assetHistoryCsv);}
 function openRotatingAssetHistory(id){
-  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const entries=rotatingAssetEntriesByCount.get(id)||[],rows=rotatingAssetTotalRows(entries);
-  const body=`<div class="detail-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(c.count_date)}</strong></div><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Adições</small><strong>${entries.length}</strong></div></div><div class="table-wrap"><table><thead><tr><th>COD. SAP</th><th>COD.</th><th>Descrição</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.sap_code||'—')}</td><td>${esc(r.asset_code||'—')}</td><td><strong>${esc(r.description)}</strong><small>${r.entries} adição${r.entries===1?'':'ões'}</small></td><td>${r.pallet_gfa}</td><td>${r.layer_gfa}</td><td>${r.box_gfa}</td><td>${r.loose}</td><td>${r.units}</td></tr>`).join('')}</tbody></table></div>`;
+  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const entries=rotatingAssetEntriesByCount.get(id)||[],rows=rotatingAssetTotalRows(entries),patio=aggregateRotatingAssetGrandTotal(entries,'PATIO'),refugo=aggregateRotatingAssetGrandTotal(entries,'REFUGO');
+  const body=`<div class="detail-grid asset-history-detail-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(c.count_date)}</strong></div><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Adições</small><strong>${entries.length}</strong></div></div><div class="asset-history-total-cards"><div class="asset-history-total-card patio"><span>Pátio</span><strong>${assetTotalLabel(patio)}</strong><small>${patio.entries} adição${patio.entries===1?'':'ões'}</small></div><div class="asset-history-total-card refugo"><span>Refugo</span><strong>${assetTotalLabel(refugo)}</strong><small>${refugo.entries} adição${refugo.entries===1?'':'ões'}</small></div></div><div class="table-wrap"><table class="asset-history-total-table"><thead><tr><th>COD. SAP</th><th>COD.</th><th>Descrição</th><th>Local</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.sap_code||'—')}</td><td>${esc(r.asset_code||'—')}</td><td><strong>${esc(r.description)}</strong><small>${r.entries} adição${r.entries===1?'':'ões'}</small></td><td><span class="asset-location-badge ${assetLocationClass(r.location)}">${assetLocationLabel(r.location)}</span></td><td>${r.pallet_gfa}</td><td>${r.layer_gfa}</td><td>${r.box_gfa}</td><td>${r.loose}</td><td>${r.units}</td></tr>`).join('')}</tbody></table></div>`;
   openModal(`Ativo de Giro • ${c.count_code}`,`${fmtDate(c.count_date)} • ${c.unit}`,body,[{label:'Baixar CSV',class:'primary',onClick:()=>downloadRotatingAssetHistoryCsv(c.id)},{label:'Fechar',class:'secondary',onClick:closeModal}]);
 }
 function downloadRotatingAssetHistoryCsv(id){
-  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const rows=rotatingAssetTotalRows(rotatingAssetEntriesByCount.get(id)||[]);downloadCsv(`ativo_giro_${String(c.count_date||'').replaceAll('-','')}_${c.count_code}.csv`,[['contagem','data','unidade','conferente','cod_sap','cod','descricao','palet_gfa','lastro_gfa','caixa_gfa','avulso','unidades'],...rows.map(r=>[c.count_code,c.count_date,c.unit,c.counter_name,r.sap_code,r.asset_code,r.description,r.pallet_gfa,r.layer_gfa,r.box_gfa,r.loose,r.units])]);
+  const c=rotatingAssetHistory.find(x=>x.id===id);if(!c)return;const rows=rotatingAssetTotalRows(rotatingAssetEntriesByCount.get(id)||[]);downloadCsv(`ativo_giro_${String(c.count_date||'').replaceAll('-','')}_${c.count_code}.csv`,[['contagem','data','unidade','conferente','cod_sap','cod','descricao','local','palet_gfa','lastro_gfa','caixa_gfa','avulso','unidades'],...rows.map(r=>[c.count_code,c.count_date,c.unit,c.counter_name,r.sap_code,r.asset_code,r.description,assetLocationLabel(r.location),r.pallet_gfa,r.layer_gfa,r.box_gfa,r.loose,r.units])]);
 }
 function humanRotatingAssetError(e){
-  const m=String(e?.message||e||'Erro no Ativo de Giro');const map={ATIVO_GIRO_CONTAGEM_NAO_ENCONTRADA:'Contagem de Ativo de Giro não encontrada.',ATIVO_GIRO_CONTAGEM_FINALIZADA:'Esta contagem já foi finalizada ou cancelada.',ATIVO_GIRO_PRODUTO_INVALIDO:'Ativo inválido ou inativo.',ATIVO_GIRO_QUANTIDADE_OBRIGATORIA:'Informe ao menos uma quantidade maior que zero.',ATIVO_GIRO_LANCAMENTO_NAO_ENCONTRADO:'Adição não encontrada.',ATIVO_GIRO_CONTAGEM_SEM_LANCAMENTOS:'Adicione ao menos uma quantidade antes de finalizar.',UNIDADE_INVALIDA:'Selecione uma unidade válida.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/rotating_asset|relation .* does not exist/i.test(m))return 'O módulo Ativo de Giro ainda não foi criado no Supabase. Execute o SQL 20_v1_5_0_ativo_giro_sidebar.sql.';return humanError(e);
+  const m=String(e?.message||e||'Erro no Ativo de Giro');const map={ATIVO_GIRO_CONTAGEM_NAO_ENCONTRADA:'Contagem de Ativo de Giro não encontrada.',ATIVO_GIRO_CONTAGEM_FINALIZADA:'Esta contagem já foi finalizada ou cancelada.',ATIVO_GIRO_PRODUTO_INVALIDO:'Ativo inválido ou inativo.',ATIVO_GIRO_LOCAL_INVALIDO:'Selecione Pátio ou Refugo.',ATIVO_GIRO_QUANTIDADE_OBRIGATORIA:'Informe ao menos uma quantidade maior que zero.',ATIVO_GIRO_LANCAMENTO_NAO_ENCONTRADO:'Adição não encontrada.',ATIVO_GIRO_CONTAGEM_SEM_LANCAMENTOS:'Adicione ao menos uma quantidade antes de finalizar.',UNIDADE_INVALIDA:'Selecione uma unidade válida.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/location.*rotating_asset_entries|add_rotating_asset_entry/i.test(m))return 'A atualização Pátio/Refugo do Ativo de Giro ainda não foi aplicada no Supabase. Execute o SQL 23_v1_5_1_ativo_giro_patio_refugo.sql.';if(/rotating_asset|relation .* does not exist/i.test(m))return 'O módulo Ativo de Giro ainda não foi criado no Supabase. Execute o SQL 20_v1_5_0_ativo_giro_sidebar.sql.';return humanError(e);
 }
 
 })();

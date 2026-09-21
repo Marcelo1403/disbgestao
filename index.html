@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.5.1-launch-bulk">
+  <link rel="stylesheet" href="styles.css?v=1.5.1-ativo-local">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -557,7 +557,7 @@
             <div class="block-head"><span class="step">2</span><div><strong>Adicionar à contagem</strong><small>Preencha somente as colunas encontradas e clique em “Adicionar à contagem”. Você pode voltar ao mesmo item quantas vezes precisar.</small></div></div>
             <div class="asset-count-table-wrap">
               <div class="asset-count-row asset-count-header">
-                <div>COD. SAP</div><div>COD.</div><div>DESCRIÇÃO</div><div>PALET/GFA</div><div>LASTRO/GFA</div><div>CAIXA/GFA</div><div>AVULSO</div><div>UNIDADES</div><div>TOTAL ATUAL</div><div>AÇÃO</div>
+                <div>COD. SAP</div><div>COD.</div><div>DESCRIÇÃO</div><div>LOCAL</div><div>PALET/GFA</div><div>LASTRO/GFA</div><div>CAIXA/GFA</div><div>AVULSO</div><div>UNIDADES</div><div>TOTAL ATUAL</div><div>AÇÃO</div>
               </div>
               <div id="assetProductGrid"></div>
             </div>
@@ -565,7 +565,7 @@
 
           <div class="card">
             <div class="list-head"><div><strong>Últimas adições</strong><small>Cada passagem é mantida separadamente para rastreabilidade. Os totais acima são a soma de todas as adições.</small></div><span id="assetEntryCounter" class="counter">0 adições</span></div>
-            <div class="table-wrap"><table class="asset-entry-table"><thead><tr><th>Hora</th><th>Ativo</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th><th>Ação</th></tr></thead><tbody id="tbodyAssetEntries"></tbody></table></div>
+            <div class="table-wrap"><table class="asset-entry-table"><thead><tr><th>Hora</th><th>Ativo</th><th>Local</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th><th>Ação</th></tr></thead><tbody id="tbodyAssetEntries"></tbody></table></div>
           </div>
         </div>
       </section>
@@ -580,7 +580,7 @@
             <div class="field"><label>Data final</label><input id="assetHistoryTo" type="date"></div>
             <div class="actions end"><button id="btnAssetHistoryRefresh" type="button" class="btn secondary">Atualizar</button></div>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>Contagem</th><th>Data</th><th>Unidade</th><th>Conferente</th><th>Adições</th><th>Finalizada</th><th>Ação</th></tr></thead><tbody id="tbodyAssetHistory"></tbody></table></div>
+          <div class="table-wrap"><table class="asset-history-table"><thead><tr><th>Contagem</th><th>Data</th><th>Unidade</th><th>Conferente</th><th>Adições</th><th>Pátio</th><th>Refugo</th><th>Finalizada</th><th>Ação</th></tr></thead><tbody id="tbodyAssetHistory"></tbody></table></div>
         </div>
       </section>
 
@@ -609,6 +609,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.5.1"></script>
-  <script src="app.js?v=1.5.1-fefo-sem-lote"></script>
+  <script src="app.js?v=1.5.1-ativo-local"></script>
 </body>
 </html>

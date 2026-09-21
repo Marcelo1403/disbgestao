@@ -454,9 +454,12 @@ body:before{content:"";position:fixed;inset:0 0 auto 0;height:180px;background:l
     font-size:14px
   }
 }
+
 /* ==========================================================
    v1.5.1 - COR FINAL DO BOTAO AVARIA LANCADA
-   Funciona com a classe antiga e com a nova
+   Compatível com o botão antigo (.mini-btn.success) e novo
+   (.sales-launch-btn). O seletor data-sales-launch garante
+   a cor roxa somente nessa ação.
    ========================================================== */
 
 button[data-sales-launch],
@@ -464,39 +467,27 @@ button[data-sales-launch],
 .sales-launch-action .sales-launch-btn,
 .sales-launch-action .mini-btn.success{
   width:100% !important;
-
+  min-height:54px !important;
   border:1px solid #7c3aed !important;
-
   background:#7c3aed !important;
   background-image:none !important;
-
   color:#ffffff !important;
-
   border-radius:14px !important;
-
   padding:14px 16px !important;
-
   text-align:left !important;
-
   cursor:pointer !important;
-
   display:flex !important;
   flex-direction:column !important;
-
+  justify-content:center !important;
+  align-items:flex-start !important;
   gap:4px !important;
-
+  font-size:13px !important;
+  line-height:1.2 !important;
   font-weight:900 !important;
-
   box-shadow:0 8px 18px rgba(124,58,237,.22) !important;
-
-  transition:
-    transform .12s ease,
-    box-shadow .12s ease,
-    background .12s ease !important;
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease,border-color .12s ease !important;
 }
 
-
-/* Texto principal */
 button[data-sales-launch] span,
 .sales-launch-action button[data-sales-launch] span,
 .sales-launch-action .sales-launch-btn span,
@@ -504,10 +495,9 @@ button[data-sales-launch] span,
   color:#ffffff !important;
   font-size:13px !important;
   line-height:1.2 !important;
+  font-weight:900 !important;
 }
 
-
-/* Texto menor */
 button[data-sales-launch] small,
 .sales-launch-action button[data-sales-launch] small,
 .sales-launch-action .sales-launch-btn small,
@@ -517,43 +507,113 @@ button[data-sales-launch] small,
   font-weight:700 !important;
 }
 
-
-/* Mouse sobre o botao */
 button[data-sales-launch]:hover,
 .sales-launch-action button[data-sales-launch]:hover,
 .sales-launch-action .sales-launch-btn:hover,
 .sales-launch-action .mini-btn.success:hover{
+  border-color:#6d28d9 !important;
   background:#6d28d9 !important;
   background-image:none !important;
-
-  border-color:#6d28d9 !important;
-
   color:#ffffff !important;
-
   transform:translateY(-1px) !important;
-
   box-shadow:0 12px 24px rgba(109,40,217,.30) !important;
 }
 
-
-/* Ao clicar */
 button[data-sales-launch]:active,
-.sales-launch-action button[data-sales-launch]:active{
+.sales-launch-action button[data-sales-launch]:active,
+.sales-launch-action .sales-launch-btn:active,
+.sales-launch-action .mini-btn.success:active{
+  border-color:#5b21b6 !important;
   background:#5b21b6 !important;
+  background-image:none !important;
   transform:translateY(0) !important;
 }
 
+button[data-sales-launch]:focus-visible,
+.sales-launch-action button[data-sales-launch]:focus-visible{
+  outline:3px solid rgba(124,58,237,.25) !important;
+  outline-offset:2px !important;
+}
 
-/* Mobile */
 @media(max-width:640px){
-
   button[data-sales-launch],
-  .sales-launch-action button[data-sales-launch]{
+  .sales-launch-action button[data-sales-launch],
+  .sales-launch-action .sales-launch-btn,
+  .sales-launch-action .mini-btn.success{
+    min-height:56px !important;
     padding:15px 16px !important;
+    font-size:14px !important;
   }
 
   button[data-sales-launch] span,
-  .sales-launch-action button[data-sales-launch] span{
+  .sales-launch-action button[data-sales-launch] span,
+  .sales-launch-action .sales-launch-btn span,
+  .sales-launch-action .mini-btn.success span{
     font-size:14px !important;
   }
+}
+
+/* ========================================================================== 
+   v1.5.1 - Ativo de Giro: local Patio/Refugo + usabilidade mobile
+   ========================================================================== */
+.asset-count-row{
+  grid-template-columns:88px 88px minmax(220px,1.55fr) 170px repeat(5,92px) 230px 150px;
+}
+.asset-location-cell{display:flex!important;align-items:center!important;justify-content:center;padding:8px!important}
+.asset-location-choice{width:100%;min-width:150px;gap:5px}
+.asset-location-choice .choice-btn{min-height:38px;padding:7px 10px;font-size:9px;border-radius:9px}
+.asset-location-choice .choice-btn[data-asset-location="PATIO"].active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 5px 14px rgba(37,99,235,.18)}
+.asset-location-choice .choice-btn[data-asset-location="REFUGO"].active{background:#dc2626;border-color:#dc2626;color:#fff;box-shadow:0 5px 14px rgba(220,38,38,.16)}
+.asset-running-total{display:grid!important;grid-template-columns:1fr;gap:5px;padding:7px!important;background:#f7faff}
+.asset-total-location{display:flex;flex-direction:column;gap:2px;border:1px solid #e1e7ef;border-radius:8px;padding:6px 7px;background:#fff}
+.asset-total-location span{font-size:7px;font-weight:1000;text-transform:uppercase;letter-spacing:.04em}
+.asset-total-location strong{font-size:8.5px;line-height:1.25;white-space:normal}
+.asset-total-location.patio{border-color:#dbeafe;background:#f8fbff;color:#1d4ed8}
+.asset-total-location.refugo{border-color:#fee2e2;background:#fff9f9;color:#b91c1c}
+.asset-location-badge{display:inline-flex;align-items:center;justify-content:center;min-width:62px;padding:5px 8px;border-radius:999px;font-size:8.5px;font-weight:1000;white-space:nowrap}
+.asset-location-badge.patio{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}
+.asset-location-badge.refugo{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
+.asset-history-table{min-width:1240px}
+.asset-history-location-summary{min-width:155px;border:1px solid #e4e9ef;border-radius:9px;padding:7px 9px;display:flex;flex-direction:column;gap:3px;background:#fff}
+.asset-history-location-summary strong{font-size:9px}.asset-history-location-summary small{font-size:8px!important;line-height:1.3;margin:0!important}
+.asset-history-location-summary.patio{border-color:#dbeafe;background:#f8fbff;color:#1d4ed8}
+.asset-history-location-summary.refugo{border-color:#fee2e2;background:#fff9f9;color:#b91c1c}
+.asset-history-total-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+.asset-history-total-card{border:1px solid #e2e8f0;border-radius:13px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.asset-history-total-card>span{font-size:9px;font-weight:1000;text-transform:uppercase;letter-spacing:.05em}.asset-history-total-card>strong{font-size:13px}.asset-history-total-card>small{font-size:9px;color:#748094}
+.asset-history-total-card.patio{border-color:#bfdbfe;background:#f8fbff;color:#1d4ed8}.asset-history-total-card.refugo{border-color:#fecaca;background:#fff9f9;color:#b91c1c}
+.asset-history-total-table{min-width:1050px}
+
+@media(max-width:900px){
+  .asset-count-table-wrap{overflow:visible!important;border:0!important;background:transparent!important;box-shadow:none!important}
+  .asset-count-header{display:none!important}
+  .asset-count-row:not(.asset-count-header){min-width:0!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;border:1px solid #dfe5ec!important;border-radius:16px!important;padding:14px!important;margin-bottom:12px!important;background:#fff!important;box-shadow:0 6px 18px rgba(15,23,42,.055)!important}
+  .asset-count-row:not(.asset-count-header)>div{border:0!important;padding:0!important;display:block!important;min-width:0}
+  .asset-count-row:not(.asset-count-header)>div[data-label="DESCRIÇÃO"]{grid-column:1/-1!important;padding:13px 14px!important;border-radius:12px!important;background:#f3f7fb!important}
+  .asset-desc strong{font-size:18px!important;line-height:1.22!important;letter-spacing:-.015em!important;color:#172033!important;white-space:normal!important}
+  .asset-desc small{display:block!important;margin-top:5px!important;font-size:9.5px!important;color:#718096!important}
+  .asset-count-row:not(.asset-count-header)>div[data-label="LOCAL"]{grid-column:1/-1!important}
+  .asset-location-cell:before{content:'LOCAL DO ATIVO';display:block;font-size:8px;text-transform:uppercase;color:#73889a;font-weight:1000;margin-bottom:6px}
+  .asset-location-cell>.asset-mobile-label{display:none!important}
+  .asset-location-choice{min-width:0!important;width:100%!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
+  .asset-location-choice .choice-btn{min-height:46px!important;font-size:12px!important;border-radius:11px!important}
+  .asset-count-row:not(.asset-count-header)>div[data-label="COD. SAP"]:before,.asset-count-row:not(.asset-count-header)>div[data-label="COD."]:before{content:attr(data-label);display:block;font-size:8px;text-transform:uppercase;color:#73889a;font-weight:1000;margin-bottom:3px}
+  .asset-count-row:not(.asset-count-header)>div[data-label="COD. SAP"],.asset-count-row:not(.asset-count-header)>div[data-label="COD."]{font-size:17px;color:#1f2937}
+  .asset-mobile-label{font-size:8px!important;margin-bottom:5px!important}
+  .asset-qty-input{height:56px!important;font-size:22px!important;border-radius:12px!important;background:#fff!important}
+  .asset-count-row:not(.asset-count-header)>div[data-label="TOTAL ATUAL"]{grid-column:1/-1!important}
+  .asset-running-total{grid-template-columns:1fr 1fr!important;gap:8px!important;padding:0!important;background:transparent!important}
+  .asset-total-location{padding:10px!important;border-radius:11px!important}
+  .asset-total-location span{font-size:8px!important}.asset-total-location strong{font-size:10px!important;line-height:1.35!important}
+  .asset-count-row:not(.asset-count-header)>div[data-label="AÇÃO"]{grid-column:1/-1!important}
+  .asset-add-btn{min-height:52px!important;font-size:12px!important;border-radius:12px!important}
+  .asset-history-total-cards{grid-template-columns:1fr!important}
+}
+
+@media(max-width:520px){
+  .asset-count-row:not(.asset-count-header){padding:12px!important;gap:9px!important}
+  .asset-desc strong{font-size:19px!important}
+  .asset-location-choice .choice-btn{min-height:48px!important;font-size:12.5px!important}
+  .asset-qty-input{height:58px!important;font-size:23px!important}
+  .asset-running-total{grid-template-columns:1fr!important}
 }
