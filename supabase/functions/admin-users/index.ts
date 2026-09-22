@@ -86,6 +86,56 @@ async function savePermissionOverrides(admin: any, userId: string, role: string,
   }
 }
 
+async function saveUserUnits(admin: any, userId: string, units: unknown, updatedBy: string, updatedByName: string, active: boolean) {
+  const requested = Array.isArray(units)
+    ? [...new Set<string>(units.map((x: unknown) => String(x || '').trim()).filter(Boolean))]
+    : [];
+
+  if (active && requested.length === 0) throw new Error('UNIDADE_OBRIGATORIA');
+
+  const { data: validRows, error: validError } = await admin
+    .from('units')
+    .select('name')
+    .eq('active', true)
+    .in('name', requested.length ? requested : ['__SEM_UNIDADE__']);
+  if (validError) throw validError;
+
+  const valid = new Set<string>((validRows || []).map((x: any) => String(x.name)));
+  const invalid = requested.filter((x) => !valid.has(x));
+  if (invalid.length) throw new Error(`UNIDADE_INVALIDA:${invalid.join(',')}`);
+
+  const { data: oldRows, error: oldError } = await admin
+    .from('user_units')
+    .select('unit_name')
+    .eq('user_id', userId);
+  if (oldError) throw oldError;
+
+  const oldUnits = (oldRows || []).map((x: any) => String(x.unit_name)).sort();
+  const newUnits = [...requested].sort();
+  const changed = JSON.stringify(oldUnits) !== JSON.stringify(newUnits);
+
+  const { error: deleteError } = await admin.from('user_units').delete().eq('user_id', userId);
+  if (deleteError) throw deleteError;
+
+  if (newUnits.length) {
+    const { error: insertError } = await admin.from('user_units').insert(
+      newUnits.map((unit_name) => ({ user_id: userId, unit_name, created_by: updatedBy })),
+    );
+    if (insertError) throw insertError;
+  }
+
+  if (changed) {
+    const { error: auditError } = await admin.from('user_unit_access_audit').insert({
+      user_id: userId,
+      old_units: oldUnits,
+      new_units: newUnits,
+      changed_by: updatedBy,
+      changed_by_name: updatedByName,
+    });
+    if (auditError) throw auditError;
+  }
+}
+
 async function findAuthUserByEmail(admin: any, email: string) {
   const target = email.toLowerCase();
   for (let page = 1; page <= 20; page++) {
@@ -235,6 +285,7 @@ Deno.serve(async (req: Request) => {
         if (profileRepairError) throw profileRepairError;
 
         await savePermissionOverrides(admin, userId, role, body.permissions, userData.user.id);
+        await saveUserUnits(admin, userId, body.units, userData.user.id, callerProfile.name, active);
         return json({ ok: true, id: userId, repaired: true });
       }
 
@@ -253,6 +304,7 @@ Deno.serve(async (req: Request) => {
       if (profileUpsertError) throw profileUpsertError;
 
       await savePermissionOverrides(admin, created.user.id, role, body.permissions, userData.user.id);
+      await saveUserUnits(admin, created.user.id, body.units, userData.user.id, callerProfile.name, active);
       return json({ ok: true, id: created.user.id, repaired: false });
     }
 
@@ -286,6 +338,7 @@ Deno.serve(async (req: Request) => {
       if (profileUpdateError) throw profileUpdateError;
 
       await savePermissionOverrides(admin, profile.id, role, body.permissions, userData.user.id);
+      await saveUserUnits(admin, profile.id, body.units, userData.user.id, callerProfile.name, active);
       return json({ ok: true, id: profile.id });
     }
 

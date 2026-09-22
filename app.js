@@ -45,6 +45,10 @@ const VALUE_TYPES = [
 let sb = null;
 let authUser = null;
 let profile = null;
+let myUnits = [];
+let activeUnit = '';
+let userUnitRows = [];
+let userUnitAuditRows = [];
 let myPermissions = new Set();
 let permissionRows = [];
 let rolePermissionRows = [];
@@ -162,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.5.1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.6.0-unidades',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -413,7 +417,7 @@ async function loadMyPermissions(){
 function hasPerm(code){return profile?.role==='ADMIN'||myPermissions.has(String(code||''));}
 function hasAnyPerm(codes){return String(codes||'').split(',').map(x=>x.trim()).filter(Boolean).some(hasPerm);}
 async function logout(){
-  teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null;myPermissions.clear(); refs={products:[],units:[],drivers:[],factories:[],customers:[]};
+  teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null;myUnits=[];activeUnit='';userUnitRows=[];userUnitAuditRows=[];myPermissions.clear(); refs={products:[],units:[],drivers:[],factories:[],customers:[]};
   fefoActiveCount=null;fefoItems=[];fefoEditingItemId=null;fefoActiveCounts=[];fefoReports=[];fefoItemsByCount.clear();
   salesDamageItems=[];salesDamagePhotos=[];salesDamageMyRequests=[];salesDamageManageRequests=[];currentSalesDamageDetail=null;
   $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
@@ -627,7 +631,7 @@ async function loadReferences(useCache=false){
     try{
       const [products,u,d,f,customers]=await Promise.all([
         fetchReferencePages(()=>sb.from('products').select('code,name').eq('active',true).order('code'),PRODUCT_REF_LIMIT),
-        sb.from('units').select('name').eq('active',true).order('name'),
+        sb.from('units').select('name').eq('active',true).in('name',myUnits.length?myUnits:['__SEM_UNIDADE__']).order('name'),
         sb.from('drivers').select('name').eq('active',true).order('name'),
         sb.from('factories').select('name').eq('active',true).order('name'),
         loadCustomerReferencePages(CUSTOMER_REF_LIMIT)
@@ -652,12 +656,14 @@ function rebuildReferenceMaps(){
   });
 }
 function populateReferenceInputs(){
-  fillSelect('nriUnidade',refs.units.map(x=>x.name),'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
-  if($('fefoStartUnit'))fillSelect('fefoStartUnit',refs.units.map(x=>x.name),'Selecione');
-  if($('fefoReportUnit'))fillSelect('fefoReportUnit',refs.units.map(x=>x.name),'Todas');
-  if($('assetStartUnit'))fillSelect('assetStartUnit',refs.units.map(x=>x.name),'Selecione');
-  if($('assetHistoryUnit'))fillSelect('assetHistoryUnit',refs.units.map(x=>x.name),'Todas');
-  fillSelect('pendUnidade',refs.units.map(x=>x.name),'Todas'); fillSelect('histNriUnidade',refs.units.map(x=>x.name),'Todas');
+  const unitValues=activeUnit?[activeUnit]:[];
+  fillSelect('nriUnidade',unitValues,'Selecione'); fillSelect('nriMotorista',refs.drivers.map(x=>x.name),'Selecione'); fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');
+  if($('fefoStartUnit'))fillSelect('fefoStartUnit',unitValues,'Selecione');
+  if($('fefoReportUnit'))fillSelect('fefoReportUnit',unitValues,'Unidade atual');
+  if($('assetStartUnit'))fillSelect('assetStartUnit',unitValues,'Selecione');
+  if($('assetHistoryUnit'))fillSelect('assetHistoryUnit',unitValues,'Unidade atual');
+  fillSelect('pendUnidade',unitValues,'Unidade atual'); fillSelect('histNriUnidade',unitValues,'Unidade atual');
+  ['nriUnidade','fefoStartUnit','fefoReportUnit','assetStartUnit','assetHistoryUnit','pendUnidade','histNriUnidade'].forEach(id=>{const el=$(id);if(el&&activeUnit)el.value=activeUnit;});
   updateNriTypeFields();
 }
 function fillSelect(id,values,placeholder){const el=$(id);const old=el.value;el.innerHTML=`<option value="">${esc(placeholder)}</option>`+values.map(v=>`<option>${esc(v)}</option>`).join('');if(values.includes(old))el.value=old;}
@@ -740,7 +746,7 @@ async function submitNriRequest(e){
   try{const {data,error}=await sb.rpc('create_nri_request',{p_payload:{...common,items:nriDraftItems}});if(error)throw error;const count=data?.nris?.length||nriDraftItems.reduce((s,x)=>s+x.pallets,0);toast(`${count} NRIs cadastradas e enviadas para Impressões pendentes.`,'success');clearNriRequest();await loadPending(true);await loadPullNriPending(true);}
   catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;renderNriDraftItems();}
 }
-async function loadPending(silent=false){if(!canNri())return;try{const {data,error}=await sb.from('nris').select('*').eq('status','PENDENTE').order('created_at',{ascending:false}).limit(1500);if(error)throw error;pendingNris=(data||[]).map(mapNri);await loadNriDamageIndex(pendingNris);selectedNris=new Set([...selectedNris].filter(id=>pendingNris.some(x=>x.id===id)));renderPending();$('badgePendentes').textContent=pendingNris.length;}catch(e){if(!silent)toast(humanError(e),'error');}}
+async function loadPending(silent=false){if(!canNri())return;try{const {data,error}=await sb.from('nris').select('*').eq('unit',activeUnit).eq('status','PENDENTE').order('created_at',{ascending:false}).limit(1500);if(error)throw error;pendingNris=(data||[]).map(mapNri);await loadNriDamageIndex(pendingNris);selectedNris=new Set([...selectedNris].filter(id=>pendingNris.some(x=>x.id===id)));renderPending();$('badgePendentes').textContent=pendingNris.length;}catch(e){if(!silent)toast(humanError(e),'error');}}
 function mapNri(r){return {...r,codigoProduto:r.product_code,nomeProduto:r.product_name,unidade:r.unit,tipo:r.request_type||'AMBEV',validade:r.validity_date,lote:r.lot,recebimento:r.receipt_date,bloqueio:r.block_date,conferente:r.checker_name,hora:fmtTime(r.receipt_time),motorista:r.driver,placa:r.plate,fabrica:r.factory,quantidade:r.quantity};}
 async function loadNriDamageIndex(records=[]){
   nriDamageIndex=new Map();
@@ -789,7 +795,7 @@ async function startPrint(records,reprint=false){if(!records?.length)return toas
 async function finishPrint(result){if(!printOperation)return;const op=printOperation;printOperation=null;closeModal();if(result==='IMPRESSO'&&!op.reprint){const ids=new Set(op.records.map(x=>x.id));pendingNris=pendingNris.filter(x=>!ids.has(x.id));renderPending();$('badgePendentes').textContent=pendingNris.length;}try{const {error}=await sb.rpc('confirm_nri_print',{p_ids:op.records.map(x=>x.id),p_reprint:!!op.reprint,p_result:result});if(error)throw error;toast(result==='IMPRESSO'?'Impressão confirmada.':'Cancelamento registrado.',result==='IMPRESSO'?'success':'');}catch(e){toast(humanError(e),'error');loadPending(true);}}
 function htmlEtiqueta(r,print){const img=print?`<img alt="" onerror="imgFallback(this,'${jsEsc(r.codigoProduto)}',1)" src="${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/${encodeURIComponent(r.codigoProduto)}.png">`:`<img alt="" data-product="1">`;const semValidade=!r.validade;const validadeTexto=semValidade?'SEM VALIDADE':fmtDate(r.validade);const bloqueioTexto=semValidade?'--':fmtDate(r.bloqueio);return `<div class="nri-preview-label"><div class="nri-top"><div class="nri-code-label">CÓDIGO:</div><div class="nri-code-value">${esc(r.codigoProduto)}</div><div class="nri-id">${esc(r.nri)}</div></div><div class="nri-product-title">${img}<strong>${esc(r.nomeProduto)}</strong></div><div class="nri-mini-strip"><div class="nri-mini-cell"><b>UNIDADE:</b>${esc(r.unidade)} <b style="margin-left:12px">TIPO:</b>${esc(r.tipo||'AMBEV')}</div></div><div class="nri-validade"><span>VALIDADE:</span><strong class="${semValidade?'sem-validade':''}">${validadeTexto}</strong></div><div class="nri-dates"><div class="nri-date-cell"><b>RECEB:</b><strong>${fmtDate(r.recebimento)}</strong></div><div class="nri-date-cell"><b>BLOQUEIO:</b><strong>${bloqueioTexto}</strong></div></div><div class="nri-meta"><div class="nri-meta-cell"><b>Conferente</b><span>${esc(r.conferente)}</span></div><div class="nri-meta-cell"><b>Hora</b><span>${esc(r.hora)}</span></div><div class="nri-meta-cell"><b>Motorista</b><span>${esc(r.motorista)}</span></div><div class="nri-meta-cell"><b>Placa</b><span>${esc(r.placa)}</span></div></div><div class="nri-bottom"><div><b>Fábrica:</b>${esc(r.fabrica)}</div><div><b>Quantidade:</b>${esc(r.quantidade)}</div><div><b>NRI:</b>${esc(r.nri)}</div></div></div>`;}
 function printDocument(records){const pages=records.map(r=>`<section class="page">${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}${htmlEtiqueta(r,true)}</section>`).join('');return `<!doctype html><html><head><base href="${document.baseURI}"><meta charset="utf-8"><style>@page{size:A4 portrait;margin:5mm}*{box-sizing:border-box}body{margin:0;font-family:Arial;color:#686868}.page{height:287mm;display:flex;flex-direction:column;justify-content:space-between;page-break-after:always}.page:last-child{page-break-after:auto}.nri-preview-label{height:89mm;width:100%;border:1.2px solid #777;background:#fff;color:#686868;overflow:hidden}.nri-top{display:grid;grid-template-columns:auto 1fr auto;align-items:stretch;height:12mm;border-bottom:2px solid #777}.nri-code-label{display:flex;align-items:center;padding:0 2.2mm;font-size:18pt;font-weight:1000;border-right:2px solid #777}.nri-code-value{display:flex;align-items:center;padding:0 3mm;font-size:31pt;line-height:.82;font-weight:1000;color:#4b4f54}.nri-id{display:flex;align-items:center;padding:0 2mm;font-size:10pt;font-weight:900}.nri-product-title{height:18mm;border-bottom:1px solid #777;display:flex;align-items:center;justify-content:center;gap:3mm;padding:1mm 3mm;text-align:center}.nri-product-title img{width:14mm;height:14mm;object-fit:contain}.nri-product-title strong{font-size:24pt;line-height:.96;font-weight:1000}.nri-mini-strip{height:4.5mm;border-bottom:1px solid #777}.nri-mini-cell{display:flex;align-items:center;padding:.2mm 1.8mm;font-size:9pt;font-weight:700}.nri-mini-cell b{font-size:8.5pt;font-weight:1000;margin-right:1.3mm}.nri-validade{display:grid;grid-template-columns:31% 69%;height:28mm;border-bottom:1px solid #777;align-items:center}.nri-validade span{height:100%;display:flex;align-items:center;padding:1.5mm 2.5mm;border-right:1px solid #777;font-size:25pt;font-weight:1000}.nri-validade strong{font-size:58pt;line-height:.84;text-align:center;font-weight:1000;color:#4b4f54}.nri-validade strong.sem-validade{font-size:28pt;line-height:1}.nri-dates{display:grid;grid-template-columns:1fr 1fr;height:10mm;border-bottom:1px solid #777}.nri-date-cell{display:grid;grid-template-columns:auto 1fr;align-items:center}.nri-date-cell+.nri-date-cell{border-left:1px solid #777}.nri-date-cell b{padding:1mm 1.8mm;font-size:10.5pt}.nri-date-cell strong{text-align:center;padding:1mm 1.4mm;border-left:1px solid #777;font-size:13.5pt}.nri-meta{display:grid;grid-template-columns:1.55fr .85fr 1.15fr 1fr;height:7mm;border-bottom:1px solid #777}.nri-meta-cell{text-align:center;border-right:1px solid #777;overflow:hidden}.nri-meta-cell:last-child{border-right:0}.nri-meta-cell b{display:block;padding:.08mm .6mm 0;font-size:7.8pt;text-decoration:underline}.nri-meta-cell span{display:block;padding:.05mm .6mm 0;font-size:9.6pt;font-weight:700;white-space:nowrap}.nri-bottom{display:grid;grid-template-columns:1.8fr .75fr 1.1fr;height:5.5mm}.nri-bottom>div{display:flex;align-items:center;padding:.2mm 1.6mm;font-size:9.5pt;font-weight:700;border-right:1px solid #777}.nri-bottom>div:last-child{border-right:0}</style></head><body>${pages}<script>function imgFallback(img,code,i){var ex=['png','jpg','jpeg','webp'];i=i||0;if(i>=ex.length){img.style.display='none';return;}img.onerror=function(){imgFallback(img,code,i+1)};img.src='${CFG.PRODUCT_IMAGE_FOLDER||'imagens_produtos'}/'+encodeURIComponent(code)+'.'+ex[i];}<\/script></body></html>`;}
-async function loadNriHistory(){if(!hasPerm('NRI_HISTORY'))return;try{let q=sb.from('nris').select('*').order('created_at',{ascending:false}).limit(2000);const {data,error}=await q;if(error)throw error;historyNris=(data||[]).map(mapNri);await loadNriDamageIndex(historyNris);renderNriHistory();}catch(e){toast(humanError(e),'error');}}
+async function loadNriHistory(){if(!hasPerm('NRI_HISTORY'))return;try{let q=sb.from('nris').select('*').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(2000);const {data,error}=await q;if(error)throw error;historyNris=(data||[]).map(mapNri);await loadNriDamageIndex(historyNris);renderNriHistory();}catch(e){toast(humanError(e),'error');}}
 function filteredNriHistory(){const q=norm($('histNriBusca').value),status=$('histNriStatus').value,u=$('histNriUnidade').value,de=$('histNriDe').value,ate=$('histNriAte').value;return historyNris.filter(x=>(!status||x.status===status)&&(!u||x.unidade===u)&&(!de||String(x.created_at).slice(0,10)>=de)&&(!ate||String(x.created_at).slice(0,10)<=ate)&&(!q||norm([x.nri,x.codigoProduto,x.nomeProduto,x.lote,x.placa,x.conferente,x.created_by_username,x.created_by_name].join(' ')).includes(q)));}
 function renderNriHistory(){const arr=filteredNriHistory();$('tbodyHistNri').innerHTML=arr.length?arr.map(x=>{const hasDamage=nriDamageForRecord(x).length>0;return `<tr><td>${fmtDateTime(x.created_at)}</td><td><strong>${esc(x.nri)}</strong><small>${esc(x.codigoProduto)} • ${esc(x.nomeProduto)}</small></td><td>${esc(x.lote)}<small>${x.validade?fmtDate(x.validade):'Sem Validade'}</small></td><td>${esc(x.unidade)}<small>${esc(x.placa)} • ${esc(x.motorista)}</small></td><td>${nriDamageSummaryHtml(x)}</td><td>${esc(x.created_by_name||x.created_by_username||'—')}<small>${esc(x.conferente)}</small></td><td>${statusBadge(x.status)}</td><td><div class="mini-actions"><button class="mini-btn" data-act="preview" data-id="${x.id}">Ver NRI</button>${hasDamage?`<button class="mini-btn danger" data-act="damage" data-id="${x.id}">Ver avaria</button>`:''}${hasPerm('NRI_PRINT')?`<button class="mini-btn" data-act="reprint" data-id="${x.id}">Reimprimir</button>`:''}</div></td></tr>`;}).join(''):'<tr><td colspan="8">Nenhum registro.</td></tr>';}
 function onNriHistoryClick(e){const b=e.target.closest('button[data-act]');if(!b)return;const r=historyNris.find(x=>x.id===b.dataset.id);if(!r)return;if(b.dataset.act==='preview')showNriPreview(r);else if(b.dataset.act==='damage')showNriDamageDetail(r);else if(b.dataset.act==='reprint')startPrint([r],true);}
@@ -970,7 +976,7 @@ async function submitAvaria(e){
       }
       uploaded.push({...x,photos});
     }
-    const payload={date:$('avData').value,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:$('avMapa').value.trim(),signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first.photo_path,latitude:first.latitude,longitude:first.longitude,accuracy:first.accuracy,gps_at:first.gps_at};})};
+    const payload={unit:activeUnit,date:$('avData').value,customer_code:customer.code,customer_name:customer.name,city:customer.city,map_number:$('avMapa').value.trim(),signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first.photo_path,latitude:first.latitude,longitude:first.longitude,accuracy:first.accuracy,gps_at:first.gps_at};})};
     const {error}=await sb.rpc('create_damage_request',{p_payload:payload});if(error)throw error;toast('Avaria registrada com sucesso.','success');clearAvariaRequest();
   }catch(err){toast(humanError(err),'error');}finally{btn.disabled=false;btn.textContent='Registrar requisição';}
 }
@@ -979,10 +985,10 @@ let adminAvarias=[];let lotNriMap=new Map();
 async function loadAdminAvarias(silent=false){
   if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))return;
   try{
-    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').order('created_at',{ascending:false}).limit(1000);
+    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(1000);
     if(error)throw error;adminAvarias=data||[];
     const lots=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(i=>String(i.lot||'').toUpperCase()).filter(Boolean))];lotNriMap=new Map();
-    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
+    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').eq('unit',activeUnit).in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
     renderAdminAvarias();$('badgeAvarias').textContent=adminAvarias.filter(r=>['PENDENTE','PARCIAL'].includes(r.status)).length;
   }catch(e){if(!silent)toast(humanError(e),'error');}
 }
@@ -994,7 +1000,7 @@ function itemEvidencePhotos(i){
 function filteredAdminAvarias(){const q=norm($('avAdminBusca').value),s=$('avAdminStatus').value;return adminAvarias.filter(r=>(!s||r.status===s)&&(!q||norm([r.customer_code,r.customer_name,r.city,r.delivery_name,r.map_number,...(r.damage_items||[]).flatMap(i=>[i.product_text,i.lot,i.reason])].join(' ')).includes(q)));}
 function renderAdminAvarias(){
   const arr=filteredAdminAvarias();
-  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(String(i.lot).toUpperCase())).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status ok">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status bad">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
+  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(deliveryDamageLotKey(i))).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status ok">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status bad">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
 }
 function onAdminAvariaClick(e){const b=e.target.closest('button[data-id]');if(!b)return;showAvariaDetail(b.dataset.id);}
 async function showAvariaDetail(id){
@@ -1004,7 +1010,7 @@ async function showAvariaDetail(id){
   const signed=new Map(signedPairs),signatureUrl=signed.get(r.signature_path)||'';
   const pending=items.filter(i=>i.status==='PENDENTE').length;
   const productsHtml=items.map((i,idx)=>{
-    const match=lotNriMap.get(String(i.lot).toUpperCase())||[],photos=itemEvidencePhotos(i);
+    const match=lotNriMap.get(deliveryDamageLotKey(i))||[],photos=itemEvidencePhotos(i);
     const photoHtml=photos.map((p,pidx)=>`<div class="damage-photo-card"><div class="damage-photo-title"><strong>Foto ${pidx+1}</strong><span class="status ok">GPS ✓</span></div><img src="${esc(signed.get(p.photo_path)||'')}" alt="Foto ${pidx+1} da avaria"><iframe class="map-frame" src="https://www.google.com/maps?q=${encodeURIComponent(p.latitude+','+p.longitude)}&output=embed" loading="lazy"></iframe><small>GPS: ${p.latitude}, ${p.longitude} • ±${Math.round(p.gps_accuracy||0)} m</small></div>`).join('');
     return `<div class="damage-admin-item" data-item="${i.id}"><div class="damage-product-head"><label class="damage-check"><input type="checkbox" class="review-check" value="${i.id}" ${i.status==='PENDENTE'&&hasPerm('DELIVERY_DAMAGE_REVIEW')?'':'disabled'}><span></span></label><div><small>PRODUTO ${idx+1}</small><strong>${esc(i.product_text)}</strong></div>${statusBadge(i.status)}</div><div class="damage-summary-grid"><div><small>LOTE</small><strong>${esc(i.lot)}</strong></div><div><small>QUANTIDADE</small><strong>${fmtNum(i.quantity)} ${esc(i.quantity_unit)}</strong></div><div><small>MOTIVO</small><strong>${esc(i.reason)}</strong></div><div><small>EVIDÊNCIAS</small><strong>${photos.length} foto(s)</strong></div></div><div class="damage-lot-row">${match.length?`<span class="status ok">Lote compatível</span><span>${match.slice(0,4).map(n=>esc(n.nri)).join(', ')}</span>`:'<span class="status bad">Lote não encontrado</span>'}</div><details class="damage-evidence"><summary><span>Ver evidências</span><small>${photos.length} foto(s) • localização por foto</small></summary><div class="damage-photo-grid">${photoHtml||'<div class="empty-state">Sem foto disponível.</div>'}</div></details></div>`;
   }).join('');
@@ -1199,20 +1205,20 @@ async function submitSalesDamage(e){
   try{
     const key=uuid(),items=[];
     for(let i=0;i<salesDamageItems.length;i++){const x=salesDamageItems[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${authUser.id}/${key}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadSalesDamagePhoto(path,ph.blob);uploaded.push(path);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}items.push({product:x.product,quantity:x.quantity,unit:x.unit,reason:x.reason,validity_date:x.validity_date||'',photos,photo_path:photos[0]?.photo_path||''});}
-    const {data,error}=await sb.rpc('create_sales_damage_request',{p_payload:{customer_id:customer.id,items}});if(error)throw error;
+    const {data,error}=await sb.rpc('create_sales_damage_request',{p_payload:{unit:activeUnit,customer_id:customer.id,items}});if(error)throw error;
     toast(`Solicitação ${data?.request_code||''} registrada com sucesso.`,'success');clearSalesDamageRequest();if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))await loadSalesDamageManage(true);
   }catch(err){if(uploaded.length)await sb.storage.from('avarias-vendas').remove(uploaded).catch(()=>{});toast(humanSalesDamageError(err),'error');}
   finally{btn.disabled=false;btn.textContent=old;}
 }
 async function loadSalesDamageMy(silent=false){
-  if(!hasPerm('SALES_DAMAGE_VIEW_OWN'))return;try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('seller_id',authUser.id).order('created_at',{ascending:false}).limit(1000);if(error)throw error;salesDamageMyRequests=data||[];renderSalesDamageMy();}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
+  if(!hasPerm('SALES_DAMAGE_VIEW_OWN'))return;try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('unit',activeUnit).eq('seller_id',authUser.id).order('created_at',{ascending:false}).limit(1000);if(error)throw error;salesDamageMyRequests=data||[];renderSalesDamageMy();}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
 }
 function filterSalesDamageRows(rows,searchId,statusId){const q=norm($(searchId)?.value||''),status=$(statusId)?.value||'';return rows.filter(r=>(!status||r.status===status)&&(!q||norm([r.request_code,r.seller_name,r.customer_code,r.customer_name,r.city,r.branch,...(r.sales_damage_items||[]).flatMap(i=>[i.product_text,i.reason,i.review_justification,i.final_justification,i.admin_override_justification])].join(' ')).includes(q)));}
 function salesDamageStatusLabel(status){return ({PENDENTE:'Pendente',EM_ANALISE:'Em análise',PARCIAL:'Parcial',APROVADO:'Aprovado',REPROVADO:'Reprovado',LANCADO:'Lançado'})[status]||status||'—';}
 function salesRequestItemsSummary(r){const items=r.sales_damage_items||[],counts={};items.forEach(x=>counts[x.status]=(counts[x.status]||0)+1);const open=(counts.PENDENTE||0)+(counts.EM_ANALISE||0)+(counts.APROVADO||0);return `<strong>${items.length} produto(s)</strong><small>${open?`${open} aguardando conclusão`:'Fluxo concluído'}</small>`;}
 function renderSalesDamageMy(){const box=$('tbodySalesDamageMy');if(!box)return;const rows=filterSalesDamageRows(salesDamageMyRequests,'salesDamageMySearch','salesDamageMyStatus');box.innerHTML=rows.length?rows.map(r=>`<tr><td><strong>${esc(r.request_code)}</strong><small>${fmtDate(r.occurrence_date)} • ${fmtDateTime(r.created_at)}</small></td><td><strong>PDV ${esc(r.customer_code)}</strong><small>${esc(r.customer_name)} • ${esc(r.city||'—')}</small></td><td>${salesRequestItemsSummary(r)}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-sales-request="${r.id}">Visualizar</button></td></tr>`).join(''):'<tr><td colspan="5">Nenhuma solicitação encontrada.</td></tr>';}
 async function loadSalesDamageManage(silent=false){
-  if(!hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))return;try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').order('created_at',{ascending:false}).limit(2000);if(error)throw error;salesDamageManageRequests=data||[];renderSalesDamageManage();if($('badgeSalesDamage'))$('badgeSalesDamage').textContent=salesDamageManageRequests.filter(r=>(r.sales_damage_items||[]).some(i=>['PENDENTE','EM_ANALISE','APROVADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
+  if(!hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))return;try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(2000);if(error)throw error;salesDamageManageRequests=data||[];renderSalesDamageManage();if($('badgeSalesDamage'))$('badgeSalesDamage').textContent=salesDamageManageRequests.filter(r=>(r.sales_damage_items||[]).some(i=>['PENDENTE','EM_ANALISE','APROVADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
 }
 function renderSalesDamageManage(){const box=$('tbodySalesDamageManage');if(!box)return;const rows=filterSalesDamageRows(salesDamageManageRequests,'salesDamageManageSearch','salesDamageManageStatus');box.innerHTML=rows.length?rows.map(r=>`<tr><td><strong>${esc(r.request_code)}</strong><small>${fmtDate(r.occurrence_date)} • ${fmtDateTime(r.created_at)}</small></td><td><strong>${esc(r.seller_name)}</strong><small>${esc(r.seller_username||'')}</small></td><td><strong>PDV ${esc(r.customer_code)}</strong><small>${esc(r.customer_name)} • ${esc(r.city||'—')}</small></td><td>${salesRequestItemsSummary(r)}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-sales-request="${r.id}">Visualizar</button></td></tr>`).join(''):'<tr><td colspan="6">Nenhuma solicitação encontrada.</td></tr>';}
 function onSalesDamageRequestClick(e){const b=e.target.closest('[data-sales-request]');if(b)showSalesDamageDetail(b.dataset.salesRequest);}
@@ -1584,7 +1590,7 @@ async function loadPullActiveTrip(silent=false){
   if(!isPullDriver())return;
   try{
     await loadPullReferenceData();
-    const {data,error}=await sb.from('pull_trips').select('*').eq('status','IN_PROGRESS').or(`driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`).order('started_at',{ascending:false}).limit(1).maybeSingle();
+    const {data,error}=await sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('status','IN_PROGRESS').or(`driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`).order('started_at',{ascending:false}).limit(1).maybeSingle();
     if(error)throw error;
     pullActiveTrip=data||null;
     if(pullActiveTrip){
@@ -1732,7 +1738,7 @@ function stopPullTracking(){if(pullTrackWatch){try{if(pullTrackWatch.kind==='cap
 
 async function loadPullNriPending(silent=false){
   if(!hasPerm('NRI_PENDING_VIEW'))return;
-  try{const {data,error}=await sb.from('pull_trips').select('*').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200);if(error)throw error;const rows=data||[];$('badgePullNri').textContent=rows.length;const el=$('pullNriCards');if(!rows.length){el.className='pull-card-grid empty-state';el.textContent='Nenhuma carreta pendente.';return;}el.className='pull-card-grid';el.innerHTML=rows.map(t=>`<article class="pull-card"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fábrica:</b> ${esc(t.factory)}</span><span><b>Motorista:</b> ${esc(t.ended_by_name||'—')}</span><span><b>Recebida:</b> ${fmtDateTime(t.ended_at)}</span><span><b>Unidade:</b> ${esc(t.origin_unit)}</span></div><button class="btn primary wide" data-pull-nri="${t.id}">Cadastrar NRIs</button></article>`).join('');el._pullRows=rows;}catch(e){if(!silent)toast(humanPullError(e),'error');}
+  try{const {data,error}=await sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200);if(error)throw error;const rows=data||[];$('badgePullNri').textContent=rows.length;const el=$('pullNriCards');if(!rows.length){el.className='pull-card-grid empty-state';el.textContent='Nenhuma carreta pendente.';return;}el.className='pull-card-grid';el.innerHTML=rows.map(t=>`<article class="pull-card"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)}</strong></div><span class="status pending">Aguardando NRI</span></div><div class="pull-card-body"><span><b>Fábrica:</b> ${esc(t.factory)}</span><span><b>Motorista:</b> ${esc(t.ended_by_name||'—')}</span><span><b>Recebida:</b> ${fmtDateTime(t.ended_at)}</span><span><b>Unidade:</b> ${esc(t.origin_unit)}</span></div><button class="btn primary wide" data-pull-nri="${t.id}">Cadastrar NRIs</button></article>`).join('');el._pullRows=rows;}catch(e){if(!silent)toast(humanPullError(e),'error');}
 }
 function onPullNriCardsClick(e){const b=e.target.closest('[data-pull-nri]');if(!b)return;const rows=$('pullNriCards')._pullRows||[];const t=rows.find(x=>x.id===b.dataset.pullNri);if(t)prefillNriFromPull(t);}
 function prefillNriFromPull(t){
@@ -1762,7 +1768,7 @@ function clearNriPullContext(){
 
 async function loadPullFarol(silent=false){
   if(!hasPerm('PULL_FAROL'))return;
-  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('status','IN_PROGRESS').order('started_at');if(error)throw error;const trips=data||[];$('badgePullAtivos').textContent=trips.length;if(!trips.length){$('pullFarolCards')._rows=[];renderPullFarol();return;}const ids=trips.map(x=>x.id);const [ev,tp]=await Promise.all([sb.from('pull_events').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}),sb.from('pull_track_points').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}).limit(2000)]);if(ev.error)throw ev.error;if(tp.error)throw tp.error;const eventBy=new Map(),trackBy=new Map();(ev.data||[]).forEach(x=>{if(!eventBy.has(x.trip_id))eventBy.set(x.trip_id,x);});(tp.data||[]).forEach(x=>{if(!trackBy.has(x.trip_id))trackBy.set(x.trip_id,x);});$('pullFarolCards')._rows=trips.map(t=>({...t,last_event:eventBy.get(t.id)||null,last_track:trackBy.get(t.id)||null}));renderPullFarol();}catch(e){if(!silent)toast(humanPullError(e),'error');}
+  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('status','IN_PROGRESS').order('started_at');if(error)throw error;const trips=data||[];$('badgePullAtivos').textContent=trips.length;if(!trips.length){$('pullFarolCards')._rows=[];renderPullFarol();return;}const ids=trips.map(x=>x.id);const [ev,tp]=await Promise.all([sb.from('pull_events').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}),sb.from('pull_track_points').select('*').in('trip_id',ids).order('recorded_at',{ascending:false}).limit(2000)]);if(ev.error)throw ev.error;if(tp.error)throw tp.error;const eventBy=new Map(),trackBy=new Map();(ev.data||[]).forEach(x=>{if(!eventBy.has(x.trip_id))eventBy.set(x.trip_id,x);});(tp.data||[]).forEach(x=>{if(!trackBy.has(x.trip_id))trackBy.set(x.trip_id,x);});$('pullFarolCards')._rows=trips.map(t=>({...t,last_event:eventBy.get(t.id)||null,last_track:trackBy.get(t.id)||null}));renderPullFarol();}catch(e){if(!silent)toast(humanPullError(e),'error');}
 }
 function renderPullFarol(){const box=$('pullFarolCards');const q=norm($('pullFarolBusca')?.value||'');const rows=(box?._rows||[]).filter(t=>!q||norm([t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.active_driver_name].join(' ')).includes(q));if(!rows.length){box.className='pull-card-grid empty-state';box.textContent='Nenhuma Puxada em andamento.';return;}box.className='pull-card-grid';box.innerHTML=rows.map(t=>{const last=t.last_track||t.last_event;const age=last?Math.max(0,Math.round((Date.now()-new Date(last.recorded_at).getTime())/60000)):null;return `<article class="pull-card farol"><div class="pull-card-head"><div><small>${esc(t.trip_code)}</small><strong>${esc(t.plate)} • ${esc(t.factory)}</strong></div>${pullFarolBadge(t,last)}</div><div class="pull-card-body"><span><b>Origem:</b> ${esc(t.origin_unit||'—')}</span><span><b>Parceiro:</b> ${esc(t.carrier||'—')}</span><span><b>Motorista atual:</b> ${esc(t.active_driver_name||'—')}</span><span><b>Etapa:</b> ${esc(t.last_event?pullNumberedStepName(t.last_event):'1. Saída da revenda')}</span><span><b>Início:</b> ${fmtDateTime(t.started_at)}</span><span><b>Último GPS:</b> ${last?`${age} min atrás`:'Sem rastreio'}</span></div><button class="btn secondary wide" data-pull-detail="${t.id}">Ver mapa e linha do tempo</button></article>`;}).join('');}
 function pullFarolBadge(t,last){if(!last)return '<span class="status bad">Sem GPS</span>';const age=(Date.now()-new Date(last.recorded_at).getTime())/60000;if(age>10)return '<span class="status pending">GPS atrasado</span>';return '<span class="status ok">Em andamento</span>';}
@@ -1772,7 +1778,7 @@ async function loadPullHistory(silent=false){
   if(!hasAnyPerm('PULL_HISTORY,PULL_TMA_ADJUST'))return;
   try{
     await loadPullReferenceData();
-    let q=sb.from('pull_trips').select('*').order('started_at',{ascending:false}).limit(1500);
+    let q=sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).order('started_at',{ascending:false}).limit(1500);
     const de=$('pullHistDe')?.value,ate=$('pullHistAte')?.value;
     if(de)q=q.gte('started_at',`${de}T00:00:00-03:00`);
     if(ate)q=q.lte('started_at',`${ate}T23:59:59-03:00`);
@@ -1916,7 +1922,7 @@ async function loadPullDashboard(silent=false){
   if(!hasPerm('PULL_DASHBOARD'))return;
   try{
     await loadPullReferenceData();
-    const [trips,market]=await Promise.all([sb.from('pull_trips').select('*').neq('status','CANCELLED').order('started_at'),sb.from('marketplace_receipts').select('*').order('started_at')]);
+    const [trips,market]=await Promise.all([sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).neq('status','CANCELLED').order('started_at'),sb.from('marketplace_receipts').select('*').eq('unit',activeUnit).order('started_at')]);
     if(trips.error)throw trips.error;if(market.error)throw market.error;
     pullDashTrips=trips.data||[];marketplaceDashboardReceipts=market.data||[];populatePullDashboardFilters();await loadPullDashboardGoal();renderPullDashboard();
   }catch(e){if(!silent)toast(humanPullError(e),'error');}
@@ -2039,7 +2045,7 @@ async function loadMarketplaceModule(silent=false){
   if(!hasPerm('MARKETPLACE_RECEIVE'))return;
   try{
     await loadMarketplaceSuppliers();
-    const {data,error}=await sb.from('marketplace_receipts').select('*').eq('checker_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
+    const {data,error}=await sb.from('marketplace_receipts').select('*').eq('unit',activeUnit).eq('checker_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
     if(error)throw error;marketplaceActiveReceipt=data||null;renderMarketplaceReceipt();
   }catch(e){if(!silent)toast(humanPullError(e),'error');}
 }
@@ -2123,8 +2129,8 @@ loadPullNriPending = async function(silent=false){
   if(!hasPerm('NRI_PENDING_VIEW'))return;
   try{
     const [pr,mr]=await Promise.all([
-      sb.from('pull_trips').select('*').eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),
-      sb.from('marketplace_receipts').select('*').eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)
+      sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),
+      sb.from('marketplace_receipts').select('*').eq('unit',activeUnit).eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)
     ]);
     if(pr.error)throw pr.error;if(mr.error)throw mr.error;
     const rows=[
@@ -2164,7 +2170,7 @@ pullNextStep = function(){if(!pullActiveTrip)return null;const steps=pullStepsFo
 pullMainStepNumber = function(stepOrEvent){if(!stepOrEvent)return null;const id=stepOrEvent.step_id||stepOrEvent.id||'',code=stepOrEvent.action_code||'',order=Number(stepOrEvent.step_order??stepOrEvent.sort_order);let steps=pullAllMainSteps;const matched=steps.find(s=>(id&&s.id===id)||(code&&s.action_code===code));if(matched)steps=pullStepsForCycle(matched.flow_type);else if(pullActiveTrip)steps=pullStepsForCycle(pullActiveTrip.cycle_type);let idx=steps.findIndex(s=>(id&&s.id===id)||(code&&s.action_code===code));if(idx<0&&Number.isFinite(order))idx=steps.findIndex(s=>Number(s.sort_order)===order);return idx>=0?idx+1:null;};
 const renderPullDriverV119=renderPullDriver;
 renderPullDriver = function(){pullMainSteps=pullStepsForCycle(pullActiveTrip?.cycle_type||'PULL');renderPullDriverV119();if(!pullActiveTrip){onPullCycleChoice({target:document.querySelector(`[data-pull-cycle="${$('pullStartCycleType')?.value||'PULL'}"]`)});return;}const transfer=pullActiveTrip.cycle_type==='TRANSFER';if($('pullActiveTypeLabel'))$('pullActiveTypeLabel').textContent=transfer?'TRANSFERÊNCIA EM ANDAMENTO':'PUXADA EM ANDAMENTO';if($('pullActiveFactory')?.previousElementSibling)$('pullActiveFactory').previousElementSibling.textContent=transfer?'DESTINO / ROTA':'FÁBRICA';if(transfer){$('pullActiveFactory').textContent='Filial Pau dos Ferros → Matriz Caicó';$('pullActiveSummary').textContent=`Matriz Caicó → Filial Pau dos Ferros → Matriz Caicó • ${pullActiveTrip.plate} • ${pullActiveTrip.driver1_name} • início ${fmtDateTime(pullActiveTrip.started_at)}`;}};
-startPullTrip = async function(e){e.preventDefault();const type=$('pullStartCycleType')?.value==='TRANSFER'?'TRANSFER':'PULL',plate=String($('pullStartPlate').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(!plate)return toast('Informe a placa do veículo.','error');const origin=$('pullStartOrigin').value,factory=$('pullStartFactory').value,driver2=$('pullStartDriver2').value;if(type==='PULL'&&(!origin||!factory||!driver2))return toast('Informe origem, placa, fábrica e Motorista 2.','error');const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Atualizando configuração…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Consultando tolerância GPS atual no Supabase…';try{const target=await refreshPullGpsTarget();btn.textContent='Capturando GPS…';const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{$('pullStartGps').textContent=`GPS atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m…`;}});$('pullStartGps').className='gps-status ok';$('pullStartGps').textContent=`GPS pronto • precisão ±${Math.round(gps.accuracy||0)} m`;btn.textContent='Iniciando…';const rpc=type==='TRANSFER'?'start_transfer_trip':'start_pull_trip',args=type==='TRANSFER'?{p_plate:plate,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt}:{p_origin_unit:origin,p_plate:plate,p_factory:factory,p_carrier:'Ambev',p_driver2:driver2,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt};const {data,error}=await sb.rpc(rpc,args);if(error)throw error;pullActiveTrip=data;toast(type==='TRANSFER'?'Transferência iniciada. Etapas: Matriz → Filial → Matriz.':'Puxada iniciada com GPS validado. O ciclo já está disponível para os dois motoristas.','success');await loadPullActiveTrip();}catch(err){$('pullStartGps').className='gps-status error';$('pullStartGps').textContent=`Não foi possível iniciar: ${humanGpsOrPullError(err)}`;toast(humanGpsOrPullError(err),'error');}finally{btn.disabled=false;btn.textContent='Iniciar ciclo';}};
+startPullTrip = async function(e){e.preventDefault();const type=$('pullStartCycleType')?.value==='TRANSFER'?'TRANSFER':'PULL';if(type==='TRANSFER'&&activeUnit!=='Matriz Caicó')return toast('A Transferência deve ser iniciada com a unidade atual Matriz Caicó.','error');const plate=String($('pullStartPlate').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(!plate)return toast('Informe a placa do veículo.','error');const origin=$('pullStartOrigin').value,factory=$('pullStartFactory').value,driver2=$('pullStartDriver2').value;if(type==='PULL'&&(!origin||!factory||!driver2))return toast('Informe origem, placa, fábrica e Motorista 2.','error');const btn=$('btnPullStart');btn.disabled=true;btn.textContent='Atualizando configuração…';$('pullStartGps').className='gps-status';$('pullStartGps').textContent='Consultando tolerância GPS atual no Supabase…';try{const target=await refreshPullGpsTarget();btn.textContent='Capturando GPS…';const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{$('pullStartGps').textContent=`GPS atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m…`;}});$('pullStartGps').className='gps-status ok';$('pullStartGps').textContent=`GPS pronto • precisão ±${Math.round(gps.accuracy||0)} m`;btn.textContent='Iniciando…';const rpc=type==='TRANSFER'?'start_transfer_trip':'start_pull_trip',args=type==='TRANSFER'?{p_plate:plate,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt}:{p_origin_unit:origin,p_plate:plate,p_factory:factory,p_carrier:'Ambev',p_driver2:driver2,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_device_at:gps.capturedAt};const {data,error}=await sb.rpc(rpc,args);if(error)throw error;pullActiveTrip=data;toast(type==='TRANSFER'?'Transferência iniciada. Etapas: Matriz → Filial → Matriz.':'Puxada iniciada com GPS validado. O ciclo já está disponível para os dois motoristas.','success');await loadPullActiveTrip();}catch(err){$('pullStartGps').className='gps-status error';$('pullStartGps').textContent=`Não foi possível iniciar: ${humanGpsOrPullError(err)}`;toast(humanGpsOrPullError(err),'error');}finally{btn.disabled=false;btn.textContent='Iniciar ciclo';}};
 
 renderPullFarol = function(){
   const box=$('pullFarolCards'),q=norm($('pullFarolBusca')?.value||''),rows=(box?._rows||[]).filter(t=>!q||norm([t.origin_unit,t.plate,t.carrier,t.factory,t.driver1_name,t.driver2_name,t.active_driver_name,t.cycle_type].join(' ')).includes(q));
@@ -2222,7 +2228,7 @@ humanPullError = function(e){const m=String(e?.message||e||'');const extra={MOTO
 async function refreshFefoBadge(silent=false){
   if(!canFefo()||!sb)return;
   try{
-    const {count,error}=await sb.from('fefo_counts').select('id',{count:'exact',head:true}).eq('status','IN_PROGRESS');
+    const {count,error}=await sb.from('fefo_counts').select('id',{count:'exact',head:true}).eq('unit',activeUnit).eq('status','IN_PROGRESS');
     if(error)throw error;
     if($('badgeFefoAtivas'))$('badgeFefoAtivas').textContent=String(count||0);
   }catch(e){if(!silent)toast(humanFefoError(e),'error');}
@@ -2231,7 +2237,7 @@ async function refreshFefoBadge(silent=false){
 async function fetchFefoCounts(status){
   const out=[];let from=0;const page=1000;
   while(true){
-    let q=sb.from('fefo_counts').select('*').eq('status',status).order('started_at',{ascending:false}).range(from,from+page-1);
+    let q=sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('status',status).order('started_at',{ascending:false}).range(from,from+page-1);
     const {data,error}=await q;if(error)throw error;
     const rows=data||[];out.push(...rows);
     if(rows.length<page)break;
@@ -2278,12 +2284,12 @@ async function loadFefoCurrent(silent=false){
   try{
     let row=null;
     if(fefoActiveCount?.id){
-      const r=await sb.from('fefo_counts').select('*').eq('id',fefoActiveCount.id).eq('status','IN_PROGRESS').maybeSingle();
+      const r=await sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('id',fefoActiveCount.id).eq('status','IN_PROGRESS').maybeSingle();
       if(r.error)throw r.error;
       row=r.data||null;
     }
     if(!row){
-      const r=await sb.from('fefo_counts').select('*').eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
+      const r=await sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
       if(r.error)throw r.error;
       row=r.data||null;
     }
@@ -2492,7 +2498,7 @@ function onFefoActiveCountsClick(e){const resume=e.target.closest('[data-fefo-re
 async function resumeFefoCount(id){
   try{
     let c=fefoActiveCounts.find(x=>x.id===id)||null;
-    if(!c){const r=await sb.from('fefo_counts').select('*').eq('id',id).eq('status','IN_PROGRESS').single();if(r.error)throw r.error;c=r.data;}
+    if(!c){const r=await sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('id',id).eq('status','IN_PROGRESS').single();if(r.error)throw r.error;c=r.data;}
     fefoActiveCount=c;fefoItems=fefoItemsByCount.get(id)||await fetchFefoItemsForCount(id);rememberFefoItems(fefoItems,[id]);clearFefoItemForm();openView('fefo-contagem',true);renderFefoCurrent();
   }catch(e){toast(humanFefoError(e),'error');}
 }
@@ -2850,7 +2856,7 @@ async function loadRotatingAssetCurrent(silent=false){
   if(!hasPerm('ROTATING_ASSET_CREATE')||!sb)return;
   try{
     if(!rotatingAssetProducts.length)await loadRotatingAssetProducts(true);
-    const {data,error}=await sb.from('rotating_asset_counts').select('*').eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
+    const {data,error}=await sb.from('rotating_asset_counts').select('*').eq('unit',activeUnit).eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();
     if(error)throw error;rotatingAssetActiveCount=data||null;rotatingAssetEntries=data?await fetchRotatingAssetEntries([data.id]):[];renderRotatingAssetCurrent();
   }catch(e){if(!silent)toast(humanRotatingAssetError(e),'error');}
 }
@@ -2913,7 +2919,7 @@ async function loadRotatingAssetHistory(silent=false){
   if(!hasPerm('ROTATING_ASSET_HISTORY')||!sb)return;
   try{
     if(!rotatingAssetProducts.length)await loadRotatingAssetProducts(true);
-    const {data,error}=await sb.from('rotating_asset_counts').select('*').eq('status','COMPLETED').order('count_date',{ascending:false}).order('completed_at',{ascending:false}).limit(500);if(error)throw error;
+    const {data,error}=await sb.from('rotating_asset_counts').select('*').eq('unit',activeUnit).eq('status','COMPLETED').order('count_date',{ascending:false}).order('completed_at',{ascending:false}).limit(500);if(error)throw error;
     rotatingAssetHistory=data||[];const entries=await fetchRotatingAssetEntries(rotatingAssetHistory.map(x=>x.id));rotatingAssetEntriesByCount=new Map();entries.forEach(e=>{if(!rotatingAssetEntriesByCount.has(e.count_id))rotatingAssetEntriesByCount.set(e.count_id,[]);rotatingAssetEntriesByCount.get(e.count_id).push(e);});renderRotatingAssetHistory();
   }catch(e){if(!silent)toast(humanRotatingAssetError(e),'error');}
 }
@@ -3006,8 +3012,8 @@ loadPullNriPending = async function(silent=false){
   if(!hasPerm('NRI_PENDING_VIEW'))return;
   try{
     const [pr,mr]=await Promise.all([
-      sb.from('pull_trips').select('*').eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),
-      sb.from('marketplace_receipts').select('*').eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)
+      sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('cycle_type','PULL').eq('status','ARRIVED').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200),
+      sb.from('marketplace_receipts').select('*').eq('unit',activeUnit).eq('status','PENDING_NRI').eq('nri_status','PENDING').order('ended_at',{ascending:false}).limit(200)
     ]);
     if(pr.error)throw pr.error;if(mr.error)throw mr.error;
     const rows=[...(pr.data||[]).map(x=>({...x,_source:'PULL',_sort:x.ended_at})),...(mr.data||[]).map(x=>({...x,_source:'MARKETPLACE',_sort:x.ended_at}))].sort((a,b)=>new Date(b._sort)-new Date(a._sort));
@@ -3075,8 +3081,14 @@ async function getCustomerContacts(customerId,customerCode=''){
   const {data,error}=await query;if(error)throw error;return data||[];
 }
 function deliveryDamageReceiptMessage(ctx){
-  const items=(ctx.items||[]).map(x=>`• ${x.product_name||x.product||'Produto'} — ${fmtNum(x.quantity)} ${x.unit==='CAIXA'?'caixa'+(num(x.quantity)===1?'':'s'):'unidade'+(num(x.quantity)===1?'':'s')}`).join('\n');
-  return `*Comprovante de Avaria*\n\nCliente: ${ctx.customer.name}\nPDV: ${ctx.customer.code}\nMapa: ${ctx.map_number}\nData: ${fmtDate(ctx.date)}\n\n*Produto(s) avariado(s):*\n${items}\n\nObservação: O produto avariado será enviado junto ao próximo pedido realizado pelo cliente.`;
+  const items=(ctx.items||[]).map(x=>{
+    const code=String(x.product_code||'').trim();
+    const name=String(x.product_name||x.product||'Produto').trim();
+    const product=code?`${code} - ${name}`:name;
+    const unit=x.unit==='CAIXA'?'caixa'+(num(x.quantity)===1?'':'s'):'unidade'+(num(x.quantity)===1?'':'s');
+    return `• ${product} — *${fmtNum(x.quantity)} ${unit}*`;
+  }).join('\n');
+  return `📄 *COMPROVANTE DE AVARIA*\n\n👤 *Cliente:* ${ctx.customer.name}\n🔢 *PDV:* ${ctx.customer.code}\n🗺️ *Mapa:* ${ctx.map_number}\n📅 *Data:* ${fmtDate(ctx.date)}\n\n📦 *Produto(s) avariado(s):*\n${items}\n\n📝 *Observação:*\nO produto avariado será enviado junto ao *próximo pedido realizado pelo cliente*.\n\n📞 *Precisa de mais informações?*\nEntre em contato com nossa *Central de Atendimento* pelo número:\n*(84) 9 9609-9264*`;
 }
 function whatsappReceiptUrl(phone,ctx){
   const normalized=normalizeWhatsappPhone(phone);return normalized?`https://wa.me/${normalized}?text=${encodeURIComponent(deliveryDamageReceiptMessage(ctx))}`:'';
@@ -3144,16 +3156,16 @@ async function submitAvaria(e){
 async function loadAdminAvarias(silent=false){
   if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))return;
   try{
-    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').order('created_at',{ascending:false}).limit(1000);if(error)throw error;adminAvarias=data||[];
+    const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(1000);if(error)throw error;adminAvarias=data||[];
     const lots=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(i=>String(i.lot||'').toUpperCase()).filter(Boolean))];lotNriMap=new Map();
-    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
+    if(lots.length){for(const chunk of chunks(lots,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').eq('unit',activeUnit).in('lot',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{const k=String(n.lot).toUpperCase();if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});}}
     renderAdminAvarias();
     if($('badgeAvarias'))$('badgeAvarias').textContent=adminAvarias.filter(r=>(r.damage_items||[]).some(i=>['PENDENTE','APROVADO','LANCADO'].includes(i.status))).length;
   }catch(e){if(!silent)toast(humanDeliveryDamageError(e),'error');}
 }
 function renderAdminAvarias(){
   const arr=filteredAdminAvarias();
-  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(String(i.lot).toUpperCase())).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status approved">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status rejected">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
+  $('tbodyAvariasAdmin').innerHTML=arr.length?arr.map(r=>{const items=r.damage_items||[],matches=items.filter(i=>lotNriMap.has(deliveryDamageLotKey(i))).length,photos=items.reduce((n,i)=>n+itemEvidencePhotos(i).length,0);return `<tr><td>${fmtDate(r.occurrence_date)}<strong>PDV ${esc(r.customer_code)} • ${esc(r.customer_name)}</strong><small>${esc(r.city)} • Mapa ${esc(r.map_number)}</small></td><td>${esc(r.delivery_name)}</td><td><strong>${items.length} produto(s)</strong><small>${photos} foto(s)</small></td><td>${matches===items.length&&items.length?'<span class="status approved">Todos compatíveis</span>':matches?'<span class="status partial">Parcial</span>':'<span class="status rejected">Não encontrados</span>'}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-id="${r.id}">Visualizar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhuma avaria.</td></tr>';
 }
 function selectedDeliveryDamageIds(kind){return [...($('modalBody')?.querySelectorAll(`.delivery-review-check[data-review-kind="${kind}"]:checked`)||[])].map(x=>x.value);}
 async function showAvariaDetail(id){
@@ -3162,7 +3174,7 @@ async function showAvariaDetail(id){
   const signedPairs=await Promise.all(paths.map(async path=>{const {data}=await sb.storage.from('avarias').createSignedUrl(path,3600);return [path,data?.signedUrl||''];}));
   const signed=new Map(signedPairs),signatureUrl=signed.get(r.signature_path)||'',canReview=hasPerm('DELIVERY_DAMAGE_REVIEW'),canPost=hasPerm('DELIVERY_DAMAGE_POST');
   const productsHtml=items.map((i,idx)=>{
-    const match=lotNriMap.get(String(i.lot).toUpperCase())||[],photos=itemEvidencePhotos(i),reviewable=canReview&&i.status==='PENDENTE',launchable=canPost&&i.status==='APROVADO',deliverable=canPost&&i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||''),selectable=reviewable||launchable||deliverable,kind=reviewable?'review':launchable?'launch':deliverable?'deliver':'';
+    const match=lotNriMap.get(deliveryDamageLotKey(i))||[],photos=itemEvidencePhotos(i),reviewable=canReview&&i.status==='PENDENTE',launchable=canPost&&i.status==='APROVADO',deliverable=canPost&&i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||''),selectable=reviewable||launchable||deliverable,kind=reviewable?'review':launchable?'launch':deliverable?'deliver':'';
     const photoHtml=photos.map((p,pidx)=>`<div class="damage-photo-card"><div class="damage-photo-title"><strong>Foto ${pidx+1}</strong><span class="status approved">GPS ✓</span></div><img src="${esc(signed.get(p.photo_path)||'')}" alt="Foto ${pidx+1} da avaria"><iframe class="map-frame" src="https://www.google.com/maps?q=${encodeURIComponent(p.latitude+','+p.longitude)}&output=embed" loading="lazy"></iframe><small>GPS: ${p.latitude}, ${p.longitude} • ±${Math.round(p.gps_accuracy||0)} m</small></div>`).join('');
     const decision=i.reviewed_at?`<div class="sales-decision ${i.status==='REPROVADO'?'rejected':'approved'}"><strong>Decisão</strong><span>${esc(i.reviewer_name||'—')} • ${fmtDateTime(i.reviewed_at)}</span><p>${esc(i.review_note||'Sem justificativa registrada.')}</p></div>`:'';
     const launched=i.launched_at?`<div class="sales-decision launched"><strong>Lançado no Sistema</strong><span>${esc(i.launched_by_name||'—')} • ${fmtDateTime(i.launched_at)}</span></div>`:'';
@@ -3211,7 +3223,7 @@ function salesItemStatusBadge(i){return statusBadge(i.status);}
 function salesRequestItemsSummary(r){const items=r.sales_damage_items||[],counts={};items.forEach(x=>counts[x.status]=(counts[x.status]||0)+1);const open=(counts.PENDENTE||0)+(counts.EM_ANALISE||0)+(counts.APROVADO||0)+(counts.LANCADO||0);return `<strong>${items.length} produto(s)</strong><small>${open?`${open} aguardando conclusão`:'Fluxo concluído'}</small>`;}
 async function loadSalesDamageManage(silent=false){
   if(!hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))return;
-  try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').order('created_at',{ascending:false}).limit(2000);if(error)throw error;salesDamageManageRequests=data||[];renderSalesDamageManage();if($('badgeSalesDamage'))$('badgeSalesDamage').textContent=salesDamageManageRequests.filter(r=>(r.sales_damage_items||[]).some(i=>['PENDENTE','EM_ANALISE','APROVADO','LANCADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
+  try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(2000);if(error)throw error;salesDamageManageRequests=data||[];renderSalesDamageManage();if($('badgeSalesDamage'))$('badgeSalesDamage').textContent=salesDamageManageRequests.filter(r=>(r.sales_damage_items||[]).some(i=>['PENDENTE','EM_ANALISE','APROVADO','LANCADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
 }
 async function showSalesDamageDetail(id){
   try{
@@ -3277,5 +3289,427 @@ async function openCustomerContactAdmin(customerId){
 function humanCustomerContactError(e){
   const m=String(e?.message||e||'Erro nos contatos de clientes');const map={TELEFONE_INVALIDO:'Informe um telefone válido com DDD.',CLIENTE_NAO_ENCONTRADO:'Cliente não encontrado.',FORBIDDEN:'Seu usuário não possui permissão para alterar este contato.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/customer_contacts|save_customer_contact|delete_customer_contact/i.test(m))return 'A base de contatos ainda não foi criada no Supabase. Execute o SQL 24_v1_5_1_fluxo_avarias_comprovante_contatos_nri.sql.';return humanError(e);
 }
+
+// V1.6.0 - OFFLINE-FIRST + CORRECOES OPERACIONAIS ----------------------------
+const OFFLINE_DB_NAME='disb_gestao_offline_v160';
+const OFFLINE_DB_VERSION=1;
+const OFFLINE_PROFILE_KEY='disb_profile_cache_v160';
+const OFFLINE_PERMS_KEY='disb_permissions_cache_v160';
+let offlineDbPromise=null;
+let offlineSyncRunning=false;
+let offlineSyncTimer=null;
+let offlineSyncLastError='';
+let offlinePillBound=false;
+
+function offlineDb(){
+  if(offlineDbPromise)return offlineDbPromise;
+  offlineDbPromise=new Promise((resolve,reject)=>{
+    const req=indexedDB.open(OFFLINE_DB_NAME,OFFLINE_DB_VERSION);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains('queue')){
+        const s=db.createObjectStore('queue',{keyPath:'id'});
+        s.createIndex('user_id','user_id',{unique:false});
+        s.createIndex('created_at','created_at',{unique:false});
+        s.createIndex('type','type',{unique:false});
+      }
+      if(!db.objectStoreNames.contains('state'))db.createObjectStore('state',{keyPath:'key'});
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('Falha ao abrir banco offline.'));
+  });
+  return offlineDbPromise;
+}
+async function offlinePut(store,value){
+  const db=await offlineDb();return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error||new Error('Falha ao salvar offline.'));});
+}
+async function offlineDelete(store,key){
+  const db=await offlineDb();return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||new Error('Falha ao excluir registro offline.'));});
+}
+async function offlineGet(store,key){
+  const db=await offlineDb();return new Promise((resolve,reject)=>{const req=db.transaction(store,'readonly').objectStore(store).get(key);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error||new Error('Falha ao ler registro offline.'));});
+}
+async function offlineGetAll(store){
+  const db=await offlineDb();return new Promise((resolve,reject)=>{const req=db.transaction(store,'readonly').objectStore(store).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error||new Error('Falha ao ler fila offline.'));});
+}
+function offlineUserStateKey(key){return `${authUser?.id||'anon'}:${key}`;}
+async function offlineStateSet(key,value){return offlinePut('state',{key:offlineUserStateKey(key),user_id:authUser?.id||'',value,updated_at:new Date().toISOString()});}
+async function offlineStateGet(key){const row=await offlineGet('state',offlineUserStateKey(key));return row?.value??null;}
+async function offlineQueueRows(){const rows=await offlineGetAll('queue');return rows.filter(x=>String(x.user_id||'')===String(authUser?.id||'')).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));}
+async function offlinePendingCount(){try{return (await offlineQueueRows()).length;}catch{return 0;}}
+async function offlineQueueAdd(type,payload,id=uuid()){
+  const row={id,user_id:authUser?.id||'',type,payload,created_at:new Date().toISOString(),status:'PENDING',tries:0,last_error:''};
+  await offlinePut('queue',row);updateOnlineStatus();return row;
+}
+async function offlineQueueUpdate(row){row.updated_at=new Date().toISOString();await offlinePut('queue',row);updateOnlineStatus();return row;}
+async function offlineQueueFind(predicate){return (await offlineQueueRows()).find(predicate)||null;}
+function offlineIsNetworkError(err){const m=String(err?.message||err||'');return !navigator.onLine||/failed to fetch|networkerror|network request failed|load failed|fetch failed|connection|internet/i.test(m);}
+function offlineLocalId(prefix){return `local-${prefix}-${uuid()}`;}
+function offlineIsLocalId(v){return String(v||'').startsWith('local-');}
+
+async function offlineDamageReceipts(){return (await offlineStateGet('damage_receipts'))||[];}
+async function offlineSaveDamageReceipt(ctx){const rows=await offlineDamageReceipts();if(!rows.some(x=>x.offline_operation_id===ctx.offline_operation_id)){rows.push(ctx);await offlineStateSet('damage_receipts',rows);}return rows;}
+async function offlineOpenNextDamageReceipt(){
+  const rows=await offlineDamageReceipts();if(!rows.length)return false;
+  if(!navigator.onLine)return toast('O comprovante precisa de internet para abrir o WhatsApp.','error');
+  const ctx=rows.shift();await offlineStateSet('damage_receipts',rows);updateOnlineStatus();await openDeliveryDamageReceipt(ctx);return true;
+}
+
+updateOnlineStatus = function(){
+  const el=$('syncPill');if(!el)return;
+  const online=navigator.onLine;el.classList.toggle('offline',!online);el.classList.toggle('syncing',offlineSyncRunning);
+  Promise.all([offlinePendingCount(),offlineDamageReceipts().then(x=>x.length).catch(()=>0)]).then(([pending,receipts])=>{
+    const span=el.querySelector('span');if(!span)return;
+    if(offlineSyncRunning)span.textContent=pending?`Sincronizando ${pending}…`:'Sincronizando…';
+    else if(!online)span.textContent=pending?`Sem internet • ${pending} pendente${pending===1?'':'s'}`:'Sem internet';
+    else if(receipts)span.textContent=`Online • ${receipts} comprovante${receipts===1?'':'s'}`;
+    else if(pending)span.textContent=`Online • ${pending} pendente${pending===1?'':'s'}`;
+    else span.textContent='Online • sincronizado';
+    el.title=receipts?'Toque para abrir o próximo comprovante.':pending?'Toque para sincronizar agora.':'Dados sincronizados.';
+  });
+  if(online&&authUser&&!offlineSyncRunning){clearTimeout(offlineSyncTimer);offlineSyncTimer=setTimeout(()=>syncOfflineQueue({silent:true}),600);}
+};
+
+const loadProfileV151=loadProfile;
+loadProfile = async function(user){
+  authUser=user;
+  if(navigator.onLine){
+    try{
+      const {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();
+      if(error)throw error;if(!data||!data.active){profile=null;return false;}
+      profile=data;localStorage.setItem(OFFLINE_PROFILE_KEY,JSON.stringify({user_id:user.id,profile:data,at:Date.now()}));return true;
+    }catch(e){console.warn('Perfil online indisponível; tentando cache local.',e);}
+  }
+  try{const c=JSON.parse(localStorage.getItem(OFFLINE_PROFILE_KEY)||'null');if(c?.user_id===user.id&&c.profile?.active!==false){profile=c.profile;setBackendStatus('checking','Modo offline • perfil local');return true;}}catch(_e){}
+  if(navigator.onLine)return loadProfileV151(user);
+  profile=null;return false;
+};
+
+loadMyPermissions = async function(){
+  const fallback=ROLE_PERMISSION_DEFAULTS[profile?.role]||[];
+  myPermissions=new Set(profile?.role==='ADMIN'?PERMISSION_CATALOG.map(x=>x.code):fallback);
+  if(!sb||!profile)return;
+  if(navigator.onLine){
+    try{const {data,error}=await sb.rpc('get_my_permissions');if(error)throw error;myPermissions=new Set((data||[]).map(String));if(profile.role==='ADMIN')PERMISSION_CATALOG.forEach(x=>myPermissions.add(x.code));localStorage.setItem(OFFLINE_PERMS_KEY,JSON.stringify({user_id:authUser?.id,permissions:[...myPermissions],at:Date.now()}));return;}catch(e){console.warn('Permissões online indisponíveis; usando cache.',e);}
+  }
+  try{const c=JSON.parse(localStorage.getItem(OFFLINE_PERMS_KEY)||'null');if(c?.user_id===authUser?.id&&Array.isArray(c.permissions))myPermissions=new Set(c.permissions);}catch(_e){}
+};
+
+readRefCache = function(){
+  try{localStorage.removeItem('ops_ref_cache');const x=JSON.parse(localStorage.getItem(REF_CACHE_KEY)||'null');if(!x?.data)return null;if(!navigator.onLine||Date.now()-Number(x.at||0)<12*3600e3)return sanitizeRefs(x.data);return null;}catch{return null;}
+};
+
+async function saveFefoOfflineSnapshot(){try{await offlineStateSet('fefo_current',{count:fefoActiveCount,items:fefoItems});}catch(e){console.warn('FEFO cache offline',e);}}
+async function restoreFefoOfflineSnapshot(){try{const s=await offlineStateGet('fefo_current');if(!s)return false;fefoActiveCount=s.count||null;fefoItems=s.items||[];renderFefoCurrent();return !!fefoActiveCount;}catch{return false;}}
+async function resolveOfflineFefoCountId(id){if(!offlineIsLocalId(id))return id;return await offlineStateGet(`fefo_count_map:${id}`);}
+
+loadFefoCurrent = async function(silent=false){
+  if(!hasPerm('FEFO_CREATE')||!sb)return;
+  try{
+    const cached=await offlineStateGet('fefo_current');
+    if(cached?.count&&offlineIsLocalId(cached.count.id)){
+      const pending=await offlineQueueFind(x=>x.type==='FEFO_START'&&x.payload?.local_count_id===cached.count.id);
+      if(pending){fefoActiveCount=cached.count;fefoItems=cached.items||[];renderFefoCurrent();if(navigator.onLine)syncOfflineQueue({silent:true});return;}
+    }
+    if(!navigator.onLine){await restoreFefoOfflineSnapshot();return;}
+    let row=null;
+    if(fefoActiveCount?.id&&!offlineIsLocalId(fefoActiveCount.id)){
+      const r=await sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('id',fefoActiveCount.id).eq('status','IN_PROGRESS').maybeSingle();if(r.error)throw r.error;row=r.data||null;
+    }
+    if(!row){const r=await sb.from('fefo_counts').select('*').eq('unit',activeUnit).eq('counter_id',authUser.id).eq('status','IN_PROGRESS').order('started_at',{ascending:false}).limit(1).maybeSingle();if(r.error)throw r.error;row=r.data||null;}
+    fefoActiveCount=row;fefoItems=row?await fetchFefoItemsForCount(row.id):[];if(row)rememberFefoItems(fefoItems,[row.id]);renderFefoCurrent();await saveFefoOfflineSnapshot();await refreshFefoBadge(true);
+  }catch(e){const restored=await restoreFefoOfflineSnapshot();if(!restored&&!silent)toast(humanFefoError(e),'error');}
+};
+
+const renderFefoCurrentV151=renderFefoCurrent;
+renderFefoCurrent = function(){
+  renderFefoCurrentV151();if(!fefoActiveCount)return;
+  const summary=$('fefoActiveSummary');if(summary&&offlineIsLocalId(fefoActiveCount.id))summary.textContent+=` • ${navigator.onLine?'sincronização pendente':'salvo neste aparelho'}`;
+  if(fefoActiveCount._finishPending){$('btnFefoFinish').disabled=true;$('btnFefoFinish').textContent='Finalização pendente';}
+  const body=$('tbodyFefoItems');if(body){body.querySelectorAll('tr').forEach((tr,i)=>{const item=fefoItems[i];if(item?._offline){tr.classList.add('offline-pending-row');const first=tr.querySelector('td');if(first)first.insertAdjacentHTML('beforeend','<small class="offline-row-note">⏳ aguardando sincronização</small>');}});}
+};
+
+startFefoCount = async function(){
+  if(!canFefo())return;const unit=$('fefoStartUnit').value;if(!unit)return toast('Selecione a unidade da contagem.','error');
+  const btn=$('btnFefoStart'),old=btn.textContent;btn.disabled=true;btn.textContent='Iniciando…';
+  try{
+    const localId=offlineLocalId('fefo-count'),op=await offlineQueueAdd('FEFO_START',{local_count_id:localId,unit});
+    fefoActiveCount={id:localId,count_code:`OFF-${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}).replace(':','')}`,unit,counter_id:authUser.id,counter_name:profile.name,counter_username:profile.username,status:'IN_PROGRESS',started_at:new Date().toISOString(),_offline:true};fefoItems=[];clearFefoItemForm();renderFefoCurrent();await saveFefoOfflineSnapshot();
+    if(navigator.onLine){await syncOfflineQueue({silent:true});await loadFefoCurrent(true);toast(fefoActiveCount&&!offlineIsLocalId(fefoActiveCount.id)?`Contagem ${fefoActiveCount.count_code} iniciada.`:'Contagem salva e aguardando sincronização.','success');}
+    if(!navigator.onLine)toast('Sem internet: contagem iniciada e salva neste aparelho.','success');
+    setTimeout(()=>$('fefoCodigo')?.focus(),80);
+  }catch(e){toast(`Não foi possível iniciar a contagem offline: ${humanFefoError(e)}`,'error');}
+  finally{btn.disabled=false;btn.textContent=old;}
+};
+
+saveFefoItem = async function(e){
+  e.preventDefault();if(!fefoActiveCount)return toast('Inicie ou retome uma contagem primeiro.','error');const product=selectedOperationalProduct('fefo');if(!product)return toast('Selecione um produto válido da base.','error');const validity=parseFefoDate($('fefoValidade').value);if(!validity)return toast('Informe uma validade válida no formato DD/MM/AAAA.','error');const vinfo=fefoValidityInfo(validity);if(vinfo.days<0&&!window.confirm('Data vencida\n\nEssa data já passou. Deseja continuar?'))return;
+  const btn=$('btnFefoSaveItem'),old=btn.textContent;btn.disabled=true;btn.textContent=fefoEditingItemId?'Atualizando…':'Salvando…';
+  try{
+    const editId=fefoEditingItemId||null,localItemId=editId&&offlineIsLocalId(editId)?editId:offlineLocalId('fefo-item');
+    const args={p_count_id:fefoActiveCount.id,p_product_code:product.code,p_validity_date:validity,p_lot:'',p_street:$('fefoRua').value.trim(),p_pallet:fefoIntValue('fefoPalete'),p_layer:fefoIntValue('fefoLastro'),p_box:fefoIntValue('fefoCaixa'),p_loose_unit:fefoIntValue('fefoUnidadeQtd'),p_item_id:editId&&!offlineIsLocalId(editId)?editId:null,local_item_id:localItemId};
+    let op=null;
+    if(editId&&offlineIsLocalId(editId))op=await offlineQueueFind(x=>x.type==='FEFO_ITEM'&&x.payload?.local_item_id===editId);
+    if(op){op.payload={...op.payload,...args};op.status='PENDING';op.last_error='';await offlineQueueUpdate(op);}else await offlineQueueAdd('FEFO_ITEM',args);
+    const optimistic={id:editId||localItemId,count_id:fefoActiveCount.id,product_code:product.code,product_name:product.name,validity_date:validity,lot:'',street:args.p_street,pallet:args.p_pallet,layer:args.p_layer,box:args.p_box,loose_unit:args.p_loose_unit,created_at:(fefoItems.find(x=>x.id===editId)?.created_at)||new Date().toISOString(),_offline:true};
+    const idx=fefoItems.findIndex(x=>x.id===optimistic.id);if(idx>=0)fefoItems[idx]=optimistic;else fefoItems.push(optimistic);clearFefoItemForm();renderFefoCurrent();await saveFefoOfflineSnapshot();
+    if(navigator.onLine){await syncOfflineQueue({silent:true});await loadFefoCurrent(true);toast(editId?'Produto atualizado.':'Produto salvo na contagem.','success');}else toast(editId?'Alteração salva neste aparelho.':'Produto salvo neste aparelho.','success');
+    setTimeout(()=>$('fefoCodigo')?.focus(),80);
+  }catch(err){toast(humanFefoError(err),'error');}
+  finally{btn.disabled=false;btn.textContent=fefoEditingItemId?'Atualizar Produto':'Salvar Produto';}
+};
+
+deleteFefoItem = async function(id){
+  const x=fefoItems.find(r=>String(r.id)===String(id));if(!x)return;if(!window.confirm(`Excluir ${x.product_code} - ${x.product_name} desta contagem?`))return;
+  try{
+    if(offlineIsLocalId(id)){const op=await offlineQueueFind(q=>q.type==='FEFO_ITEM'&&q.payload?.local_item_id===id);if(op)await offlineDelete('queue',op.id);}else await offlineQueueAdd('FEFO_DELETE',{p_item_id:id});
+    fefoItems=fefoItems.filter(r=>String(r.id)!==String(id));if(fefoEditingItemId===id)clearFefoItemForm();renderFefoCurrent();await saveFefoOfflineSnapshot();
+    if(navigator.onLine){await syncOfflineQueue({silent:true});await loadFefoCurrent(true);}toast(navigator.onLine?'Produto excluído.':'Exclusão salva neste aparelho.','success');
+  }catch(e){toast(humanFefoError(e),'error');}
+};
+
+finishFefoCount = async function(){
+  if(!fefoActiveCount)return;if(!fefoItems.length)return toast('Adicione pelo menos um produto antes de finalizar.','error');if(fefoActiveCount._finishPending)return toast('Esta finalização já está aguardando sincronização.','');
+  if(!window.confirm(`Finalizar a contagem ${fefoActiveCount.count_code}?\n\nSe estiver sem internet, a finalização será enviada automaticamente quando a conexão voltar.`))return;
+  const btn=$('btnFefoFinish'),old=btn.textContent;btn.disabled=true;btn.textContent='Finalizando…';
+  try{await offlineQueueAdd('FEFO_FINISH',{p_count_id:fefoActiveCount.id});fefoActiveCount._finishPending=true;renderFefoCurrent();await saveFefoOfflineSnapshot();if(navigator.onLine){await syncOfflineQueue({silent:true});await loadFefoCurrent(true);if(!fefoActiveCount)toast('Contagem finalizada e sincronizada.','success');else toast('Finalização aguardando sincronização.','');}else toast('Finalização salva no aparelho. Será sincronizada quando houver internet.','success');}
+  catch(e){toast(humanFefoError(e),'error');}
+  finally{btn.disabled=false;if(fefoActiveCount&&!fefoActiveCount._finishPending)btn.textContent=old;}
+};
+
+async function cachePullOfflineSnapshot(){try{await offlineStateSet('pull_snapshot',{trip:pullActiveTrip,events:pullDriverEvents,occurrences:pullDriverOccurrences,mainSteps:pullMainSteps,occurrenceTypes:pullOccurrenceTypes,settings:pullSettings,factories:pullFactories,vehicles:pullVehicles,profiles:pullProfiles});}catch(e){console.warn('Puxada cache',e);}}
+async function restorePullOfflineSnapshot(){try{const s=await offlineStateGet('pull_snapshot');if(!s)return false;pullActiveTrip=s.trip||null;pullDriverEvents=s.events||[];pullDriverOccurrences=s.occurrences||[];pullMainSteps=s.mainSteps||[];pullOccurrenceTypes=s.occurrenceTypes||[];pullSettings=s.settings||pullSettings;pullFactories=s.factories||[];pullVehicles=s.vehicles||[];pullProfiles=s.profiles||[];populatePullReferenceInputs();renderPullDriver();return !!pullActiveTrip;}catch{return false;}}
+
+const loadPullReferenceDataV151=loadPullReferenceData;
+loadPullReferenceData = async function(){
+  if(!navigator.onLine){const ok=await restorePullOfflineSnapshot();if(ok||pullMainSteps.length)return;}
+  try{await loadPullReferenceDataV151();await cachePullOfflineSnapshot();}catch(e){const ok=await restorePullOfflineSnapshot();if(!ok)throw e;}
+};
+refreshPullGpsTarget = async function(){
+  if(!navigator.onLine)return pullGpsTarget();
+  try{const {data,error}=await sb.from('pull_settings').select('singleton,gps_max_accuracy_m,track_interval_seconds,track_min_distance_m,updated_at').eq('singleton',true).maybeSingle();if(error)throw error;if(data)pullSettings={...(pullSettings||{}),...data};await cachePullOfflineSnapshot();return pullGpsTarget();}catch(e){console.warn('GPS: usando tolerância em cache.',e);return pullGpsTarget();}
+};
+loadPullActiveTrip = async function(silent=false){
+  if(!isPullDriver())return;
+  if(!navigator.onLine){const ok=await restorePullOfflineSnapshot();if(!ok&&!silent)toast('Nenhuma viagem recente disponível no aparelho.','error');return;}
+  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('status','IN_PROGRESS').or(`driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`).order('started_at',{ascending:false}).limit(1).maybeSingle();if(error)throw error;pullActiveTrip=data||null;if(pullActiveTrip){const [ev,oc]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',pullActiveTrip.id).order('step_order'),sb.from('pull_occurrences').select('*').eq('trip_id',pullActiveTrip.id).order('started_at')]);if(ev.error)throw ev.error;if(oc.error)throw oc.error;pullDriverEvents=ev.data||[];pullDriverOccurrences=oc.data||[];}else{pullDriverEvents=[];pullDriverOccurrences=[];}renderPullDriver();syncPullTracking();await cachePullOfflineSnapshot();}catch(e){const ok=await restorePullOfflineSnapshot();if(!ok&&!silent)toast(humanPullError(e),'error');}
+};
+
+recordPullNextStep = async function(){
+  if(!pullActiveTrip)return;const step=pullNextStep();if(!step||!pullCanExecuteStep(step))return;const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');if(openOcc&&step.required!==false){toast(`Finalize a ocorrência “${openOcc.occurrence_name}” antes de registrar a próxima etapa obrigatória.`,'error');renderPullDriver();return;}
+  const btn=$('btnPullNextStep');btn.disabled=true;btn.textContent='Capturando GPS…';const hint=$('pullNextStepHint'),baseHint=hint?.textContent||'';
+  try{
+    const target=await refreshPullGpsTarget();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{if(hint)hint.textContent=`Buscando posição… sinal atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m.`;}});
+    const op=await offlineQueueAdd('PULL_STEP',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_exception_reason:'',p_device_at:gps.capturedAt});
+    pullDriverEvents.push({id:offlineLocalId('pull-event'),trip_id:pullActiveTrip.id,step_id:step.id,step_name:step.name,action_code:step.action_code,step_order:step.sort_order,user_id:authUser.id,user_name:profile.name,recorded_at:gps.capturedAt||new Date().toISOString(),device_at:gps.capturedAt,latitude:gps.latitude,longitude:gps.longitude,gps_accuracy:gps.accuracy,geofence_status:'PENDING_SYNC',exception_reason:'',_offline:true,offline_operation_id:op.id});
+    const after=pullMainSteps.find(x=>Number(x.sort_order)>Number(step.sort_order));if(after?.executor_driver===1){pullActiveTrip.active_driver_id=pullActiveTrip.driver1_id;pullActiveTrip.active_driver_name=pullActiveTrip.driver1_name;}if(after?.executor_driver===2){pullActiveTrip.active_driver_id=pullActiveTrip.driver2_id;pullActiveTrip.active_driver_name=pullActiveTrip.driver2_name;}
+    await cachePullOfflineSnapshot();renderPullDriver();
+    if(navigator.onLine){await syncOfflineQueue({silent:true});await loadPullActiveTrip(true);toast('Etapa registrada e sincronizada.','success');}else toast('Sem sinal: etapa salva no aparelho e será sincronizada automaticamente.','success');
+  }catch(err){if(hint)hint.textContent=baseHint;toast(humanGpsOrPullError(err),'error');}
+  finally{btn.disabled=false;renderPullDriver();}
+};
+
+const renderPullDriverV151=renderPullDriver;
+renderPullDriver = function(){renderPullDriverV151();const tl=$('pullDriverTimeline');if(tl){tl.querySelectorAll('.pull-timeline-item').forEach((el,i)=>{const ordered=[...pullDriverEvents.map(x=>({kind:'STEP',raw:x})),...pullDriverOccurrences.map(x=>({kind:'OCC',raw:x}))].sort((a,b)=>new Date(a.raw.recorded_at||a.raw.started_at)-new Date(b.raw.recorded_at||b.raw.started_at));if(ordered[i]?.raw?._offline)el.classList.add('offline-pending-row');});}const hint=$('pullNextStepHint');if(hint&&!navigator.onLine&&pullActiveTrip)hint.textContent+=` • OFFLINE: a etapa ficará salva neste aparelho até a conexão voltar.`;};
+
+const syncPullTrackingV151=syncPullTracking;
+syncPullTracking = function(){if(!navigator.onLine){stopPullTracking();return;}return syncPullTrackingV151();};
+
+async function offlineUploadDamageStorage(path,blob){const {error}=await sb.storage.from('avarias').upload(path,blob,{contentType:'image/jpeg',upsert:true});if(error)throw error;}
+
+submitAvaria = async function(e){
+  e.preventDefault();let customer=selectedCustomer();if(!customer){const code=normalizeCode($('avPdv').value);if(code){try{const found=await fetchCustomersByCode(code);renderDeliveryCustomerMatches(found);customer=selectedCustomer();}catch(err){console.warn('Busca PDV ao salvar avaria',err);}}}if(!customer)return toast(currentCustomerMatches().length>1?'Selecione qual cliente corresponde ao PDV informado.':'Informe um PDV válido.','error');if(!$('avMapa').value.trim())return toast('Informe o mapa.','error');if(!avariaItems.length)return toast('Adicione ao menos um produto avariado.','error');if(!signatureDirty)return toast('A assinatura do cliente é obrigatória.','error');
+  const btn=$('btnSalvarAvaria');btn.disabled=true;btn.textContent='Salvando…';
+  try{
+    const opId=uuid(),sigBlob=await canvasBlob($('signatureCanvas'),.82),receiptCtx={offline_operation_id:opId,unit:activeUnit,customer:{...customer},date:$('avData').value,map_number:$('avMapa').value.trim(),items:avariaItems.map(x=>({product:x.product,product_code:x.product_code,product_name:x.product_name,quantity:x.quantity,unit:x.unit,reason:x.reason}))};
+    const payload={receiptCtx,signature_blob:sigBlob,unit:activeUnit,date:receiptCtx.date,customer:{...customer},map_number:receiptCtx.map_number,items:avariaItems.map(x=>({product:x.product,product_code:x.product_code,product_name:x.product_name,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:(x.photos||[]).map(p=>({blob:p.blob,gps:{...p.gps}}))}))};
+    await offlineQueueAdd('DAMAGE_CREATE',payload,opId);clearAvariaRequest();
+    if(navigator.onLine){await syncOfflineQueue({silent:true});const still=await offlineGet('queue',opId);if(!still){toast('Avaria registrada e sincronizada.','success');await offlineOpenNextDamageReceipt();}else toast(`Avaria salva no aparelho. Sincronização pendente: ${still.last_error||'aguardando conexão'}.`,'');}
+    if(!navigator.onLine)toast('Sem sinal: avaria salva no aparelho. Ela será enviada automaticamente quando a internet voltar.','success');
+  }catch(err){toast(`Não foi possível salvar a avaria no aparelho: ${humanDeliveryDamageError(err)}`,'error');}
+  finally{btn.disabled=false;btn.textContent='Registrar requisição';}
+};
+
+function deliveryDamageItemProductCode(item){const direct=normalizeCode(item?.product_code||'');if(direct)return direct;const text=String(item?.product_text||item?.product||'');return normalizeCode(text.split(/\s+-\s+|\s+•\s+/)[0]||'');}
+function deliveryDamageLotKey(item){return `${deliveryDamageItemProductCode(item)}|${sanitizeLot(item?.lot)}`;}
+loadAdminAvarias = async function(silent=false){
+  if(!hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))return;
+  try{const {data,error}=await sb.from('damage_requests').select('*,damage_items(*,damage_item_photos(*))').eq('unit',activeUnit).order('created_at',{ascending:false}).limit(1000);if(error)throw error;adminAvarias=data||[];const codes=[...new Set(adminAvarias.flatMap(r=>r.damage_items||[]).map(deliveryDamageItemProductCode).filter(Boolean))];lotNriMap=new Map();for(const chunk of chunks(codes,100)){const q=await sb.from('nris').select('nri,lot,product_code,product_name,validity_date,unit').eq('unit',activeUnit).in('product_code',chunk);if(q.error)throw q.error;(q.data||[]).forEach(n=>{splitMultiLots(n.lot).forEach(lot=>{const k=`${normalizeCode(n.product_code)}|${sanitizeLot(lot)}`;if(!lotNriMap.has(k))lotNriMap.set(k,[]);lotNriMap.get(k).push(n);});});}renderAdminAvarias();if($('badgeAvarias'))$('badgeAvarias').textContent=adminAvarias.filter(r=>(r.damage_items||[]).some(i=>['PENDENTE','APROVADO','LANCADO'].includes(i.status))).length;}catch(e){if(!silent)toast(humanDeliveryDamageError(e),'error');}
+};
+
+addNriDraftItem = function(){
+  const p=selectedOperationalProduct('nri'),sem=$('nriSemValidade').checked,validity=sem?null:parseShortDate($('nriValidade').value),typed=sanitizeLot($('nriLote').value),savedLots=[...nriLots].map(sanitizeLot).filter(Boolean),all=[...new Set([...savedLots,typed].filter(Boolean))],qty=num($('nriQuantidade').value),pallets=Math.trunc(num($('nriPaletes').value));
+  if(!p)return toast('Selecione um produto válido da base.','error');if(!sem&&!validity)return toast('Informe a validade completa no formato dd/mm/aa ou selecione Sem Validade.','error');if(!all.length)return toast('Informe o lote.','error');if(all.length>1)return toast('Cadastre um lote por item. Para outro lote, salve este item e adicione um novo.','error');if(qty<=0)return toast('Informe a quantidade.','error');if(pallets<1)return toast('Informe a quantidade de paletes.','error');
+  const lot=all[0],damagedPallets=nriDamageMode?Math.trunc(num($('nriDamagePallets').value)):0,reason=nriDamageMode?$('nriDamageReason').value.trim():'',invoiceNumber=nriDamageMode?$('nriDamageInvoice').value.trim():'';if(nriDamageMode&&(!damagedPallets||damagedPallets<1||damagedPallets>pallets))return toast(`Informe entre 1 e ${pallets} palete(s) avariado(s).`,'error');if(nriDamageMode&&!reason)return toast('Selecione o motivo do avariado.','error');if(nriDamageMode&&!invoiceNumber)return toast('Informe o Número da Nota Fiscal do palete avariado.','error');if(nriDamageMode&&(nriDamagePhotos.length<1||nriDamagePhotos.length>5))return toast('Palete avariado exige de 1 a 5 fotos.','error');
+  const item={id:nriEditingId||uuid(),product_code:p.code,product_name:p.name,validity_date:validity,lot,lots:[lot],quantity:qty,pallets,block_date:validity?addDaysIso(validity,-30):null,pallet_damaged:nriDamageMode,damaged_pallets:damagedPallets,damage_reason:reason,invoice_number:invoiceNumber,damagePhotos:[...nriDamagePhotos]};const idx=nriDraftItems.findIndex(x=>x.id===item.id);if(idx>=0)nriDraftItems[idx]=item;else nriDraftItems.push(item);renderNriDraftItems();clearNriItemEditor();
+};
+
+function assetRowByProductId(productId){return [...document.querySelectorAll('[data-asset-product]')].find(r=>String(r.dataset.assetProduct)===String(productId))||null;}
+assetLocationValue = function(productId){return normalizeAssetLocation(assetRowByProductId(productId)?.dataset.assetLocation||'PATIO');};
+setRotatingAssetLocation = function(productId,location){const row=assetRowByProductId(productId);if(!row)return;const loc=normalizeAssetLocation(location);row.dataset.assetLocation=loc;row.querySelectorAll('[data-asset-location]').forEach(b=>b.classList.toggle('active',normalizeAssetLocation(b.dataset.assetLocation)===loc));};
+addRotatingAssetEntry = async function(productId,btn){
+  if(!rotatingAssetActiveCount)return toast('Inicie uma contagem primeiro.','error');const product=rotatingAssetProducts.find(p=>String(p.id)===String(productId));if(!product)return toast('Ativo não encontrado. Atualize a tela e tente novamente.','error');const old=btn.textContent;btn.disabled=true;btn.textContent='Adicionando…';
+  try{const args={p_count_id:rotatingAssetActiveCount.id,p_product_id:product.id,p_pallet_gfa:assetInputValue(product.id,'pallet'),p_layer_gfa:assetInputValue(product.id,'layer'),p_box_gfa:assetInputValue(product.id,'box'),p_loose:assetInputValue(product.id,'loose'),p_units:assetInputValue(product.id,'units'),p_location:assetLocationValue(product.id)};if(args.p_pallet_gfa+args.p_layer_gfa+args.p_box_gfa+args.p_loose+args.p_units<=0)return toast('Informe ao menos uma quantidade maior que zero.','error');const {data,error}=await sb.rpc('add_rotating_asset_entry',args);if(error)throw error;if(!data?.id)throw new Error('ATIVO_GIRO_LANCAMENTO_SEM_RETORNO');rotatingAssetEntries=[data,...rotatingAssetEntries.filter(x=>String(x.id)!==String(data.id))];['pallet','layer','box','loose','units'].forEach(f=>{const el=$(assetInputId(product.id,f));if(el)el.value='0';});renderRotatingAssetCurrent();toast(`${product.description} • ${assetLocationLabel(args.p_location)}: adição registrada.`,'success');}
+  catch(e){console.error('Ativo de Giro - adicionar',e);toast(humanRotatingAssetError(e),'error');}
+  finally{btn.disabled=false;btn.textContent=old;}
+};
+
+function assetAdminEntryRows(entries){return [...entries].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(e=>`<tr><td>${fmtDateTime(e.created_at)}</td><td><strong>${esc(e.product_description)}</strong><small>${esc(e.sap_code||'—')} • ${esc(e.asset_code||'—')}</small></td><td><span class="asset-location-badge ${assetLocationClass(e.location)}">${assetLocationLabel(e.location)}</span></td><td>${Number(e.pallet_gfa||0)}</td><td>${Number(e.layer_gfa||0)}</td><td>${Number(e.box_gfa||0)}</td><td>${Number(e.loose||0)}</td><td>${Number(e.units||0)}</td><td>${esc(e.created_by_name||'—')}</td><td><button class="mini-btn" data-asset-admin-edit="${e.id}">Editar</button></td></tr>`).join('');}
+function assetAuditDiff(a){const parts=[];[['Local','old_location','new_location'],['Palet/GFA','old_pallet_gfa','new_pallet_gfa'],['Lastro/GFA','old_layer_gfa','new_layer_gfa'],['Caixa/GFA','old_box_gfa','new_box_gfa'],['Avulso','old_loose','new_loose'],['Unidades','old_units','new_units']].forEach(([label,o,n])=>{if(String(a[o])!==String(a[n]))parts.push(`${label}: ${a[o]} → ${a[n]}`);});return parts.join(' • ')||'Sem diferença numérica';}
+async function openRotatingAssetEntryAdminEdit(entryId,countId){
+  const entries=rotatingAssetEntriesByCount.get(countId)||[],e=entries.find(x=>String(x.id)===String(entryId));if(!e)return toast('Lançamento não encontrado.','error');
+  const body=`<div class="notice warning">A correção ficará registrada na auditoria com usuário, data, valores anteriores e motivo.</div><div class="detail-card asset-edit-product"><small>ATIVO</small><strong>${esc(e.product_description)}</strong><span>${esc(e.sap_code||'—')} • ${esc(e.asset_code||'—')}</span></div><div class="grid grid-3"><div class="field"><label>Local</label><select id="assetAdminLocation"><option value="PATIO" ${normalizeAssetLocation(e.location)==='PATIO'?'selected':''}>Pátio</option><option value="REFUGO" ${normalizeAssetLocation(e.location)==='REFUGO'?'selected':''}>Refugo</option></select></div><div class="field"><label>Palet/GFA</label><input id="assetAdminPallet" type="number" min="0" value="${Number(e.pallet_gfa||0)}"></div><div class="field"><label>Lastro/GFA</label><input id="assetAdminLayer" type="number" min="0" value="${Number(e.layer_gfa||0)}"></div><div class="field"><label>Caixa/GFA</label><input id="assetAdminBox" type="number" min="0" value="${Number(e.box_gfa||0)}"></div><div class="field"><label>Avulso</label><input id="assetAdminLoose" type="number" min="0" value="${Number(e.loose||0)}"></div><div class="field"><label>Unidades</label><input id="assetAdminUnits" type="number" min="0" value="${Number(e.units||0)}"></div><div class="field span-3"><label>Motivo da correção *</label><textarea id="assetAdminReason" rows="3" maxlength="500" placeholder="Ex.: Conferente informou 10 unidades, correto é 8."></textarea></div></div>`;
+  openModal('Corrigir Ativo de Giro','Ajuste administrativo auditado',body,[{label:'Salvar correção',class:'primary',onClick:async()=>{const reason=String($('assetAdminReason')?.value||'').trim();if(!reason)return toast('Informe o motivo da correção.','error');try{const args={p_entry_id:e.id,p_pallet_gfa:assetQty($('assetAdminPallet').value),p_layer_gfa:assetQty($('assetAdminLayer').value),p_box_gfa:assetQty($('assetAdminBox').value),p_loose:assetQty($('assetAdminLoose').value),p_units:assetQty($('assetAdminUnits').value),p_location:$('assetAdminLocation').value,p_reason:reason};const {error}=await sb.rpc('admin_update_rotating_asset_entry',args);if(error)throw error;const fresh=await fetchRotatingAssetEntries([countId]);rotatingAssetEntriesByCount.set(countId,fresh);toast('Correção salva e registrada na auditoria.','success');await openRotatingAssetHistory(countId);}catch(err){toast(humanRotatingAssetError(err),'error');}}},{label:'Cancelar',class:'secondary',onClick:()=>openRotatingAssetHistory(countId)}]);
+}
+
+openRotatingAssetHistory = async function(id){
+  const c=rotatingAssetHistory.find(x=>String(x.id)===String(id));if(!c)return;const entries=rotatingAssetEntriesByCount.get(c.id)||[],patio=aggregateRotatingAssetGrandTotal(entries,'PATIO'),refugo=aggregateRotatingAssetGrandTotal(entries,'REFUGO'),total=aggregateRotatingAssetGrandTotal(entries),initialRows=rotatingAssetHistoryViewRows(entries,'TOTAL');let audit=[];
+  if(isAdmin()){try{const q=await sb.from('rotating_asset_entry_audit').select('*').eq('count_id',c.id).order('changed_at',{ascending:false}).limit(500);if(q.error)throw q.error;audit=q.data||[];}catch(e){console.warn('Auditoria ativo de giro',e);}}
+  const adminBlock=isAdmin()?`<div class="section-title asset-admin-section-title">Ajustes administrativos</div><p class="asset-admin-help">O Admin pode corrigir lançamentos digitados incorretamente. Toda alteração fica registrada.</p><div class="table-wrap"><table class="asset-admin-entry-table"><thead><tr><th>Hora</th><th>Ativo</th><th>Local</th><th>Palet</th><th>Lastro</th><th>Caixa</th><th>Avulso</th><th>Unid.</th><th>Conferente</th><th>Ação</th></tr></thead><tbody>${assetAdminEntryRows(entries)||'<tr><td colspan="10">Sem lançamentos.</td></tr>'}</tbody></table></div><div class="section-title">Histórico de correções</div><div class="asset-audit-list">${audit.length?audit.map(a=>`<div class="asset-audit-item"><div><strong>${esc(a.product_description)}</strong><span>${esc(assetAuditDiff(a))}</span><small>${esc(a.changed_by_name)} • ${fmtDateTime(a.changed_at)} • Motivo: ${esc(a.reason)}</small></div></div>`).join(''):'<div class="empty-state">Nenhuma correção administrativa registrada.</div>'}</div>`:'';
+  const body=`<div class="detail-grid asset-history-detail-grid"><div class="detail-card"><small>Data</small><strong>${fmtDate(c.count_date)}</strong></div><div class="detail-card"><small>Unidade</small><strong>${esc(c.unit)}</strong></div><div class="detail-card"><small>Conferente</small><strong>${esc(c.counter_name)}</strong></div><div class="detail-card"><small>Adições</small><strong>${entries.length}</strong></div></div><div class="asset-history-total-cards"><div class="asset-history-total-card patio"><span>Pátio</span><strong>${assetTotalLabel(patio)}</strong><small>${patio.entries} adição${patio.entries===1?'':'ões'}</small></div><div class="asset-history-total-card refugo"><span>Refugo</span><strong>${assetTotalLabel(refugo)}</strong><small>${refugo.entries} adição${refugo.entries===1?'':'ões'}</small></div></div><div class="asset-history-view-tabs" role="tablist"><button type="button" class="asset-history-view-tab active" data-asset-history-tab="TOTAL">TOTAL</button><button type="button" class="asset-history-view-tab patio" data-asset-history-tab="PATIO">PÁTIO</button><button type="button" class="asset-history-view-tab refugo" data-asset-history-tab="REFUGO">REFUGO</button></div><div class="asset-history-view-caption"><strong id="assetHistoryViewTitle">Total</strong><span id="assetHistoryViewSummary">Pátio + Refugo • ${assetTotalLabel(total)}</span></div><div class="table-wrap"><table class="asset-history-total-table"><thead><tr><th>COD. SAP</th><th>COD.</th><th>Descrição</th><th>Visão</th><th>Palet/GFA</th><th>Lastro/GFA</th><th>Caixa/GFA</th><th>Avulso</th><th>Unidades</th></tr></thead><tbody id="assetHistoryViewTbody">${rotatingAssetHistoryTableRowsHtml(initialRows,'TOTAL')}</tbody></table></div>${adminBlock}`;
+  openModal(`Ativo de Giro • ${c.count_code}`,`${fmtDate(c.count_date)} • ${c.unit}`,body,[{label:'Baixar CSV',class:'primary',onClick:()=>downloadRotatingAssetHistoryCsv(c.id)},{label:'Fechar',class:'secondary',onClick:closeModal}]);const modalBody=$('modalBody');const renderView=view=>{const mode=String(view||'TOTAL').toUpperCase(),rows=rotatingAssetHistoryViewRows(entries,mode),totals=mode==='PATIO'?patio:mode==='REFUGO'?refugo:total,title=rotatingAssetHistoryViewLabel(mode),summary=mode==='TOTAL'?`Pátio + Refugo • ${assetTotalLabel(totals)}`:`${totals.entries} adição${totals.entries===1?'':'ões'} • ${assetTotalLabel(totals)}`;if($('assetHistoryViewTbody'))$('assetHistoryViewTbody').innerHTML=rotatingAssetHistoryTableRowsHtml(rows,mode);if($('assetHistoryViewTitle'))$('assetHistoryViewTitle').textContent=title;if($('assetHistoryViewSummary'))$('assetHistoryViewSummary').textContent=summary;modalBody?.querySelectorAll('[data-asset-history-tab]').forEach(btn=>{const active=btn.dataset.assetHistoryTab===mode;btn.classList.toggle('active',active);btn.setAttribute('aria-selected',active?'true':'false');});};modalBody?.querySelectorAll('[data-asset-history-tab]').forEach(btn=>btn.addEventListener('click',()=>renderView(btn.dataset.assetHistoryTab)));modalBody?.querySelectorAll('[data-asset-admin-edit]').forEach(btn=>btn.addEventListener('click',()=>openRotatingAssetEntryAdminEdit(btn.dataset.assetAdminEdit,c.id)));
+};
+
+const humanRotatingAssetErrorV151=humanRotatingAssetError;
+humanRotatingAssetError = function(e){const m=String(e?.message||e||'');if(m.includes('ATIVO_GIRO_MOTIVO_AJUSTE_OBRIGATORIO'))return 'Informe o motivo da correção.';if(m.includes('ATIVO_GIRO_LANCAMENTO_SEM_RETORNO'))return 'O servidor não confirmou a adição. Execute o SQL 25 e tente novamente.';return humanRotatingAssetErrorV151(e);};
+
+async function processOfflineRecord(row){
+  if(row.type==='FEFO_START'){
+    const {data,error}=await sb.rpc('offline_sync_fefo_start',{p_operation_id:row.id,p_unit:row.payload.unit});if(error)throw error;if(!data?.id)throw new Error('FEFO_SYNC_START_SEM_RETORNO');await offlineStateSet(`fefo_count_map:${row.payload.local_count_id}`,data.id);const snap=await offlineStateGet('fefo_current');if(snap?.count?.id===row.payload.local_count_id){snap.count={...data,_offline:false};snap.items=(snap.items||[]).map(i=>({...i,count_id:data.id}));await offlineStateSet('fefo_current',snap);}return data;
+  }
+  if(row.type==='FEFO_ITEM'){
+    const countId=await resolveOfflineFefoCountId(row.payload.p_count_id);if(!countId)throw new Error('FEFO_AGUARDANDO_INICIO');const itemId=row.payload.p_item_id&&!offlineIsLocalId(row.payload.p_item_id)?row.payload.p_item_id:null;const {data,error}=await sb.rpc('offline_sync_fefo_item',{p_operation_id:row.id,p_count_id:countId,p_product_code:row.payload.p_product_code,p_validity_date:row.payload.p_validity_date,p_lot:'',p_street:row.payload.p_street,p_pallet:row.payload.p_pallet,p_layer:row.payload.p_layer,p_box:row.payload.p_box,p_loose_unit:row.payload.p_loose_unit,p_item_id:itemId});if(error)throw error;return data;
+  }
+  if(row.type==='FEFO_DELETE'){const {data,error}=await sb.rpc('offline_sync_fefo_delete',{p_operation_id:row.id,p_item_id:row.payload.p_item_id});if(error)throw error;return data;}
+  if(row.type==='FEFO_FINISH'){const countId=await resolveOfflineFefoCountId(row.payload.p_count_id);if(!countId)throw new Error('FEFO_AGUARDANDO_INICIO');const {data,error}=await sb.rpc('offline_sync_fefo_finish',{p_operation_id:row.id,p_count_id:countId});if(error)throw error;await offlineStateSet('fefo_current',{count:null,items:[]});return data;}
+  if(row.type==='PULL_STEP'){const p=row.payload,{data,error}=await sb.rpc('offline_sync_pull_step',{p_operation_id:row.id,p_trip_id:p.p_trip_id,p_step_id:p.p_step_id,p_latitude:p.p_latitude,p_longitude:p.p_longitude,p_accuracy:p.p_accuracy,p_exception_reason:p.p_exception_reason||'',p_device_at:p.p_device_at});if(error)throw error;return data;}
+  if(row.type==='DAMAGE_CREATE'){
+    const p=row.payload,base=`${authUser.id}/offline_${row.id}`,signaturePath=`${base}/assinatura.jpg`;await offlineUploadDamageStorage(signaturePath,p.signature_blob);const uploaded=[];
+    for(let i=0;i<p.items.length;i++){const x=p.items[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${base}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await offlineUploadDamageStorage(path,ph.blob);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}uploaded.push({...x,photos});}
+    const serverPayload={unit:p.unit||p.receiptCtx?.unit||activeUnit,date:p.date,customer_code:p.customer.code,customer_name:p.customer.name,city:p.customer.city,map_number:p.map_number,signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first?.photo_path||'',latitude:first?.latitude,longitude:first?.longitude,accuracy:first?.accuracy,gps_at:first?.gps_at};})};const {data,error}=await sb.rpc('offline_sync_damage_request',{p_operation_id:row.id,p_payload:serverPayload});if(error)throw error;const ctx={...p.receiptCtx,request_id:data?.request_id||null};await offlineSaveDamageReceipt(ctx);return data;
+  }
+  throw new Error(`TIPO_OFFLINE_DESCONHECIDO:${row.type}`);
+}
+
+async function syncOfflineQueue({silent=false}={}){
+  if(offlineSyncRunning||!navigator.onLine||!sb||!authUser)return false;offlineSyncRunning=true;offlineSyncLastError='';updateOnlineStatus();let success=0,touchedFefo=false,touchedPull=false,touchedDamage=false;
+  try{
+    const rows=await offlineQueueRows();
+    for(const row of rows){try{row.status='SYNCING';row.tries=Number(row.tries||0)+1;row.last_error='';await offlineQueueUpdate(row);await processOfflineRecord(row);await offlineDelete('queue',row.id);success++;if(row.type.startsWith('FEFO_'))touchedFefo=true;if(row.type==='PULL_STEP')touchedPull=true;if(row.type==='DAMAGE_CREATE')touchedDamage=true;}catch(e){row.status='ERROR';row.last_error=String(e?.message||e||'Erro de sincronização');offlineSyncLastError=row.last_error;await offlineQueueUpdate(row);console.warn('Fila offline',row.type,row.id,e);break;}}
+    if(touchedFefo&&hasPerm('FEFO_CREATE'))await loadFefoCurrent(true);if(touchedPull&&isPullDriver())await loadPullActiveTrip(true);if(touchedDamage&&success&&!silent)toast('Avaria sincronizada. Toque no status Online para abrir o comprovante.','success');
+    if(success&&!silent&&!touchedDamage)toast(`${success} registro${success===1?'':'s'} sincronizado${success===1?'':'s'}.`,'success');
+    return !offlineSyncLastError;
+  }finally{offlineSyncRunning=false;updateOnlineStatus();}
+}
+
+const startAppV151=startApp;
+startApp = async function(){await startAppV151();if(!offlinePillBound){$('syncPill')?.addEventListener('click',async()=>{if(navigator.onLine)await syncOfflineQueue({silent:false});if(await offlineOpenNextDamageReceipt())return;if(!navigator.onLine)toast('Sem internet. Os registros continuarão salvos no aparelho.','');else if(!(await offlinePendingCount()))toast('Tudo sincronizado.','success');});offlinePillBound=true;}updateOnlineStatus();if(navigator.onLine)syncOfflineQueue({silent:true});};
+
+
+// V1.6.0 - CONTROLE POR UNIDADE ---------------------------------------------
+const UNIT_ACCESS_CACHE_PREFIX='disb_active_unit_v160_';
+function unitAccessKey(){return `${UNIT_ACCESS_CACHE_PREFIX}${authUser?.id||'anon'}`;}
+function currentUnit(){return activeUnit||'';}
+function hasCurrentUnit(){return !!activeUnit&&myUnits.includes(activeUnit);}
+function userUnitsFor(userId){return userUnitRows.filter(x=>String(x.user_id)===String(userId)).map(x=>String(x.unit_name)).sort((a,b)=>a.localeCompare(b,'pt-BR'));}
+function renderActiveUnitSelector(){
+  const el=$('activeUnitSelect');if(!el)return;
+  el.innerHTML=myUnits.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  if(activeUnit&&myUnits.includes(activeUnit))el.value=activeUnit;
+  el.disabled=myUnits.length<=1;
+  const wrap=$('activeUnitSwitcher');if(wrap)wrap.classList.toggle('unit-single',myUnits.length<=1);
+}
+async function loadUnitAccess(){
+  if(!sb||!authUser)return false;
+  const {data,error}=await sb.rpc('get_my_units');
+  if(error){console.warn('Unidades do usuario',error);myUnits=[];activeUnit='';return false;}
+  myUnits=(data||[]).map(x=>String(x?.unit_name??x??'').trim()).filter(Boolean);
+  let saved='';try{saved=localStorage.getItem(unitAccessKey())||'';}catch(_e){}
+  activeUnit=myUnits.includes(saved)?saved:(myUnits[0]||'');
+  renderActiveUnitSelector();
+  return !!activeUnit;
+}
+function resetUnitScopedState(){
+  pendingNris=[];historyNris=[];selectedNris.clear();adminAvarias=[];salesDamageMyRequests=[];salesDamageManageRequests=[];
+  fefoActiveCount=null;fefoItems=[];fefoEditingItemId=null;fefoActiveCounts=[];fefoReports=[];fefoItemsByCount.clear();
+  rotatingAssetActiveCount=null;rotatingAssetEntries=[];rotatingAssetHistory=[];rotatingAssetEntriesByCount.clear();
+  marketplaceActiveReceipt=null;marketplaceDashboardReceipts=[];pullActiveTrip=null;pullDriverEvents=[];pullDriverOccurrences=[];pullHistory=[];
+}
+async function changeActiveUnit(next){
+  next=String(next||'').trim();if(!myUnits.includes(next)||next===activeUnit)return;
+  activeUnit=next;try{localStorage.setItem(unitAccessKey(),activeUnit);}catch(_e){}
+  resetUnitScopedState();renderActiveUnitSelector();refRefreshPromise=null;refs.units=myUnits.map(name=>({name}));populateReferenceInputs();
+  await loadReferences(false);
+  if(canNri()){await loadPending(true);if(hasPerm('MARKETPLACE_RECEIVE'))await loadMarketplaceModule(true);if(hasPerm('NRI_PENDING_VIEW'))await loadPullNriPending(true);}
+  if(canFefo())await refreshFefoBadge(true);
+  if(canRotatingAsset()){await loadRotatingAssetProducts(true);if(hasPerm('ROTATING_ASSET_CREATE'))await loadRotatingAssetCurrent(true);}
+  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))await loadAdminAvarias(true);
+  if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);
+  if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))await loadSalesDamageManage(true);
+  if(canPull())await initPullModule();
+  if(activeView)openView(activeView,true);
+  toast(`Unidade atual: ${activeUnit}`,'success');
+}
+
+const loadProfileBeforeUnitScope=loadProfile;
+loadProfile=async function(user){
+  const ok=await loadProfileBeforeUnitScope(user);if(!ok)return false;
+  await loadUnitAccess();return true;
+};
+
+function renderUserUnitEditor(user=null){
+  const box=$('usuarioUnidades');if(!box)return;
+  const selected=new Set(user?userUnitsFor(user.id):(activeUnit?[activeUnit]:[]));
+  const units=refs.units.length?myUnits.length?[...new Set([...refs.units.map(x=>x.name),...myUnits])]:refs.units.map(x=>x.name):myUnits;
+  box.innerHTML=units.length?units.sort((a,b)=>a.localeCompare(b,'pt-BR')).map(u=>`<label class="user-unit-row"><input type="checkbox" data-user-unit="${esc(u)}" ${selected.has(u)?'checked':''}><span>${esc(u)}</span></label>`).join(''):'<div class="empty-state">Nenhuma unidade disponível.</div>';
+}
+function selectedUserUnits(){return [...($('usuarioUnidades')?.querySelectorAll('[data-user-unit]:checked')||[])].map(x=>x.dataset.userUnit);}
+
+loadUsers=async function(){
+  if(!hasPerm('ADMIN_USERS'))return;
+  try{
+    const [u,pms,rp,up,uu,audit]=await Promise.all([
+      sb.from('profiles').select('*').order('name'),
+      sb.from('permissions').select('*').eq('active',true).order('module').order('sort_order'),
+      sb.from('role_permissions').select('*'),
+      sb.from('user_permissions').select('*'),
+      sb.from('user_units').select('*').order('unit_name'),
+      sb.from('user_unit_access_audit').select('*').order('changed_at',{ascending:false}).limit(500)
+    ]);
+    const err=[u,pms,rp,up,uu,audit].find(x=>x.error)?.error;if(err)throw err;
+    users=u.data||[];permissionRows=pms.data||PERMISSION_CATALOG;rolePermissionRows=rp.data||[];userPermissionRows=up.data||[];userUnitRows=uu.data||[];userUnitAuditRows=audit.data||[];
+    renderUsers();if(!$('usuarioOriginal').value){renderUserPermissionEditor(null,true);renderUserUnitEditor(null);}
+  }catch(e){toast(humanUserAdminError(e),'error');}
+};
+renderUsers=function(){
+  const body=$('tbodyUsuarios');if(!body)return;
+  body.innerHTML=users.length?users.map(u=>{const enabled=effectiveUserPermissions(u),custom=userPermissionOverrides(u.id).length,units=userUnitsFor(u.id);return `<tr><td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${esc(ROLE_LABELS[u.role]||u.role)}</td><td><strong>${units.length?units.map(esc).join('<br>'):'Sem unidade'}</strong></td><td><strong>${enabled.size} habilitada${enabled.size===1?'':'s'}</strong><small>${u.role==='ADMIN'?'Acesso do perfil Admin':custom?`${custom} exceção(ões) individual(is)`:'Padrão do cargo'}</small></td><td>${u.active?'<span class="status ok">Ativo</span>':'<span class="status bad">Inativo</span>'}</td><td><button class="mini-btn" data-user="${esc(u.username)}">Editar</button></td></tr>`;}).join(''):'<tr><td colspan="7">Nenhum usuário cadastrado.</td></tr>';
+};
+onUserTableClick=function(e){
+  const b=e.target.closest('button[data-user]');if(!b)return;const u=users.find(x=>x.username===b.dataset.user);if(!u)return;
+  $('usuarioOriginal').value=u.username;$('usuarioLogin').value=u.username;$('usuarioNome').value=u.name;$('usuarioPerfil').value=u.role;$('usuarioSenha').value='';$('usuarioAtivo').checked=u.active;renderUserPermissionEditor(u,false);renderUserUnitEditor(u);
+};
+clearUserForm=function(){$('usuarioOriginal').value='';$('usuarioLogin').value='';$('usuarioNome').value='';$('usuarioPerfil').value='COLABORADOR_ARMAZEM';$('usuarioSenha').value='';$('usuarioAtivo').checked=true;renderUserPermissionEditor(null,true);renderUserUnitEditor(null);};
+saveUser=async function(e){
+  e.preventDefault();const original=$('usuarioOriginal').value.trim();const units=selectedUserUnits();
+  const body={action:original?'update':'create',originalUsername:original,username:$('usuarioLogin').value,name:$('usuarioNome').value,role:$('usuarioPerfil').value,password:$('usuarioSenha').value,active:$('usuarioAtivo').checked,permissions:selectedUserPermissions(),units};
+  if(!body.username.trim()||!body.name.trim())return toast('Informe usuário e nome.','error');
+  if(body.active&&!units.length)return toast('Selecione ao menos uma unidade para o usuário.','error');
+  if(!original&&body.password.length<6)return toast('A senha do novo usuário deve ter pelo menos 6 caracteres.','error');
+  const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';
+  try{const {data:{session},error:sessionError}=await sb.auth.getSession();if(sessionError||!session?.access_token)throw new Error('Sua sessão expirou. Saia do sistema e entre novamente.');const {data,error}=await sb.functions.invoke('admin-users',{body,headers:{Authorization:`Bearer ${session.access_token}`}});if(error){let detail='';try{if(error.context&&typeof error.context.clone==='function'){const response=error.context.clone();try{const parsed=await response.json();detail=parsed?.error||parsed?.message||parsed?.code||'';}catch(_jsonErr){detail=await response.text().catch(()=> '');}}}catch(_e){}if(detail)throw new Error(detail);throw new Error(String(error.message||error));}if(data?.ok===false)throw new Error(data.error||'Falha ao salvar usuário.');toast(data?.repaired?'Usuário recuperado e salvo com sucesso.':'Usuário, permissões e unidades salvos.','success');clearUserForm();await loadUsers();}
+  catch(err){toast(humanUserAdminError(err),'error');}
+  finally{btn.disabled=false;btn.textContent='Salvar usuário';}
+};
+
+const humanUserAdminErrorUnitBase=humanUserAdminError;
+humanUserAdminError=function(e){const m=String(e?.message||e||'');if(m.includes('UNIDADE_OBRIGATORIA'))return 'Selecione ao menos uma unidade para o usuário.';if(m.includes('UNIDADE_INVALIDA'))return 'Uma das unidades selecionadas é inválida ou está inativa.';if(/user_units|user_unit_access_audit|get_my_units/i.test(m))return 'O controle por unidade ainda não foi aplicado. Execute o SQL 26 e republique a função admin-users.';return humanUserAdminErrorUnitBase(e);};
+
+const startAppBeforeUnitScope=startApp;
+startApp=async function(){
+  await startAppBeforeUnitScope();renderActiveUnitSelector();
+  const select=$('activeUnitSelect');if(select&&!select.dataset.bound){select.addEventListener('change',e=>changeActiveUnit(e.target.value));select.dataset.bound='1';}
+  if(!hasCurrentUnit())toast('Seu usuário não possui unidade associada. Solicite ao Admin a liberação em Usuários e perfis.','error');
+};
 
 })();

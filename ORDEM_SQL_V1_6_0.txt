@@ -1,0 +1,12 @@
+DISB GESTAO v1.6.0 - ORDEM DE BANCO
+
+SE O AMBIENTE JA ESTA ATUALIZADO ATE A v1.5.1:
+1) Execute manualmente: supabase/25_v1_6_0_offline_sync_ativo_giro_auditoria.sql
+2) Execute manualmente: supabase/26_v1_6_0_unidades_por_usuario.sql
+3) Republique a Edge Function: supabase/functions/admin-users/index.ts
+
+SQLs 22, 23 e 24 estao no pacote para referencia/recuperacao. Se ja foram aplicados, nao precisam ser executados novamente.
+
+ATENCAO APOS O SQL 26:
+- ADMINs ativos existentes recebem todas as unidades ativas inicialmente.
+- Usuarios nao-Admin existentes precisam ser editados em Admin > Usuarios e perfis e receber pelo menos uma unidade.
