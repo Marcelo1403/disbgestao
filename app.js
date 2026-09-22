@@ -166,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.6.0-unidades',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.6.1-user-units',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -3690,20 +3690,66 @@ onUserTableClick=function(e){
   $('usuarioOriginal').value=u.username;$('usuarioLogin').value=u.username;$('usuarioNome').value=u.name;$('usuarioPerfil').value=u.role;$('usuarioSenha').value='';$('usuarioAtivo').checked=u.active;renderUserPermissionEditor(u,false);renderUserUnitEditor(u);
 };
 clearUserForm=function(){$('usuarioOriginal').value='';$('usuarioLogin').value='';$('usuarioNome').value='';$('usuarioPerfil').value='COLABORADOR_ARMAZEM';$('usuarioSenha').value='';$('usuarioAtivo').checked=true;renderUserPermissionEditor(null,true);renderUserUnitEditor(null);};
+function adminUserErrorText(value){
+  if(value==null)return '';
+  if(typeof value==='string')return value;
+  if(value instanceof Error)return value.message||String(value);
+  if(typeof value==='object'){
+    const parts=[value.message,value.error,value.details,value.hint,value.code].map(x=>typeof x==='string'?x.trim():'').filter(Boolean);
+    if(parts.length)return parts.join(' | ');
+    try{return JSON.stringify(value);}catch(_e){return String(value);}
+  }
+  return String(value);
+}
+
 saveUser=async function(e){
-  e.preventDefault();const original=$('usuarioOriginal').value.trim();const units=selectedUserUnits();
+  e.preventDefault();
+  const original=$('usuarioOriginal').value.trim();
+  const units=selectedUserUnits();
   const body={action:original?'update':'create',originalUsername:original,username:$('usuarioLogin').value,name:$('usuarioNome').value,role:$('usuarioPerfil').value,password:$('usuarioSenha').value,active:$('usuarioAtivo').checked,permissions:selectedUserPermissions(),units};
   if(!body.username.trim()||!body.name.trim())return toast('Informe usuário e nome.','error');
   if(body.active&&!units.length)return toast('Selecione ao menos uma unidade para o usuário.','error');
   if(!original&&body.password.length<6)return toast('A senha do novo usuário deve ter pelo menos 6 caracteres.','error');
-  const btn=e.submitter;btn.disabled=true;btn.textContent='Salvando…';
-  try{const {data:{session},error:sessionError}=await sb.auth.getSession();if(sessionError||!session?.access_token)throw new Error('Sua sessão expirou. Saia do sistema e entre novamente.');const {data,error}=await sb.functions.invoke('admin-users',{body,headers:{Authorization:`Bearer ${session.access_token}`}});if(error){let detail='';try{if(error.context&&typeof error.context.clone==='function'){const response=error.context.clone();try{const parsed=await response.json();detail=parsed?.error||parsed?.message||parsed?.code||'';}catch(_jsonErr){detail=await response.text().catch(()=> '');}}}catch(_e){}if(detail)throw new Error(detail);throw new Error(String(error.message||error));}if(data?.ok===false)throw new Error(data.error||'Falha ao salvar usuário.');toast(data?.repaired?'Usuário recuperado e salvo com sucesso.':'Usuário, permissões e unidades salvos.','success');clearUserForm();await loadUsers();}
-  catch(err){toast(humanUserAdminError(err),'error');}
-  finally{btn.disabled=false;btn.textContent='Salvar usuário';}
+  const btn=e.submitter||document.querySelector('#formUsuario button[type="submit"], #formUsuario button:not([type])');
+  if(btn){btn.disabled=true;btn.textContent='Salvando…';}
+  try{
+    const {data:{session},error:sessionError}=await sb.auth.getSession();
+    if(sessionError||!session?.access_token)throw new Error('Sua sessão expirou. Saia do sistema e entre novamente.');
+    const {data,error}=await sb.functions.invoke('admin-users',{body,headers:{Authorization:`Bearer ${session.access_token}`}});
+    if(error){
+      let detail='';
+      try{
+        if(error.context&&typeof error.context.clone==='function'){
+          const response=error.context.clone();
+          try{
+            const parsed=await response.json();
+            detail=adminUserErrorText(parsed?.error??parsed?.message??parsed);
+          }catch(_jsonErr){detail=await response.text().catch(()=> '');}
+        }
+      }catch(_e){}
+      throw new Error(detail||adminUserErrorText(error)||'Falha ao chamar a função admin-users.');
+    }
+    if(data?.ok===false)throw new Error(adminUserErrorText(data?.error??data)||'Falha ao salvar usuário.');
+    toast(data?.repaired?'Usuário recuperado e salvo com sucesso.':'Usuário, permissões e unidades salvos.','success');
+    clearUserForm();
+    await loadUsers();
+  }catch(err){
+    console.error('Falha ao salvar usuário',err);
+    toast(humanUserAdminError(err),'error');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Salvar usuário';}
+  }
 };
 
 const humanUserAdminErrorUnitBase=humanUserAdminError;
-humanUserAdminError=function(e){const m=String(e?.message||e||'');if(m.includes('UNIDADE_OBRIGATORIA'))return 'Selecione ao menos uma unidade para o usuário.';if(m.includes('UNIDADE_INVALIDA'))return 'Uma das unidades selecionadas é inválida ou está inativa.';if(/user_units|user_unit_access_audit|get_my_units/i.test(m))return 'O controle por unidade ainda não foi aplicado. Execute o SQL 26 e republique a função admin-users.';return humanUserAdminErrorUnitBase(e);};
+humanUserAdminError=function(e){
+  const m=adminUserErrorText(e)||'Erro desconhecido ao salvar usuário.';
+  if(m.includes('UNIDADE_OBRIGATORIA'))return 'Selecione ao menos uma unidade para o usuário.';
+  if(m.includes('UNIDADE_INVALIDA'))return 'Uma das unidades selecionadas é inválida ou está inativa.';
+  if(/admin_set_user_units|42883/i.test(m))return 'O hotfix de unidades ainda não foi aplicado. Execute o SQL 27 e republique a função admin-users.';
+  if(/user_units|user_unit_access_audit|get_my_units/i.test(m))return 'A estrutura de unidades apresentou erro no Supabase. Confira se os SQLs 26 e 27 foram executados. Detalhe: '+m;
+  return humanUserAdminErrorUnitBase(new Error(m));
+};
 
 const startAppBeforeUnitScope=startApp;
 startApp=async function(){

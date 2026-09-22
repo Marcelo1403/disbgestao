@@ -1,1 +1,1 @@
-v1.6.0 - offline com sincronizacao para FEFO, Avarias de Entrega e Puxada/Transferencia + correcao do Ativo de Giro e edicao auditada pelo Admin + NRI com lotes individuais e conciliacao por produto/lote + controle de acesso por uma ou mais unidades por usuario
+v1.6.1 - hotfix do cadastro de usuarios: atribuicao de unidades transacional no Supabase, auditoria preservada e mensagens de erro detalhadas

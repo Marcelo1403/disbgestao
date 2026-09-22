@@ -55,6 +55,27 @@ function getSecretKey(): string {
 
 
 
+function errorText(value: unknown): string {
+  if (value == null) return '';
+  if (value instanceof Error) return value.message || String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    const parts = [row.message, row.details, row.hint, row.code]
+      .map((x) => String(x ?? '').trim())
+      .filter(Boolean);
+    if (parts.length) return parts.join(' | ');
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value);
+}
+
+function throwSupabase(value: unknown, prefix = ''): never {
+  const detail = errorText(value) || 'ERRO_SUPABASE_SEM_DETALHE';
+  throw new Error(prefix ? `${prefix}: ${detail}` : detail);
+}
+
+
 async function savePermissionOverrides(admin: any, userId: string, role: string, permissions: unknown, updatedBy: string) {
   if (!Array.isArray(permissions)) return;
 
@@ -64,15 +85,15 @@ async function savePermissionOverrides(admin: any, userId: string, role: string,
     admin.from('permissions').select('code').eq('active', true),
     admin.from('role_permissions').select('permission_code').eq('role', role),
   ]);
-  if (permissionsError) throw permissionsError;
-  if (roleError) throw roleError;
+  if (permissionsError) throwSupabase(permissionsError, 'PERMISSOES_CATALOGO');
+  if (roleError) throwSupabase(roleError, 'PERMISSOES_PERFIL');
 
   const valid = new Set<string>((allPermissions || []).map((x: any) => String(x.code)));
   const defaults = new Set<string>((roleRows || []).map((x: any) => String(x.permission_code)));
   const enabled = new Set<string>(normalized.filter((code) => valid.has(code)));
 
   const { error: deleteError } = await admin.from('user_permissions').delete().eq('user_id', userId);
-  if (deleteError) throw deleteError;
+  if (deleteError) throwSupabase(deleteError, 'PERMISSOES_LIMPAR');
 
   if (role === 'ADMIN') return;
 
@@ -82,65 +103,30 @@ async function savePermissionOverrides(admin: any, userId: string, role: string,
 
   if (overrides.length) {
     const { error: insertError } = await admin.from('user_permissions').insert(overrides);
-    if (insertError) throw insertError;
+    if (insertError) throwSupabase(insertError, 'PERMISSOES_SALVAR');
   }
 }
 
-async function saveUserUnits(admin: any, userId: string, units: unknown, updatedBy: string, updatedByName: string, active: boolean) {
+async function saveUserUnits(caller: any, userId: string, units: unknown, active: boolean) {
   const requested = Array.isArray(units)
     ? [...new Set<string>(units.map((x: unknown) => String(x || '').trim()).filter(Boolean))]
     : [];
 
   if (active && requested.length === 0) throw new Error('UNIDADE_OBRIGATORIA');
 
-  const { data: validRows, error: validError } = await admin
-    .from('units')
-    .select('name')
-    .eq('active', true)
-    .in('name', requested.length ? requested : ['__SEM_UNIDADE__']);
-  if (validError) throw validError;
-
-  const valid = new Set<string>((validRows || []).map((x: any) => String(x.name)));
-  const invalid = requested.filter((x) => !valid.has(x));
-  if (invalid.length) throw new Error(`UNIDADE_INVALIDA:${invalid.join(',')}`);
-
-  const { data: oldRows, error: oldError } = await admin
-    .from('user_units')
-    .select('unit_name')
-    .eq('user_id', userId);
-  if (oldError) throw oldError;
-
-  const oldUnits = (oldRows || []).map((x: any) => String(x.unit_name)).sort();
-  const newUnits = [...requested].sort();
-  const changed = JSON.stringify(oldUnits) !== JSON.stringify(newUnits);
-
-  const { error: deleteError } = await admin.from('user_units').delete().eq('user_id', userId);
-  if (deleteError) throw deleteError;
-
-  if (newUnits.length) {
-    const { error: insertError } = await admin.from('user_units').insert(
-      newUnits.map((unit_name) => ({ user_id: userId, unit_name, created_by: updatedBy })),
-    );
-    if (insertError) throw insertError;
-  }
-
-  if (changed) {
-    const { error: auditError } = await admin.from('user_unit_access_audit').insert({
-      user_id: userId,
-      old_units: oldUnits,
-      new_units: newUnits,
-      changed_by: updatedBy,
-      changed_by_name: updatedByName,
-    });
-    if (auditError) throw auditError;
-  }
+  const { error } = await caller.rpc('admin_set_user_units', {
+    p_user_id: userId,
+    p_units: requested,
+    p_active: active,
+  });
+  if (error) throwSupabase(error, 'UNIDADES_USUARIO');
 }
 
 async function findAuthUserByEmail(admin: any, email: string) {
   const target = email.toLowerCase();
   for (let page = 1; page <= 20; page++) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
-    if (error) throw error;
+    if (error) throwSupabase(error, 'AUTH_LISTAR_USUARIOS');
     const users = data?.users || [];
     const found = users.find((u: any) => String(u.email || '').toLowerCase() === target);
     if (found) return found;
@@ -262,7 +248,7 @@ Deno.serve(async (req: Request) => {
         .select('id,username,name,role,active')
         .eq('username', username)
         .maybeSingle();
-      if (existingProfileError) throw existingProfileError;
+      if (existingProfileError) throwSupabase(existingProfileError, 'PERFIL_EXISTENTE');
 
       let userId = existingProfile?.id || null;
       if (!userId) {
@@ -277,15 +263,15 @@ Deno.serve(async (req: Request) => {
           email_confirm: true,
           user_metadata: { username, name },
         });
-        if (authRepairError) throw authRepairError;
+        if (authRepairError) throwSupabase(authRepairError, 'AUTH_RECUPERAR_USUARIO');
 
         const { error: profileRepairError } = await admin
           .from('profiles')
           .upsert({ id: userId, username, name, role, active }, { onConflict: 'id' });
-        if (profileRepairError) throw profileRepairError;
+        if (profileRepairError) throwSupabase(profileRepairError, 'PERFIL_RECUPERAR_USUARIO');
 
         await savePermissionOverrides(admin, userId, role, body.permissions, userData.user.id);
-        await saveUserUnits(admin, userId, body.units, userData.user.id, callerProfile.name, active);
+        await saveUserUnits(caller, userId, body.units, active);
         return json({ ok: true, id: userId, repaired: true });
       }
 
@@ -295,16 +281,16 @@ Deno.serve(async (req: Request) => {
         email_confirm: true,
         user_metadata: { username, name },
       });
-      if (createError) throw createError;
+      if (createError) throwSupabase(createError, 'AUTH_CRIAR_USUARIO');
       if (!created.user) throw new Error('FALHA_AO_CRIAR_USUARIO');
 
       const { error: profileUpsertError } = await admin
         .from('profiles')
         .upsert({ id: created.user.id, username, name, role, active }, { onConflict: 'id' });
-      if (profileUpsertError) throw profileUpsertError;
+      if (profileUpsertError) throwSupabase(profileUpsertError, 'PERFIL_CRIAR_USUARIO');
 
       await savePermissionOverrides(admin, created.user.id, role, body.permissions, userData.user.id);
-      await saveUserUnits(admin, created.user.id, body.units, userData.user.id, callerProfile.name, active);
+      await saveUserUnits(caller, created.user.id, body.units, active);
       return json({ ok: true, id: created.user.id, repaired: false });
     }
 
@@ -315,7 +301,7 @@ Deno.serve(async (req: Request) => {
         .select('id,username')
         .eq('username', original)
         .maybeSingle();
-      if (findError) throw findError;
+      if (findError) throwSupabase(findError, 'PERFIL_LOCALIZAR_USUARIO');
       if (!profile) return json({ ok: false, error: 'USUARIO_NAO_ENCONTRADO' });
 
       const attrs: Record<string, unknown> = {
@@ -329,22 +315,22 @@ Deno.serve(async (req: Request) => {
       }
 
       const { error: authUpdateError } = await admin.auth.admin.updateUserById(profile.id, attrs);
-      if (authUpdateError) throw authUpdateError;
+      if (authUpdateError) throwSupabase(authUpdateError, 'AUTH_ATUALIZAR_USUARIO');
 
       const { error: profileUpdateError } = await admin
         .from('profiles')
         .update({ username, name, role, active })
         .eq('id', profile.id);
-      if (profileUpdateError) throw profileUpdateError;
+      if (profileUpdateError) throwSupabase(profileUpdateError, 'PERFIL_ATUALIZAR_USUARIO');
 
       await savePermissionOverrides(admin, profile.id, role, body.permissions, userData.user.id);
-      await saveUserUnits(admin, profile.id, body.units, userData.user.id, callerProfile.name, active);
+      await saveUserUnits(caller, profile.id, body.units, active);
       return json({ ok: true, id: profile.id });
     }
 
     return json({ ok: false, error: 'ACAO_INVALIDA' });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorText(e);
     console.error('admin-users unexpected', message, e);
     return json({ ok: false, error: message || 'ERRO_INTERNO_ADMIN_USERS' });
   }

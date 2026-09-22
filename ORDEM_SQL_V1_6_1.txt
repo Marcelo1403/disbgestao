@@ -1,0 +1,16 @@
+DISB GESTAO v1.6.1 - HOTFIX UNIDADES DE USUARIO
+
+PRE-REQUISITO:
+- SQL 25 da v1.6.0 ja executado.
+- SQL 26 da v1.6.0 ja executado.
+
+EXECUTAR AGORA:
+1. supabase/27_v1_6_1_corrige_unidades_usuario.sql
+
+NAO EXECUTAR NOVAMENTE OS SQLs 25 E 26.
+
+DEPOIS DO SQL 27:
+- aplicar o patch v1.6.1;
+- republicar supabase/functions/admin-users/index.ts;
+- sincronizar Android;
+- gerar APK v1.6.1.
