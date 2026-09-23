@@ -1,1 +1,1 @@
-v1.6.4 - corrige abas TOTAL, PATIO e REFUGO e resumos no historico do Ativo de Giro
+v1.6.6 - restaura visual dos botoes em Avarias de Vendas e consolida cores/comprovante das Avarias de Entrega

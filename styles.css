@@ -736,3 +736,207 @@ button[data-sales-launch]:focus-visible,
   .asset-history-view-tab{min-height:46px;font-size:10px;padding:0 5px}
   .asset-history-view-caption{align-items:flex-start;flex-direction:column;gap:3px}
 }
+
+/* ==========================================================================
+   v1.6.5 - Restaura cores das Avarias de Entrega e visual do comprovante
+   ========================================================================== */
+.status.analysis{background:#eef2ff!important;color:#4338ca!important;border:1px solid #c7d2fe!important}
+.status.approved{background:#ecfdf3!important;color:#067647!important;border:1px solid #abefc6!important}
+.status.launched{background:#f4f0ff!important;color:#6938ef!important;border:1px solid #d9d6fe!important}
+.status.delivered{background:#ecfdf8!important;color:#087a61!important;border:1px solid #a6f4c5!important}
+.status.rejected{background:#fff1f3!important;color:#c01048!important;border:1px solid #fecdd6!important}
+.status.discarded{background:#f2f4f7!important;color:#475467!important;border:1px solid #d0d5dd!important}
+
+.receipt-proof-card{border:1px solid #dbe5ef;border-radius:15px;background:#fff;padding:15px;margin-bottom:16px;box-shadow:0 5px 18px rgba(15,23,42,.045)}
+.receipt-proof-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #edf1f5}
+.receipt-proof-head>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.receipt-proof-head small{font-size:9px;font-weight:1000;color:#667085;letter-spacing:.055em}
+.receipt-proof-head strong{font-size:16px;line-height:1.25;color:#172033}
+.receipt-proof-head span:not(.status){font-size:10px;color:#667085}
+.receipt-products{display:flex;flex-direction:column;gap:7px;padding:12px 0}
+.receipt-products>div{display:flex;justify-content:space-between;gap:14px;border:1px solid #edf1f5;border-radius:10px;padding:9px 11px;background:#f9fbfd}
+.receipt-products strong{font-size:11px;color:#172033}
+.receipt-products span{font-size:10px;font-weight:800;color:#475467;white-space:nowrap}
+.receipt-observation{margin:0;padding:11px 12px;border-radius:10px;background:#fff8e8;border:1px solid #f6d990;color:#6b4d00;font-size:10.5px;line-height:1.45}
+.receipt-send-all{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;margin:0 0 10px;border:1px solid #b7ebc6;background:#f3fff7;border-radius:12px}
+.receipt-send-all small{font-size:9px;color:#53705d;line-height:1.35}
+.receipt-contact-list{display:flex;flex-direction:column;gap:8px}
+.receipt-contact-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
+.receipt-contact-row>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.receipt-contact-row strong{font-size:11px;color:#172033}
+.receipt-contact-row span{font-size:10px;color:#667085}
+.whatsapp-btn{background:#128c4b!important;border-color:#128c4b!important;color:#fff!important;white-space:nowrap}
+.whatsapp-btn:hover{background:#0e753e!important;border-color:#0e753e!important}
+.contact-last-update{padding:8px 2px 2px;font-size:9px;color:#667085}
+.manual-contact-card{margin-top:14px;padding:13px;border:1px solid #dbe5ef;border-radius:13px;background:#f8fafc}
+.manual-contact-card>strong{display:block;font-size:12px;color:#172033;margin-bottom:3px}
+.manual-contact-card>small{display:block;font-size:9px;color:#667085;line-height:1.4;margin-bottom:10px}
+
+@media(max-width:700px){
+  .receipt-proof-head,.receipt-contact-row,.receipt-send-all{align-items:stretch;flex-direction:column}
+  .receipt-contact-row .btn,.receipt-send-all .btn{width:100%;justify-content:center}
+  .receipt-products>div{align-items:flex-start;flex-direction:column;gap:3px}
+  .receipt-products span{white-space:normal}
+  .manual-contact-card .grid{grid-template-columns:1fr!important}
+  .manual-contact-card .span-2{grid-column:auto!important}
+}
+
+/* ==========================================================================
+   v1.6.6 - Avarias de Vendas: restaura botoes compactos e legiveis
+   ========================================================================== */
+.sales-selection-bar{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:10px!important;
+  flex-wrap:wrap!important;
+  margin:0 0 12px!important;
+  padding:9px 11px!important;
+  border:1px solid #e1e8ef!important;
+  border-radius:11px!important;
+  background:#f8fafc!important;
+}
+.sales-select-all{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:8px!important;
+  margin:0!important;
+  padding:7px 10px!important;
+  border:1px solid #d8e1ea!important;
+  border-radius:9px!important;
+  background:#fff!important;
+  color:#344054!important;
+  font-size:10.5px!important;
+  font-weight:900!important;
+  cursor:pointer!important;
+}
+.sales-select-all input{width:17px!important;height:17px!important;accent-color:#2563eb!important}
+.sales-selection-bar #salesDamageSelectionSummary{
+  min-width:auto!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  color:#667085!important;
+}
+
+.sales-launch-action{
+  display:flex!important;
+  align-items:center!important;
+  gap:10px!important;
+  padding:0 13px 12px!important;
+}
+button[data-sales-launch],
+.sales-launch-action button[data-sales-launch],
+.sales-launch-action .sales-launch-btn{
+  width:auto!important;
+  min-width:260px!important;
+  max-width:390px!important;
+  min-height:48px!important;
+  border:1px solid #d9d6fe!important;
+  border-radius:10px!important;
+  background:#f4f0ff!important;
+  background-image:none!important;
+  color:#5925dc!important;
+  padding:10px 13px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:2px!important;
+  text-align:left!important;
+  box-shadow:none!important;
+  cursor:pointer!important;
+  transform:none!important;
+}
+button[data-sales-launch] span,
+.sales-launch-action button[data-sales-launch] span,
+.sales-launch-action .sales-launch-btn span{
+  color:#5925dc!important;
+  font-size:11.5px!important;
+  line-height:1.25!important;
+  font-weight:900!important;
+}
+button[data-sales-launch] small,
+.sales-launch-action button[data-sales-launch] small,
+.sales-launch-action .sales-launch-btn small{
+  color:#7f56d9!important;
+  font-size:9px!important;
+  line-height:1.3!important;
+  font-weight:700!important;
+}
+button[data-sales-launch]:hover,
+.sales-launch-action button[data-sales-launch]:hover,
+.sales-launch-action .sales-launch-btn:hover{
+  border-color:#bdb4fe!important;
+  background:#ede9fe!important;
+  color:#4c1d95!important;
+  box-shadow:0 4px 10px rgba(89,37,220,.08)!important;
+  transform:none!important;
+}
+
+.sales-launch-action .sales-delivered-btn,
+button[data-sales-delivered]{
+  width:auto!important;
+  min-width:260px!important;
+  max-width:390px!important;
+  min-height:48px!important;
+  border:1px solid #a6f4c5!important;
+  border-radius:10px!important;
+  background:#ecfdf8!important;
+  color:#087a61!important;
+  padding:10px 13px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:2px!important;
+  text-align:left!important;
+  box-shadow:none!important;
+  cursor:pointer!important;
+}
+.sales-launch-action .sales-delivered-btn span,
+button[data-sales-delivered] span{
+  color:#087a61!important;
+  font-size:11.5px!important;
+  line-height:1.25!important;
+  font-weight:900!important;
+}
+.sales-launch-action .sales-delivered-btn small,
+button[data-sales-delivered] small{
+  color:#32826f!important;
+  font-size:9px!important;
+  line-height:1.3!important;
+  font-weight:700!important;
+}
+.sales-launch-action .sales-delivered-btn:hover,
+button[data-sales-delivered]:hover{
+  background:#dff9ef!important;
+  border-color:#75e0b4!important;
+  box-shadow:0 4px 10px rgba(8,122,97,.08)!important;
+}
+
+/* Rodape de decisao dos modais: botoes consistentes e sem aspecto exagerado. */
+.modal-actions{gap:8px!important;flex-wrap:wrap!important}
+.modal-actions .btn{
+  min-height:42px!important;
+  border-radius:10px!important;
+  padding:10px 14px!important;
+  font-size:10.5px!important;
+  font-weight:900!important;
+  box-shadow:none!important;
+}
+
+@media(max-width:640px){
+  .sales-selection-bar{align-items:stretch!important;flex-direction:column!important}
+  .sales-select-all{width:100%!important;justify-content:center!important}
+  button[data-sales-launch],
+  .sales-launch-action button[data-sales-launch],
+  .sales-launch-action .sales-launch-btn,
+  .sales-launch-action .sales-delivered-btn,
+  button[data-sales-delivered]{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    min-height:50px!important;
+    padding:11px 13px!important;
+  }
+}
