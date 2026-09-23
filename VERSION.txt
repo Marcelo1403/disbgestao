@@ -1,1 +1,1 @@
-v1.6.3 - corrige layout do Ativo de Giro no desktop e mobile, amplia descricao dos produtos e atualiza identificacao/cache da versao
+v1.6.4 - corrige abas TOTAL, PATIO e REFUGO e resumos no historico do Ativo de Giro

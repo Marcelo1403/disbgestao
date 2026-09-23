@@ -709,3 +709,30 @@ button[data-sales-launch]:focus-visible,
   .asset-count-row .asset-desc strong{font-size:18px!important}
   .asset-count-row .asset-desc small{font-size:11px!important}
 }
+
+/* v1.6.4 - Historico do Ativo de Giro: abas e resumos */
+.asset-history-total-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.asset-history-total-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px 14px;border:1px solid #dbe5ee;border-radius:12px;background:#f8fbfe;color:#173650}
+.asset-history-total-card>span{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.35px}
+.asset-history-total-card>strong{font-size:13px;line-height:1.35;white-space:normal}
+.asset-history-total-card>small{font-size:10px;color:#6f8294;font-weight:800;white-space:nowrap}
+.asset-history-total-card.patio{border-left:4px solid #16a34a;background:#f4fbf6}
+.asset-history-total-card.refugo{border-left:4px solid #dc2626;background:#fff6f6}
+.asset-history-view-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 10px;padding:5px;border:1px solid #dbe5ee;border-radius:12px;background:#f4f7fa}
+.asset-history-view-tab{appearance:none;-webkit-appearance:none;min-height:42px;border:1px solid transparent;border-radius:9px;background:transparent;color:#41566b;font-size:11px;font-weight:1000;letter-spacing:.35px;cursor:pointer;transition:.15s ease}
+.asset-history-view-tab:hover{background:#fff;border-color:#d8e3ec}
+.asset-history-view-tab.active{background:#2563eb!important;border-color:#2563eb!important;color:#fff!important;box-shadow:0 4px 12px rgba(37,99,235,.22)}
+.asset-history-view-tab.patio:not(.active){color:#15803d}
+.asset-history-view-tab.refugo:not(.active){color:#b91c1c}
+.asset-history-view-caption{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#f7faff;border:1px solid #e3ebf3;color:#39536b}
+.asset-history-view-caption strong{font-size:12px;color:#172f46}
+.asset-history-view-caption span{font-size:11px;font-weight:700}
+@media(max-width:600px){
+  .asset-history-total-cards{grid-template-columns:1fr;gap:8px}
+  .asset-history-total-card{grid-template-columns:72px 1fr;gap:5px 9px;padding:11px 12px}
+  .asset-history-total-card>strong{font-size:12px}
+  .asset-history-total-card>small{grid-column:2;white-space:normal}
+  .asset-history-view-tabs{gap:5px;padding:4px}
+  .asset-history-view-tab{min-height:46px;font-size:10px;padding:0 5px}
+  .asset-history-view-caption{align-items:flex-start;flex-direction:column;gap:3px}
+}
