@@ -566,3 +566,146 @@ button[data-sales-launch]:focus-visible,
 .delivery-launch-btn span,.delivery-delivered-btn span{font-size:13px;font-weight:900}
 .delivery-launch-btn small,.delivery-delivered-btn small{font-size:10px;line-height:1.35;color:rgba(255,255,255,.9)}
 @media(max-width:640px){.modal-actions .delivery-modal-action{width:100%}.delivery-selection-bar{align-items:stretch}.delivery-select-all{width:100%;justify-content:center}}
+
+
+/* ==========================================================================\n   v1.6.3 - ATIVO DE GIRO: alinhamento desktop + leitura mobile\n   ========================================================================== */
+
+/* Desktop: 11 celulas = 11 colunas. Na v1.6.2 a grade tinha apenas 10 trilhas,
+   fazendo LOCAL/quantidades deslocarem e ACAO quebrar para a linha seguinte. */
+.asset-count-row{
+  min-width:1320px;
+  grid-template-columns:78px 78px minmax(250px,1.6fr) 132px repeat(5,82px) 190px 150px;
+}
+.asset-count-header>div{
+  min-width:0;
+  white-space:normal;
+  line-height:1.15;
+}
+.asset-count-row .asset-desc strong{
+  font-size:12.5px;
+  line-height:1.25;
+}
+.asset-count-row .asset-desc small{
+  font-size:9px;
+  line-height:1.25;
+}
+.asset-location-cell .choice-toggle{gap:5px}
+.asset-location-cell .choice-btn{min-width:0;padding:0 7px;font-size:10px}
+.asset-running-total{display:flex!important;flex-direction:column;justify-content:center;gap:4px}
+.asset-total-location{display:block;min-width:0}
+.asset-total-location span{display:block;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.25px}
+.asset-total-location strong{display:block;font-size:9px;white-space:normal;overflow-wrap:anywhere}
+
+/* Seletor de unidade: comportamento previsivel no topo em todas as larguras. */
+.unit-switcher{display:flex;flex-direction:column;gap:2px;min-width:170px;max-width:230px}
+.unit-switcher>span{font-size:8px;font-weight:900;text-transform:uppercase;color:#748094;letter-spacing:.04em}
+.unit-switcher select{width:100%;height:40px;border:1px solid #d9dfe8;border-radius:9px;background:#fff;padding:0 10px;color:#1f2937;font-weight:700}
+
+@media(max-width:820px){
+  .asset-count-table-wrap{overflow:visible!important}
+  .asset-count-row{
+    min-width:0!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:12px!important;
+    padding:14px!important;
+    margin-bottom:14px!important;
+  }
+  .asset-count-row>div{min-width:0}
+  .asset-count-row>div[data-label="DESCRIÇÃO"]{
+    grid-column:1/-1;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:flex-start!important;
+    justify-content:center!important;
+    gap:5px!important;
+    padding:13px!important;
+    background:#f3f8fc;
+    border-radius:11px;
+  }
+  .asset-count-row .asset-desc strong{
+    display:block;
+    width:100%;
+    font-size:18px!important;
+    line-height:1.22!important;
+    font-weight:900;
+    color:#1f2937;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+  .asset-count-row .asset-desc small{
+    display:block;
+    width:100%;
+    margin:0!important;
+    font-size:11px!important;
+    line-height:1.35!important;
+    color:#758396;
+  }
+  .asset-count-row>div[data-label="COD. SAP"],
+  .asset-count-row>div[data-label="COD."]{
+    font-size:17px;
+    line-height:1.2;
+    padding:2px 0 5px;
+  }
+  .asset-count-row>div[data-label="COD. SAP"]:before,
+  .asset-count-row>div[data-label="COD."]:before,
+  .asset-mobile-label{
+    font-size:9px!important;
+    line-height:1.2;
+    margin-bottom:6px!important;
+    color:#6f8192!important;
+    letter-spacing:.04em;
+  }
+  .asset-location-cell{grid-column:1/-1}
+  .asset-location-cell .choice-toggle{gap:10px}
+  .asset-location-cell .choice-btn{
+    min-height:54px;
+    padding:0 12px;
+    font-size:17px;
+    border-radius:10px;
+  }
+  .asset-qty-input{
+    height:54px!important;
+    font-size:20px;
+    border-radius:11px!important;
+  }
+  .asset-count-row>div[data-label="TOTAL ATUAL"]{
+    grid-column:1/-1;
+    padding:12px 13px!important;
+  }
+  .asset-running-total{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    font-size:11px!important;
+  }
+  .asset-total-location{
+    padding:8px 9px;
+    border:1px solid #e3eaf1;
+    border-radius:9px;
+    background:#fff;
+  }
+  .asset-total-location span{font-size:9px}
+  .asset-total-location strong{font-size:11px;line-height:1.35}
+  .asset-count-row>div[data-label="AÇÃO"]{grid-column:1/-1}
+  .asset-add-btn{
+    min-height:54px!important;
+    font-size:14px!important;
+    line-height:1.2;
+    border-radius:11px!important;
+  }
+}
+
+@media(max-width:520px){
+  /* O titulo da tela ja aparece no conteudo; escondemos a repeticao no topbar
+     para o seletor de unidade nao colidir com menu/avatar em celulares estreitos. */
+  .topbar{gap:8px!important;padding-left:9px!important;padding-right:9px!important}
+  .topbar-title{display:none!important}
+  .menu-btn{flex:0 0 44px}
+  .unit-switcher{flex:1;min-width:0;max-width:none}
+  .unit-switcher>span{display:none}
+  .unit-switcher select{height:44px;font-size:16px;padding:0 9px}
+  .user-box{flex:0 0 auto}
+  .asset-count-row{padding:13px!important;gap:11px!important}
+  .asset-count-row .asset-desc strong{font-size:18px!important}
+  .asset-count-row .asset-desc small{font-size:11px!important}
+}

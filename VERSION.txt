@@ -1,1 +1,1 @@
-v1.6.2 - corrige adicao do Ativo de Giro, restaura multiplos lotes na NRI com registros distintos, reforca carregamento de placas e melhora acoes das Avarias de Entrega
+v1.6.3 - corrige layout do Ativo de Giro no desktop e mobile, amplia descricao dos produtos e atualiza identificacao/cache da versao
