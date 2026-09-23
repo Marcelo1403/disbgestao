@@ -529,6 +529,7 @@ function openView(name,force=false){
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===name));
   openModuleForView(name);
   const meta=viewMeta[name]||['Disb Gestão','']; $('topbarTitulo').textContent=meta[0];$('topbarSubtitulo').textContent=meta[1]; toggleSidebar(false);
+  if(name==='nri-cadastro')ensureNriPlateOptions();
   if(name==='nri-pendentes')loadPending();
   if(name==='avaria-cadastro')ensureAvariaLocationPermission();
   if(name==='nri-historico')loadNriHistory();
@@ -713,7 +714,7 @@ function updateNriTypeFields(){
   setSelectFixedValue($('nriFabrica'),'--',marketplace);
   const plate=$('nriPlaca');
   if(marketplace)setSelectFixedValue(plate,'--',true);
-  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();}
+  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();ensureNriPlateOptions();}
 }
 function updateNriValidityMode(){
   const sem=$('nriSemValidade').checked;
@@ -1550,6 +1551,25 @@ function populatePlateSelectors(){
   fill('nriPlaca');
   fill('pullStartPlate');
 }
+let nriPlateLoadPromise=null;
+async function ensureNriPlateOptions(){
+  const el=$('nriPlaca');
+  if(!el||el.disabled)return;
+  if(pullVehicles.some(x=>x.active!==false&&String(x.plate||'').trim())){populatePlateSelectors();return;}
+  if(nriPlateLoadPromise)return nriPlateLoadPromise;
+  nriPlateLoadPromise=(async()=>{
+    try{
+      const {data,error}=await sb.from('pull_vehicles').select('id,plate,carrier,active').eq('active',true).order('plate');
+      if(error)throw error;
+      pullVehicles=data||[];
+      populatePlateSelectors();
+    }catch(err){
+      console.warn('NRI - carregamento de placas',err);
+      if(!el.options.length||el.options.length===1)toast('Não foi possível carregar as placas. Toque em Atualizar ou reabra o cadastro quando houver conexão.','error');
+    }finally{nriPlateLoadPromise=null;}
+  })();
+  return nriPlateLoadPromise;
+}
 function populatePullReferenceInputs(){
   if($('pullStartOrigin')){
     const old=$('pullStartOrigin').value;
@@ -2091,7 +2111,7 @@ updateNriTypeFields = function(){
   }else{fillSelect('nriFabrica',refs.factories.map(x=>x.name),'Selecione');f.disabled=false;f.required=true;}
   const plate=$('nriPlaca');
   if(marketplace)setSelectFixedValue(plate,'--',true);
-  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();}
+  else{setSelectFixedValue(plate,'--',false);populatePlateSelectors();ensureNriPlateOptions();}
 };
 
 addNriDraftItem = function(){
@@ -2887,8 +2907,10 @@ async function startRotatingAssetCount(){
   catch(e){toast(humanRotatingAssetError(e),'error');await loadRotatingAssetCurrent(true);}finally{btn.disabled=false;btn.textContent=old;}
 }
 function onRotatingAssetProductGridClick(e){
-  const loc=e.target.closest('[data-asset-location]');if(loc){setRotatingAssetLocation(loc.dataset.assetLocationProduct,loc.dataset.assetLocation);return;}
-  const b=e.target.closest('[data-asset-add]');if(b)addRotatingAssetEntry(b.dataset.assetAdd,b);
+  const b=e.target.closest('[data-asset-add]');
+  if(b){addRotatingAssetEntry(b.dataset.assetAdd,b);return;}
+  const loc=e.target.closest('[data-asset-location-product][data-asset-location]');
+  if(loc){setRotatingAssetLocation(loc.dataset.assetLocationProduct,loc.dataset.assetLocation);}
 }
 async function addRotatingAssetEntry(productId,btn){
   if(!rotatingAssetActiveCount)return toast('Inicie uma contagem primeiro.','error');
@@ -3183,13 +3205,13 @@ async function showAvariaDetail(id){
     return `<div class="damage-admin-item" data-item="${i.id}"><div class="damage-product-head">${selectable?`<label class="damage-check"><input type="checkbox" class="delivery-review-check" value="${i.id}" data-review-kind="${kind}"><span></span></label>`:''}<div><small>PRODUTO ${idx+1}</small><strong>${esc(i.product_text)}</strong></div>${statusBadge(i.status)}</div><div class="damage-summary-grid"><div><small>LOTE</small><strong>${esc(i.lot)}</strong></div><div><small>QUANTIDADE</small><strong>${fmtNum(i.quantity)} ${esc(i.quantity_unit)}</strong></div><div><small>MOTIVO</small><strong>${esc(i.reason)}</strong></div><div><small>EVIDÊNCIAS</small><strong>${photos.length} foto(s)</strong></div></div><div class="damage-lot-row">${match.length?`<span class="status approved">Lote compatível</span><span>${match.slice(0,4).map(n=>esc(n.nri)).join(', ')}</span>`:'<span class="status rejected">Lote não encontrado</span>'}</div><details class="damage-evidence"><summary><span>Ver evidências</span><small>${photos.length} foto(s) • localização por foto</small></summary><div class="damage-photo-grid">${photoHtml||'<div class="empty-state">Sem foto disponível.</div>'}</div></details>${postAction}${decision}${launched}${delivered}</div>`;
   }).join('');
   const pending=items.filter(i=>i.status==='PENDENTE').length,approved=items.filter(i=>i.status==='APROVADO').length,launched=items.filter(i=>i.status==='LANCADO').length,canDeliverCount=items.filter(i=>i.status==='LANCADO'&&String(i.launched_by||'')===String(authUser?.id||'')).length,selectableCount=(canReview?pending:0)+(canPost?approved+canDeliverCount:0);
-  const body=`<div class="damage-request-hero"><div><small>OCORRÊNCIA</small><strong>PDV ${esc(r.customer_code)} · ${esc(r.customer_name)}</strong><span>${esc(r.city)} • Mapa ${esc(r.map_number)} • ${esc(r.delivery_name)}</span></div><div class="damage-counts"><b>${items.length}</b><span>produtos</span><b>${pending+approved+launched}</b><span>em fluxo</span></div></div><div class="detail-grid damage-request-grid"><div class="detail-card"><small>PDV</small><strong>${esc(r.customer_name)}</strong></div><div class="detail-card"><small>Código</small><strong>${esc(r.customer_code)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(r.city)}</strong></div><div class="detail-card"><small>Mapa</small><strong>${esc(r.map_number)}</strong></div><div class="detail-card"><small>Motorista</small><strong>${esc(r.delivery_name)}</strong></div></div>${selectableCount?`<div class="damage-selection-bar"><span id="avariaSelectionSummary">0 selecionados</span><small>${pending&&canReview?'Pendentes: aprovação ou reprovação. ':''}${approved&&canPost?'Aprovados: prontos para lançamento. ':''}${canDeliverCount&&canPost?'Lançados por você: prontos para marcar como entregues.':''}</small></div>`:''}${pending&&canReview?`<div class="sales-review-justification"><div class="field"><label>Justificativa da decisão *</label><textarea id="deliveryDamageDecisionJustification" rows="3" maxlength="500" placeholder="Descreva o motivo da aprovação ou reprovação."></textarea></div></div>`:''}${productsHtml}<details class="signature-details"><summary>Ver assinatura do cliente</summary><img src="${esc(signatureUrl)}" alt="Assinatura"></details>`;
+  const body=`<div class="damage-request-hero"><div><small>OCORRÊNCIA</small><strong>PDV ${esc(r.customer_code)} · ${esc(r.customer_name)}</strong><span>${esc(r.city)} • Mapa ${esc(r.map_number)} • ${esc(r.delivery_name)}</span></div><div class="damage-counts"><b>${items.length}</b><span>produtos</span><b>${pending+approved+launched}</b><span>em fluxo</span></div></div><div class="detail-grid damage-request-grid"><div class="detail-card"><small>PDV</small><strong>${esc(r.customer_name)}</strong></div><div class="detail-card"><small>Código</small><strong>${esc(r.customer_code)}</strong></div><div class="detail-card"><small>Cidade</small><strong>${esc(r.city)}</strong></div><div class="detail-card"><small>Mapa</small><strong>${esc(r.map_number)}</strong></div><div class="detail-card"><small>Motorista</small><strong>${esc(r.delivery_name)}</strong></div></div>${selectableCount?`<div class="damage-selection-bar delivery-selection-bar"><label class="check delivery-select-all"><input id="deliveryDamageSelectAll" type="checkbox"> Selecionar tudo</label><span id="avariaSelectionSummary">0 selecionados</span><small>${pending&&canReview?'Pendentes: aprovação ou reprovação. ':''}${approved&&canPost?'Aprovados: prontos para lançamento. ':''}${canDeliverCount&&canPost?'Lançados por você: prontos para marcar como entregues.':''}</small></div>`:''}${pending&&canReview?`<div class="sales-review-justification"><div class="field"><label>Justificativa da decisão *</label><textarea id="deliveryDamageDecisionJustification" rows="3" maxlength="500" placeholder="Descreva o motivo da aprovação ou reprovação."></textarea></div></div>`:''}${productsHtml}<details class="signature-details"><summary>Ver assinatura do cliente</summary><img src="${esc(signatureUrl)}" alt="Assinatura"></details>`;
   const actions=[];
   if(canReview&&pending)actions.push({label:'Reprovar selecionados',class:'danger',onClick:()=>reviewAvaria('REPROVADO',false)},{label:'Aprovar selecionados',class:'success',onClick:()=>reviewAvaria('APROVADO',false)});
-  if(canPost&&approved)actions.push({label:'✓ Marcar selecionados como lançados',class:'success',onClick:markDeliveryDamageLaunchedBulk});
-  if(canPost&&canDeliverCount)actions.push({label:'✓ Marcar selecionados como entregues',class:'primary',onClick:markDeliveryDamageDeliveredBulk});
+  if(canPost&&approved)actions.push({label:'✓ Marcar como lançada',class:'success delivery-modal-action delivery-modal-launch',onClick:markDeliveryDamageLaunchedBulk});
+  if(canPost&&canDeliverCount)actions.push({label:'✓ Marcar como entregue',class:'primary delivery-modal-action delivery-modal-deliver',onClick:markDeliveryDamageDeliveredBulk});
   openModal(`Avaria • PDV ${r.customer_code}`,`${fmtDate(r.occurrence_date)} • ${r.delivery_name}`,body,actions);
-  const checks=[...($('modalBody')?.querySelectorAll('.delivery-review-check')||[])];const update=()=>{const n=checks.filter(x=>x.checked).length;const el=$('avariaSelectionSummary');if(el)el.textContent=`${n} selecionado${n===1?'':'s'}`;};checks.forEach(c=>c.addEventListener('change',update));
+  const checks=[...($('modalBody')?.querySelectorAll('.delivery-review-check')||[])],selectAll=$('deliveryDamageSelectAll');const update=()=>{const n=checks.filter(x=>x.checked).length;const el=$('avariaSelectionSummary');if(el)el.textContent=`${n} selecionado${n===1?'':'s'}`;if(selectAll){selectAll.checked=checks.length>0&&n===checks.length;selectAll.indeterminate=n>0&&n<checks.length;}};checks.forEach(c=>c.addEventListener('change',update));selectAll?.addEventListener('change',()=>{checks.forEach(c=>c.checked=selectAll.checked);update();});
   $('modalBody')?.querySelectorAll('[data-delivery-launch]').forEach(b=>b.addEventListener('click',()=>markDeliveryDamageLaunched(b.dataset.deliveryLaunch)));
   $('modalBody')?.querySelectorAll('[data-delivery-delivered]').forEach(b=>b.addEventListener('click',()=>markDeliveryDamageDelivered(b.dataset.deliveryDelivered)));
 }
@@ -3538,12 +3560,31 @@ loadAdminAvarias = async function(silent=false){
 };
 
 addNriDraftItem = function(){
-  const p=selectedOperationalProduct('nri'),sem=$('nriSemValidade').checked,validity=sem?null:parseShortDate($('nriValidade').value),typed=sanitizeLot($('nriLote').value),savedLots=[...nriLots].map(sanitizeLot).filter(Boolean),all=[...new Set([...savedLots,typed].filter(Boolean))],qty=num($('nriQuantidade').value),pallets=Math.trunc(num($('nriPaletes').value));
-  if(!p)return toast('Selecione um produto válido da base.','error');if(!sem&&!validity)return toast('Informe a validade completa no formato dd/mm/aa ou selecione Sem Validade.','error');if(!all.length)return toast('Informe o lote.','error');if(all.length>1)return toast('Cadastre um lote por item. Para outro lote, salve este item e adicione um novo.','error');if(qty<=0)return toast('Informe a quantidade.','error');if(pallets<1)return toast('Informe a quantidade de paletes.','error');
-  const lot=all[0],damagedPallets=nriDamageMode?Math.trunc(num($('nriDamagePallets').value)):0,reason=nriDamageMode?$('nriDamageReason').value.trim():'',invoiceNumber=nriDamageMode?$('nriDamageInvoice').value.trim():'';if(nriDamageMode&&(!damagedPallets||damagedPallets<1||damagedPallets>pallets))return toast(`Informe entre 1 e ${pallets} palete(s) avariado(s).`,'error');if(nriDamageMode&&!reason)return toast('Selecione o motivo do avariado.','error');if(nriDamageMode&&!invoiceNumber)return toast('Informe o Número da Nota Fiscal do palete avariado.','error');if(nriDamageMode&&(nriDamagePhotos.length<1||nriDamagePhotos.length>5))return toast('Palete avariado exige de 1 a 5 fotos.','error');
-  const item={id:nriEditingId||uuid(),product_code:p.code,product_name:p.name,validity_date:validity,lot,lots:[lot],quantity:qty,pallets,block_date:validity?addDaysIso(validity,-30):null,pallet_damaged:nriDamageMode,damaged_pallets:damagedPallets,damage_reason:reason,invoice_number:invoiceNumber,damagePhotos:[...nriDamagePhotos]};const idx=nriDraftItems.findIndex(x=>x.id===item.id);if(idx>=0)nriDraftItems[idx]=item;else nriDraftItems.push(item);renderNriDraftItems();clearNriItemEditor();
+  const p=selectedOperationalProduct('nri'),sem=$('nriSemValidade').checked,validity=sem?null:parseShortDate($('nriValidade').value),typed=sanitizeLot($('nriLote').value),savedLots=[...nriLots].map(sanitizeLot).filter(Boolean),lots=[...new Set([...savedLots,typed].filter(Boolean))],qty=num($('nriQuantidade').value),pallets=Math.trunc(num($('nriPaletes').value));
+  if(!p)return toast('Selecione um produto válido da base.','error');
+  if(!sem&&!validity)return toast('Informe a validade completa no formato dd/mm/aa ou selecione Sem Validade.','error');
+  if(!lots.length)return toast('Adicione ao menos um lote.','error');
+  if(qty<=0)return toast('Informe a quantidade.','error');
+  if(pallets<1)return toast('Informe a quantidade de paletes.','error');
+  if(lots.length>1&&pallets!==lots.length)return toast(`Para ${lots.length} lotes diferentes, informe ${lots.length} em Paletes / NRIs. Cada lote será salvo em uma NRI distinta.`,'error');
+  const damagedPallets=nriDamageMode?Math.trunc(num($('nriDamagePallets').value)):0,reason=nriDamageMode?$('nriDamageReason').value.trim():'',invoiceNumber=nriDamageMode?$('nriDamageInvoice').value.trim():'';
+  if(nriDamageMode&&(!damagedPallets||damagedPallets<1||damagedPallets>pallets))return toast(`Informe entre 1 e ${pallets} palete(s) avariado(s).`,'error');
+  if(nriDamageMode&&!reason)return toast('Selecione o motivo do avariado.','error');
+  if(nriDamageMode&&!invoiceNumber)return toast('Informe o Número da Nota Fiscal do palete avariado.','error');
+  if(nriDamageMode&&(nriDamagePhotos.length<1||nriDamagePhotos.length>5))return toast('Palete avariado exige de 1 a 5 fotos.','error');
+  const base={product_code:p.code,product_name:p.name,validity_date:validity,quantity:qty,block_date:validity?addDaysIso(validity,-30):null,pallet_damaged:nriDamageMode,damage_reason:reason,invoice_number:invoiceNumber,damagePhotos:[...nriDamagePhotos]};
+  if(nriEditingId){
+    const lot=lots[0];
+    if(lots.length>1)return toast('Na edição, mantenha um lote por linha. Exclua a linha e adicione novamente para dividir em vários lotes.','error');
+    const item={...base,id:nriEditingId,lot,lots:[lot],pallets,damaged_pallets:damagedPallets};
+    const idx=nriDraftItems.findIndex(x=>x.id===nriEditingId);if(idx>=0)nriDraftItems[idx]=item;
+  }else if(lots.length===1){
+    const lot=lots[0];nriDraftItems.push({...base,id:uuid(),lot,lots:[lot],pallets,damaged_pallets:damagedPallets});
+  }else{
+    lots.forEach((lot,index)=>nriDraftItems.push({...base,id:uuid(),lot,lots:[lot],pallets:1,damaged_pallets:nriDamageMode?(index<damagedPallets?1:0):0,pallet_damaged:nriDamageMode&&index<damagedPallets}));
+  }
+  renderNriDraftItems();clearNriItemEditor();
 };
-
 function assetRowByProductId(productId){return [...document.querySelectorAll('[data-asset-product]')].find(r=>String(r.dataset.assetProduct)===String(productId))||null;}
 assetLocationValue = function(productId){return normalizeAssetLocation(assetRowByProductId(productId)?.dataset.assetLocation||'PATIO');};
 setRotatingAssetLocation = function(productId,location){const row=assetRowByProductId(productId);if(!row)return;const loc=normalizeAssetLocation(location);row.dataset.assetLocation=loc;row.querySelectorAll('[data-asset-location]').forEach(b=>b.classList.toggle('active',normalizeAssetLocation(b.dataset.assetLocation)===loc));};

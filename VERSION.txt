@@ -1,1 +1,1 @@
-v1.6.1 - hotfix do cadastro de usuarios: atribuicao de unidades transacional no Supabase, auditoria preservada e mensagens de erro detalhadas
+v1.6.2 - corrige adicao do Ativo de Giro, restaura multiplos lotes na NRI com registros distintos, reforca carregamento de placas e melhora acoes das Avarias de Entrega

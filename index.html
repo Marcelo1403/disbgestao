@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.6.1-user-units">
+  <link rel="stylesheet" href="styles.css?v=1.6.2-operacional">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -186,7 +186,7 @@
               <div class="grid grid-3">
                 <div class="field span-2 sales-product-field"><label>Produto *</label><div id="nriProductPicker" class="sales-product-picker"><input id="nriCodigo" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="nriProductOptions" placeholder="Digite código ou descrição do produto"><button type="button" id="btnNriProductClear" class="sales-product-clear hidden" aria-label="Limpar produto">×</button><div id="nriProductOptions" class="sales-product-options hidden" role="listbox"></div></div><div id="nriProductSelected" class="sales-product-selected muted">Digite para pesquisar e selecione um produto da base.</div></div>
                 <div class="field"><label>Validade *</label><input id="nriValidade" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="dd/mm/aa"><label class="check compact-check"><input id="nriSemValidade" type="checkbox"> Sem Validade</label></div>
-                <div class="field span-2 multi-lot-field nri-single-lot"><label>Lote *</label><div class="multi-lot-entry"><input id="nriLote" placeholder="Digite um lote" pattern="[A-Za-z0-9]+" title="Use apenas letras e números" autocapitalize="characters" autocomplete="off" spellcheck="false"><button type="button" id="btnNriAddLot" class="btn secondary">+ Adicionar lote</button></div><div id="nriLotList" class="multi-lot-list empty"><span>Nenhum lote adicionado.</span></div><small class="field-help"><strong>Um lote por item.</strong> Se o mesmo produto tiver outro lote, salve este item e adicione o produto novamente com o próximo lote. Assim cada lote permanece separado na NRI.</small></div>
+                <div class="field span-2 multi-lot-field nri-single-lot"><label>Lote *</label><div class="multi-lot-entry"><input id="nriLote" placeholder="Digite um lote" pattern="[A-Za-z0-9]+" title="Use apenas letras e números" autocapitalize="characters" autocomplete="off" spellcheck="false"><button type="button" id="btnNriAddLot" class="btn secondary">+ Adicionar lote</button></div><div id="nriLotList" class="multi-lot-list empty"><span>Nenhum lote adicionado.</span></div><small class="field-help"><strong>Você pode adicionar vários lotes.</strong> Use “+ Adicionar lote” para incluir um de cada vez. Quando houver mais de um lote, informe a mesma quantidade em “Paletes / NRIs”: cada lote será salvo como uma NRI distinta para permitir a conciliação correta das avarias.</small></div>
                 <div class="field"><label>Quantidade *</label><input id="nriQuantidade" type="number" min="1" value="1"></div>
                 <div class="field"><label>Quantidade de paletes (NRIs) *</label><input id="nriPaletes" type="number" min="1" max="99" value="1"></div>
                 <div class="field"><label>Bloqueio</label><input id="nriBloqueio" readonly placeholder="validade - 30 dias"></div>
@@ -621,6 +621,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.6.1"></script>
-  <script src="app.js?v=1.6.1-user-units"></script>
+  <script src="app.js?v=1.6.2-operacional"></script>
 </body>
 </html>
