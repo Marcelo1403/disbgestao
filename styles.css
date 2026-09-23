@@ -940,3 +940,16 @@ button[data-sales-delivered]:hover{
     padding:11px 13px!important;
   }
 }
+
+
+/* ==========================================================================
+   v1.6.7 - Observacao opcional somente em Avarias de Vendas
+   ========================================================================== */
+.sales-damage-request-observation textarea{min-height:88px;resize:vertical;line-height:1.45}
+.sales-damage-request-observation .optional-label{font-weight:700;color:#667085}
+.sales-request-observation-card{margin:12px 0;padding:12px 14px;border:1px solid #f2d38b;border-left:4px solid #d89b1d;border-radius:11px;background:#fffaf0;color:#4e3a0a}
+.sales-request-observation-card>div{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.sales-request-observation-card small{font-size:8.5px;font-weight:1000;letter-spacing:.06em;color:#8a6411}
+.sales-request-observation-card strong{font-size:11px;color:#5f450c}
+.sales-request-observation-card p{margin:0;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:640px){.sales-damage-request-observation textarea{min-height:104px}.sales-request-observation-card{padding:11px 12px}.sales-request-observation-card>div{align-items:flex-start;flex-direction:column;gap:2px}.sales-request-observation-card p{font-size:11.5px}}

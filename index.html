@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.6.6-avarias-vendas">
+  <link rel="stylesheet" href="styles.css?v=1.6.7-observacao-avarias-vendas">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -16,7 +16,7 @@
         <div class="login-logo"><img src="assets/icon-192.png" alt="Disb Gestão"></div>
         <span class="eyebrow light">ARMAZÉM • ENTREGA • CONFERÊNCIA</span>
         <h1>Disb Gestão</h1>
-        <p>NRI, Ativo de Giro, avarias, vendas, conferência, FEFO e Puxada em um único aplicativo.</p><div class="login-version">v1.6.6</div>
+        <p>NRI, Ativo de Giro, avarias, vendas, conferência, FEFO e Puxada em um único aplicativo.</p><div class="login-version">v1.6.7</div>
         <div class="feature-list">
           <span>✓ Cadastro por carreta e impressão de NRIs</span>
           <span>✓ Avarias de entrega e vendas com evidências</span>
@@ -43,7 +43,7 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside id="sidebar" class="sidebar">
-      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.6.6</div>
+      <div class="brand-row"><div class="brand-box"><img src="assets/icon-192.png" alt="Disb Gestão"></div><div><strong>Disb Gestão</strong><span>Supabase • tempo real</span></div></div><div class="app-version-badge">v1.6.7</div>
       <div class="nav-area open" data-area="armazem" data-permission-any="NRI_PENDING_VIEW,MARKETPLACE_RECEIVE,NRI_CREATE,NRI_PRINT,NRI_HISTORY,NRI_DAMAGE_HISTORY,CONF_CREATE,CONF_OWN_HISTORY,CONF_HISTORY,CONF_DASHBOARD,FEFO_CREATE,FEFO_ACTIVE,FEFO_REPORT,ROTATING_ASSET_CREATE,ROTATING_ASSET_HISTORY">
         <button type="button" class="nav-area-toggle" aria-expanded="true"><span class="area-icon">▦</span><span class="area-name">Armazém</span><span class="area-chevron">⌄</span></button>
         <div class="nav-area-items">
@@ -291,6 +291,11 @@
                 <div><small>FILIAL</small><strong id="salesDamageCustomerBranch">—</strong></div>
               </div>
               <div id="salesDamageCustomerDuplicate" class="field hidden" style="margin-top:10px"><label>Cliente / filial *</label><select id="salesDamageCustomerChoice"><option value="">Selecione o cliente</option></select></div>
+              <div class="field sales-damage-request-observation" style="margin-top:12px">
+                <label>Observação da solicitação <span class="optional-label">(opcional)</span></label>
+                <textarea id="salesDamageObservation" rows="3" maxlength="500" placeholder="Ex.: contexto da avaria, condição encontrada no PDV ou informação importante para a análise."></textarea>
+                <small>Esta observação será exibida aos responsáveis pela análise da Avaria de Vendas.</small>
+              </div>
             </div>
 
             <div class="form-block accent sales-damage-item-editor">
@@ -621,6 +626,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.6.5"></script>
-  <script src="app.js?v=1.6.6-avarias-vendas"></script>
+  <script src="app.js?v=1.6.7-observacao-avarias-vendas"></script>
 </body>
 </html>
