@@ -167,7 +167,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-multidevice-final',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-persistente-ativo33',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -4367,7 +4367,7 @@ function showPushInAppV170(payload){
   card.innerHTML=`<div class="damage-notification-icon">${icon}</div><div class="damage-notification-content"><strong>${esc(tb.title)}</strong><span>${esc(tb.body)}</span><small>Clique para abrir</small></div><button type="button" class="damage-notification-close" aria-label="Fechar">&times;</button>`;
   const open=()=>{card.remove();openPushViewV170(data.view||pushViewForKindV170(kind));};
   card.addEventListener('click',open);card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});card.querySelector('.damage-notification-close')?.addEventListener('click',e=>{e.stopPropagation();card.remove();});
-  stack.prepend(card);while(stack.children.length>4)stack.lastElementChild?.remove();setTimeout(()=>card.remove(),9000);
+  stack.prepend(card);
 }
 function base64UrlToBytesV170(value){
   const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(base64),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;
