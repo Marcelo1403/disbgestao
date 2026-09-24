@@ -18,6 +18,7 @@ const PERMISSION_CATALOG = [
   ['NRI','NRI_PENDING_VIEW','Recebimentos e impressões pendentes'],['NRI','MARKETPLACE_RECEIVE','Recebimento Marketplace'],['NRI','NRI_CREATE','Cadastrar NRI'],['NRI','NRI_PRINT','Imprimir NRI'],['NRI','NRI_HISTORY','Histórico NRI'],['NRI','NRI_DAMAGE_HISTORY','Paletes avariados'],
   ['Avarias de Entrega','DELIVERY_DAMAGE_CREATE','Registrar avaria'],['Avarias de Entrega','DELIVERY_DAMAGE_VIEW_ALL','Visualizar todas'],['Avarias de Entrega','DELIVERY_DAMAGE_REVIEW','Aprovar / reprovar'],['Avarias de Entrega','DELIVERY_DAMAGE_POST','Lançar / entregar'],
   ['Avarias de Vendas','SALES_DAMAGE_CREATE','Cadastrar solicitação'],['Avarias de Vendas','SALES_DAMAGE_VIEW_OWN','Visualizar próprias'],['Avarias de Vendas','SALES_DAMAGE_VIEW_ALL','Visualizar todas'],['Avarias de Vendas','SALES_DAMAGE_REVIEW','Decisão do Gerente de Vendas'],['Avarias de Vendas','SALES_DAMAGE_OVERRIDE','Decisão final'],['Avarias de Vendas','SALES_DAMAGE_POST','Marcar avaria lançada'],
+  ['Notificações','DAMAGE_NOTIFICATION','Notificação avaria'],
   ['Conferência','CONF_CREATE','Realizar conferência'],['Conferência','CONF_OWN_HISTORY','Minhas conferências'],['Conferência','CONF_HISTORY','Histórico completo'],['Conferência','CONF_DASHBOARD','Dashboard'],
   ['Contagem FEFO','FEFO_CREATE','Nova contagem'],['Contagem FEFO','FEFO_ACTIVE','Contagens em andamento'],['Contagem FEFO','FEFO_REPORT','Relatórios'],
   ['Puxada','PULL_TRIP','Viagem'],['Puxada','PULL_FAROL','Farol de andamento'],['Puxada','PULL_HISTORY','Histórico'],['Puxada','PULL_DASHBOARD','Dashboards'],['Puxada','PULL_GOALS','Metas'],['Puxada','PULL_CONFIG','Configurações'],['Puxada','PULL_TMA_ADJUST','Ajustar TMA'],
@@ -25,7 +26,7 @@ const PERMISSION_CATALOG = [
 ].map(([module,code,name],sort)=>({module,code,name,sort}));
 
 const ROLE_PERMISSION_DEFAULTS = {
-  ADMIN:PERMISSION_CATALOG.map(x=>x.code),
+  ADMIN:PERMISSION_CATALOG.filter(x=>x.code!=='DAMAGE_NOTIFICATION').map(x=>x.code),
   COLABORADOR_ARMAZEM:['NRI_PENDING_VIEW','MARKETPLACE_RECEIVE','NRI_CREATE','NRI_PRINT','CONF_CREATE','CONF_OWN_HISTORY','FEFO_CREATE','FEFO_ACTIVE','FEFO_REPORT'],
   CONFERENTE:['NRI_PENDING_VIEW','MARKETPLACE_RECEIVE','NRI_CREATE','NRI_PRINT','CONF_CREATE','CONF_OWN_HISTORY','FEFO_CREATE','FEFO_ACTIVE','FEFO_REPORT'],
   COLABORADOR_ENTREGA:['DELIVERY_DAMAGE_CREATE'],
@@ -166,7 +167,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-hotfix5-rpc',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-perfil-notificacao',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -416,7 +417,15 @@ async function loadMyPermissions(){
     console.warn('Permissões: usando padrão do cargo até aplicar o SQL v1.4.0.',e);
   }
 }
-function hasPerm(code){return profile?.role==='ADMIN'||myPermissions.has(String(code||''));}
+function hasPerm(code){
+  const key=String(code||'');
+
+  if(key==='DAMAGE_NOTIFICATION'){
+    return myPermissions.has(key);
+  }
+
+  return profile?.role==='ADMIN'||myPermissions.has(key);
+}
 function hasAnyPerm(codes){return String(codes||'').split(',').map(x=>x.trim()).filter(Boolean).some(hasPerm);}
 async function logout(){
   teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null;myUnits=[];activeUnit='';userUnitRows=[];userUnitAuditRows=[];myPermissions.clear(); refs={products:[],units:[],drivers:[],factories:[],customers:[]};
@@ -1477,9 +1486,48 @@ let users=[];
 function roleDefaults(role){return new Set(ROLE_PERMISSION_DEFAULTS[role]||[]);}
 function userPermissionOverrides(userId){return userPermissionRows.filter(x=>x.user_id===userId);}
 function effectiveUserPermissions(user){
-  if(!user)return roleDefaults($('usuarioPerfil')?.value||'COLABORADOR_ARMAZEM');
-  if(user.role==='ADMIN')return new Set(PERMISSION_CATALOG.map(x=>x.code));
-  const out=roleDefaults(user.role);userPermissionOverrides(user.id).forEach(x=>{if(x.allowed)out.add(x.permission_code);else out.delete(x.permission_code);});return out;
+  if(!user){
+    return roleDefaults(
+      $('usuarioPerfil')?.value||'COLABORADOR_ARMAZEM'
+    );
+  }
+
+  if(user.role==='ADMIN'){
+    const catalog=
+      permissionRows.length
+        ?permissionRows
+        :PERMISSION_CATALOG;
+
+    const out=new Set(
+      catalog
+        .filter(x=>x.code!=='DAMAGE_NOTIFICATION')
+        .map(x=>x.code)
+    );
+
+    const notify=userPermissionOverrides(user.id)
+      .find(
+        x=>x.permission_code==='DAMAGE_NOTIFICATION'
+      );
+
+    if(notify?.allowed===true){
+      out.add('DAMAGE_NOTIFICATION');
+    }
+
+    return out;
+  }
+
+  const out=roleDefaults(user.role);
+
+  userPermissionOverrides(user.id).forEach(x=>{
+    if(x.allowed){
+      out.add(x.permission_code);
+    }
+    else{
+      out.delete(x.permission_code);
+    }
+  });
+
+  return out;
 }
 async function loadUsers(){
   if(!hasPerm('ADMIN_USERS'))return;
@@ -1502,17 +1550,146 @@ function renderUsers(){
   body.innerHTML=users.length?users.map(u=>{const enabled=effectiveUserPermissions(u),custom=userPermissionOverrides(u.id).length;return `<tr><td>${esc(u.username)}</td><td>${esc(u.name)}</td><td>${esc(ROLE_LABELS[u.role]||u.role)}</td><td><strong>${enabled.size} habilitada${enabled.size===1?'':'s'}</strong><small>${u.role==='ADMIN'?'Acesso total':custom?`${custom} exceção(ões) individual(is)`:'Padrão do cargo'}</small></td><td>${u.active?'<span class="status ok">Ativo</span>':'<span class="status bad">Inativo</span>'}</td><td><button class="mini-btn" data-user="${esc(u.username)}">Editar</button></td></tr>`;}).join(''):'<tr><td colspan="6">Nenhum usuário cadastrado.</td></tr>';
 }
 function renderUserPermissionEditor(user=null,restoreRole=false){
-  const box=$('usuarioPermissoes');if(!box)return;
-  const role=$('usuarioPerfil')?.value||user?.role||'COLABORADOR_ARMAZEM';
-  const catalog=(permissionRows.length?permissionRows:PERMISSION_CATALOG).filter(x=>x.active!==false).sort((a,b)=>String(a.module).localeCompare(String(b.module),'pt-BR')||(a.sort_order??a.sort??100)-(b.sort_order??b.sort??100));
+  const box=$('usuarioPermissoes');
+
+  if(!box)return;
+
+  const role=
+    $('usuarioPerfil')?.value
+    ||user?.role
+    ||'COLABORADOR_ARMAZEM';
+
+  const catalog=
+    (permissionRows.length
+      ?permissionRows
+      :PERMISSION_CATALOG)
+    .filter(x=>x.active!==false)
+    .sort(
+      (a,b)=>
+        String(a.module)
+          .localeCompare(String(b.module),'pt-BR')
+        ||
+        (a.sort_order??a.sort??100)
+        -
+        (b.sort_order??b.sort??100)
+    );
+
   let enabled;
-  if(role==='ADMIN')enabled=new Set(catalog.map(x=>x.code));
-  else if(user&&!restoreRole){enabled=effectiveUserPermissions(user);}
-  else if(rolePermissionRows.length){enabled=new Set(rolePermissionRows.filter(x=>x.role===role).map(x=>x.permission_code));}
-  else enabled=roleDefaults(role);
-  const groups=new Map();catalog.forEach(x=>{if(!groups.has(x.module))groups.set(x.module,[]);groups.get(x.module).push(x);});
-  box.innerHTML=[...groups.entries()].map(([module,rows])=>`<section class="permission-group"><div class="permission-group-title"><strong>${esc(module)}</strong><small>${rows.filter(x=>enabled.has(x.code)).length}/${rows.length}</small></div>${rows.map(x=>`<label class="permission-row"><input type="checkbox" data-user-permission="${esc(x.code)}" ${enabled.has(x.code)?'checked':''} ${role==='ADMIN'?'disabled':''}><span><strong>${esc(x.name)}</strong>${x.description?`<small>${esc(x.description)}</small>`:''}</span></label>`).join('')}</section>`).join('');
-  box.querySelectorAll('[data-user-permission]').forEach(i=>i.addEventListener('change',()=>updatePermissionGroupCounts()));
+
+  if(role==='ADMIN'){
+
+    enabled=new Set(
+      catalog
+        .filter(x=>x.code!=='DAMAGE_NOTIFICATION')
+        .map(x=>x.code)
+    );
+
+    if(user&&!restoreRole){
+
+      const notify=
+        userPermissionOverrides(user.id)
+          .find(
+            x=>
+              x.permission_code===
+              'DAMAGE_NOTIFICATION'
+          );
+
+      if(notify?.allowed===true){
+        enabled.add('DAMAGE_NOTIFICATION');
+      }
+    }
+  }
+  else if(user&&!restoreRole){
+
+    enabled=effectiveUserPermissions(user);
+
+  }
+  else if(rolePermissionRows.length){
+
+    enabled=new Set(
+      rolePermissionRows
+        .filter(x=>x.role===role)
+        .map(x=>x.permission_code)
+    );
+
+  }
+  else{
+
+    enabled=roleDefaults(role);
+
+  }
+
+  const groups=new Map();
+
+  catalog.forEach(x=>{
+
+    if(!groups.has(x.module)){
+      groups.set(x.module,[]);
+    }
+
+    groups.get(x.module).push(x);
+  });
+
+  box.innerHTML=
+    [...groups.entries()]
+      .map(([module,rows])=>{
+
+        const items=
+          rows.map(x=>{
+
+            const locked=
+              role==='ADMIN'
+              &&
+              x.code!=='DAMAGE_NOTIFICATION';
+
+            return `
+              <label class="permission-row">
+                <input
+                  type="checkbox"
+                  data-user-permission="${esc(x.code)}"
+                  ${enabled.has(x.code)?'checked':''}
+                  ${locked?'disabled':''}
+                >
+                <span>
+                  <strong>${esc(x.name)}</strong>
+                  ${x.description
+                    ?`<small>${esc(x.description)}</small>`
+                    :''
+                  }
+                </span>
+              </label>
+            `;
+          }).join('');
+
+        return `
+          <section class="permission-group">
+
+            <div class="permission-group-title">
+
+              <strong>${esc(module)}</strong>
+
+              <small>
+                ${rows.filter(x=>enabled.has(x.code)).length}/${rows.length}
+              </small>
+
+            </div>
+
+            ${items}
+
+          </section>
+        `;
+      })
+      .join('');
+
+  box
+    .querySelectorAll('[data-user-permission]')
+    .forEach(i=>
+      i.addEventListener(
+        'change',
+        ()=>updatePermissionGroupCounts()
+      )
+    );
+
   updatePermissionGroupCounts();
 }
 function updatePermissionGroupCounts(){$('usuarioPermissoes')?.querySelectorAll('.permission-group').forEach(g=>{const all=g.querySelectorAll('[data-user-permission]').length,on=g.querySelectorAll('[data-user-permission]:checked').length;const s=g.querySelector('.permission-group-title small');if(s)s.textContent=`${on}/${all}`;});}
@@ -3543,15 +3720,112 @@ loadProfile = async function(user){
 };
 
 loadMyPermissions = async function(){
-  const fallback=ROLE_PERMISSION_DEFAULTS[profile?.role]||[];
-  myPermissions=new Set(profile?.role==='ADMIN'?PERMISSION_CATALOG.map(x=>x.code):fallback);
-  if(!sb||!profile)return;
-  if(navigator.onLine){
-    try{const {data,error}=await sb.rpc('get_my_permissions');if(error)throw error;myPermissions=new Set((data||[]).map(String));if(profile.role==='ADMIN')PERMISSION_CATALOG.forEach(x=>myPermissions.add(x.code));localStorage.setItem(OFFLINE_PERMS_KEY,JSON.stringify({user_id:authUser?.id,permissions:[...myPermissions],at:Date.now()}));return;}catch(e){console.warn('Permissões online indisponíveis; usando cache.',e);}
-  }
-  try{const c=JSON.parse(localStorage.getItem(OFFLINE_PERMS_KEY)||'null');if(c?.user_id===authUser?.id&&Array.isArray(c.permissions))myPermissions=new Set(c.permissions);}catch(_e){}
-};
+  const fallback=
+    ROLE_PERMISSION_DEFAULTS[profile?.role]||[];
 
+  myPermissions=new Set(
+    profile?.role==='ADMIN'
+      ?PERMISSION_CATALOG
+        .filter(x=>x.code!=='DAMAGE_NOTIFICATION')
+        .map(x=>x.code)
+      :fallback
+  );
+
+  if(!sb||!profile)return;
+
+  if(navigator.onLine){
+
+    try{
+
+      const {data,error}=
+        await sb.rpc('get_my_permissions');
+
+      if(error)throw error;
+
+      myPermissions=
+        new Set((data||[]).map(String));
+
+      if(profile.role==='ADMIN'){
+
+        // O helper do banco concede todas as permissoes
+        // ao ADMIN. Notificacao de avaria e excecao:
+        // precisa estar marcada individualmente.
+        myPermissions.delete(
+          'DAMAGE_NOTIFICATION'
+        );
+
+        PERMISSION_CATALOG
+          .filter(
+            x=>x.code!=='DAMAGE_NOTIFICATION'
+          )
+          .forEach(
+            x=>myPermissions.add(x.code)
+          );
+
+        const {
+          data:notify,
+          error:notifyError
+        }=await sb
+          .from('user_permissions')
+          .select('allowed')
+          .eq('user_id',authUser.id)
+          .eq(
+            'permission_code',
+            'DAMAGE_NOTIFICATION'
+          )
+          .maybeSingle();
+
+        if(notifyError)throw notifyError;
+
+        if(notify?.allowed===true){
+          myPermissions.add(
+            'DAMAGE_NOTIFICATION'
+          );
+        }
+      }
+
+      localStorage.setItem(
+        OFFLINE_PERMS_KEY,
+        JSON.stringify({
+          user_id:authUser?.id,
+          permissions:[...myPermissions],
+          at:Date.now()
+        })
+      );
+
+      return;
+
+    }
+    catch(e){
+
+      console.warn(
+        'Permissoes online indisponiveis; usando cache.',
+        e
+      );
+
+    }
+  }
+
+  try{
+
+    const c=JSON.parse(
+      localStorage.getItem(
+        OFFLINE_PERMS_KEY
+      )||'null'
+    );
+
+    if(
+      c?.user_id===authUser?.id
+      &&
+      Array.isArray(c.permissions)
+    ){
+      myPermissions=
+        new Set(c.permissions);
+    }
+
+  }
+  catch(_e){}
+};
 readRefCache = function(){
   try{localStorage.removeItem('ops_ref_cache');const x=JSON.parse(localStorage.getItem(REF_CACHE_KEY)||'null');if(!x?.data)return null;if(!navigator.onLine||Date.now()-Number(x.at||0)<12*3600e3)return sanitizeRefs(x.data);return null;}catch{return null;}
 };
@@ -4199,77 +4473,261 @@ async function pushPermissionStatusV170(){
   if(!('Notification' in window)||!('PushManager' in window))return 'unsupported';return Notification.permission;
 }
 async function updatePushButtonV170(){
-  const btn=$('btnNotifications');if(!btn)return;const status=await pushPermissionStatusV170();btn.classList.toggle('enabled',status==='granted');btn.classList.toggle('denied',status==='denied');btn.classList.toggle('attention',status==='default');btn.title=status==='granted'?'Push de avarias ativado neste dispositivo':status==='denied'?'Notificações bloqueadas no dispositivo':'Ativar notificações mesmo com o sistema em segundo plano';
+  const btn=$('btnNotifications');
+
+  if(!btn)return;
+
+  const allowed=
+    myPermissions.has(
+      'DAMAGE_NOTIFICATION'
+    );
+
+  btn.classList.toggle(
+    'hidden',
+    !allowed
+  );
+
+  if(!allowed){
+
+    btn.classList.remove(
+      'enabled',
+      'denied',
+      'attention'
+    );
+
+    btn.title=
+      'Notificacao de avaria nao habilitada no perfil';
+
+    return;
+  }
+
+  const status=
+    await pushPermissionStatusV170();
+
+  btn.classList.toggle(
+    'enabled',
+    status==='granted'
+  );
+
+  btn.classList.toggle(
+    'denied',
+    status==='denied'
+  );
+
+  btn.classList.toggle(
+    'attention',
+    status==='default'
+  );
+
+  btn.title=
+    status==='granted'
+      ?'Push de avarias ativado neste dispositivo'
+      :status==='denied'
+        ?'Notificacoes bloqueadas neste navegador'
+        :'Clique para ativar notificacoes neste navegador';
 }
 async function enablePushNotificationsV170(){
+
+  if(
+    !myPermissions.has(
+      'DAMAGE_NOTIFICATION'
+    )
+  ){
+
+    toast(
+      'Seu perfil nao possui a permissao Notificacao avaria.',
+      'error'
+    );
+
+    return false;
+  }
+
   try{
-    console.log('[PUSH] Clique no sino',{
-      user:authUser?.id||'',
-      unit:String(activeUnit||''),
-      online:navigator.onLine
-    });
+
+    console.log(
+      '[PUSH] Clique no sino',
+      {
+        user:authUser?.id||'',
+        unit:String(activeUnit||''),
+        online:navigator.onLine
+      }
+    );
 
     if(isNativeCapacitor()){
+
       await setupNativePushV170({
         requestPermission:true
       });
+
     }
     else{
+
       await registerWebPushV170({
         requestPermission:true
       });
+
     }
 
     toast(
-      'Notificacoes ativadas e dispositivo registrado.',
+      'Notificacoes ativadas neste dispositivo.',
       'success'
     );
+
+    return true;
+
   }
   catch(e){
-    const m=String(e?.message||e||'');
 
-    console.error('[PUSH] Falha completa',e);
+    const m=
+      String(e?.message||e||'');
+
+    console.error(
+      '[PUSH] Falha completa',
+      e
+    );
 
     let mensagem='Push: '+m;
 
-    if(m.includes('PERMISSAO_NOTIFICACOES_NEGADA')){
-      mensagem='As notificacoes estao bloqueadas no navegador.';
+    if(
+      m.includes(
+        'PERMISSAO_NOTIFICACOES_NEGADA'
+      )
+    ){
+      mensagem=
+        'As notificacoes estao bloqueadas neste navegador.';
     }
-    else if(m.includes('UNIDADE_PUSH_NAO_DEFINIDA')){
-      mensagem='Push: unidade ativa nao foi identificada.';
+    else if(
+      m.includes(
+        'UNIDADE_PUSH_NAO_DEFINIDA'
+      )
+    ){
+      mensagem=
+        'Push: unidade ativa nao foi identificada.';
     }
-    else if(m.includes('USUARIO_PUSH_NAO_AUTENTICADO')){
-      mensagem='Push: usuario nao esta autenticado.';
+    else if(
+      m.includes(
+        'USUARIO_PUSH_NAO_AUTENTICADO'
+      )
+    ){
+      mensagem=
+        'Push: usuario nao esta autenticado.';
     }
-    else if(m.includes('SESSAO_PUSH')){
-      mensagem='Push: sua sessao expirou. Saia e entre novamente.';
+    else if(
+      m.includes('SESSAO_PUSH')
+    ){
+      mensagem=
+        'Push: sua sessao expirou. Saia e entre novamente.';
     }
-    else if(m.includes('VAPID')){
-      mensagem='Push: nao foi possivel obter a chave VAPID.';
+    else if(
+      m.includes('VAPID')
+    ){
+      mensagem=
+        'Push: nao foi possivel obter a chave VAPID.';
     }
-    else if(m.includes('EDGE_CONFIG_PUSH')){
-      mensagem='Push: erro ao consultar a Edge Function.';
+    else if(
+      m.includes('EDGE_CONFIG_PUSH')
+    ){
+      mensagem=
+        'Push: erro ao consultar a Edge Function.';
     }
-    else if(m.includes('PUSH_DATABASE')){
-      mensagem='Push: Supabase recusou o cadastro. '+m;
+    else if(
+      m.includes('PUSH_DATABASE')
+    ){
+      mensagem=
+        'Push: Supabase recusou o cadastro. '+m;
     }
-    else if(m.includes('SERVICE_WORKER')){
-      mensagem='Push: Service Worker nao esta disponivel.';
+    else if(
+      m.includes('SERVICE_WORKER')
+    ){
+      mensagem=
+        'Push: Service Worker nao esta disponivel.';
     }
-    else if(m.includes('SUBSCRIPTION')){
-      mensagem='Push: navegador nao conseguiu criar a inscricao.';
+    else if(
+      m.includes('SUBSCRIPTION')
+    ){
+      mensagem=
+        'Push: navegador nao conseguiu criar a inscricao.';
     }
 
     toast(
       mensagem,
       'error'
     );
-  }
 
-  await updatePushButtonV170();
+    return false;
+
+  }
+  finally{
+
+    await updatePushButtonV170();
+
+  }
 }
 async function refreshPushRegistrationV170(){
-  if(!authUser||!activeUnit||!navigator.onLine)return false;try{const status=await pushPermissionStatusV170();if(status!=='granted')return false;if(isNativeCapacitor())await setupNativePushV170({requestPermission:false});else await registerWebPushV170({requestPermission:false});return true;}catch(e){console.warn('Atualizar registro push',e);return false;}
+
+  if(
+    !authUser
+    ||
+    !activeUnit
+    ||
+    !navigator.onLine
+  ){
+    return false;
+  }
+
+  if(
+    !myPermissions.has(
+      'DAMAGE_NOTIFICATION'
+    )
+  ){
+
+    await deactivatePushDeviceV170();
+
+    await updatePushButtonV170();
+
+    return false;
+  }
+
+  try{
+
+    const status=
+      await pushPermissionStatusV170();
+
+    if(status!=='granted'){
+
+      await updatePushButtonV170();
+
+      return false;
+    }
+
+    if(isNativeCapacitor()){
+
+      await setupNativePushV170({
+        requestPermission:false
+      });
+
+    }
+    else{
+
+      await registerWebPushV170({
+        requestPermission:false
+      });
+
+    }
+
+    return true;
+
+  }
+  catch(e){
+
+    console.warn(
+      'Atualizar registro push',
+      e
+    );
+
+    return false;
+
+  }
 }
 async function dispatchDamagePushV170(kind,requestId){
   if(!sb||!authUser||!navigator.onLine||!requestId){
@@ -4392,12 +4850,11 @@ async function dispatchDamagePushV170(kind,requestId){
 
     if(!recipients){
 
-      toast(
-        'Push: nenhum dispositivo elegivel encontrado.',
-        'error'
+      console.log(
+        '[PUSH DISPATCH] nenhum perfil com Notificacao avaria habilitada nesta unidade'
       );
 
-      return false;
+      return true;
     }
 
     if(failed>0 || sent===0){
@@ -4448,12 +4905,114 @@ async function dispatchDamagePushV170(kind,requestId){
   }
 }
 async function initPushNotificationsV170(){
-  const btn=$('btnNotifications');if(btn&&!btn.dataset.pushV170){btn.addEventListener('click',enablePushNotificationsV170);btn.dataset.pushV170='1';}
-  if(isNativeCapacitor()){try{const status=await pushPermissionStatusV170();if(status==='granted')await setupNativePushV170({requestPermission:false});}catch(e){console.warn('Inicializar push Android',e);}}
-  else if('Notification' in window&&Notification.permission==='granted'){await registerWebPushV170({requestPermission:false}).catch(e=>console.warn('Inicializar Web Push',e));}
+  const btn=$('btnNotifications');
+
+  if(
+    btn
+    &&
+    !btn.dataset.pushV170
+  ){
+
+    btn.addEventListener(
+      'click',
+      enablePushNotificationsV170
+    );
+
+    btn.dataset.pushV170='1';
+  }
+
+  if(
+    !myPermissions.has(
+      'DAMAGE_NOTIFICATION'
+    )
+  ){
+
+    await deactivatePushDeviceV170();
+
+    await updatePushButtonV170();
+
+    return;
+  }
+
+  const status=
+    await pushPermissionStatusV170();
+
+  if(status==='granted'){
+
+    try{
+
+      if(isNativeCapacitor()){
+
+        await setupNativePushV170({
+          requestPermission:false
+        });
+
+      }
+      else{
+
+        await registerWebPushV170({
+          requestPermission:false
+        });
+
+      }
+
+    }
+    catch(e){
+
+      console.warn(
+        'Inicializar Push',
+        e
+      );
+
+    }
+
+  }
+  else if(status==='default'){
+
+    toast(
+      'Para receber avarias neste navegador, clique no sino e permita as notificacoes.',
+      ''
+    );
+
+  }
+
   await updatePushButtonV170();
-  let pending='';try{pending=new URLSearchParams(location.search).get('notificationView')||'';}catch(_e){}
-  if(pending){setTimeout(()=>openPushViewV170(pending),150);try{history.replaceState({},'',location.pathname+location.hash);}catch(_e){}}
+
+  let pending='';
+
+  try{
+
+    pending=
+      new URLSearchParams(
+        location.search
+      ).get(
+        'notificationView'
+      )
+      ||'';
+
+  }
+  catch(_e){}
+
+  if(pending){
+
+    setTimeout(
+      ()=>openPushViewV170(pending),
+      150
+    );
+
+    try{
+
+      history.replaceState(
+        {},
+        '',
+        location.pathname+
+        location.hash
+      );
+
+    }
+    catch(_e){}
+
+  }
 }
 if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.type==='DISB_OPEN_PUSH_NOTIFICATION')openPushViewV170(e.data.view);});}
 

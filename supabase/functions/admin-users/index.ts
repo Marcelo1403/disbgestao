@@ -95,7 +95,41 @@ async function savePermissionOverrides(admin: any, userId: string, role: string,
   const { error: deleteError } = await admin.from('user_permissions').delete().eq('user_id', userId);
   if (deleteError) throwSupabase(deleteError, 'PERMISSOES_LIMPAR');
 
-  if (role === 'ADMIN') return;
+  if (role === 'ADMIN') {
+
+    const notificationCode =
+      'DAMAGE_NOTIFICATION';
+
+    if (
+      valid.has(notificationCode)
+      &&
+      enabled.has(notificationCode)
+    ) {
+
+      const {
+        error: notificationError
+      } = await admin
+        .from('user_permissions')
+        .insert({
+          user_id: userId,
+          permission_code:
+            notificationCode,
+          allowed: true,
+          updated_by: updatedBy,
+        });
+
+      if(notificationError){
+
+        throwSupabase(
+          notificationError,
+          'PERMISSAO_NOTIFICACAO_SALVAR'
+        );
+
+      }
+    }
+
+    return;
+  }
 
   const overrides = [...valid]
     .filter((code) => enabled.has(code) !== defaults.has(code))

@@ -79,23 +79,78 @@ function recipientDecision(
   rolePermissions: Set<string>,
   explicitPermissions: Map<string, boolean>,
 ): PermissionDecision {
-  const managerView = kind === 'delivery' ? 'avaria-admin' : 'sales-avaria-gestao';
-  const ownView = kind === 'delivery' ? 'avaria-cadastro' : 'sales-avaria-minhas';
 
-  if (profile.role === 'ADMIN') return { allowed: true, view: managerView };
+  // Somente recebe notificacao quem tiver
+  // DAMAGE_NOTIFICATION marcada individualmente.
+  const notificationKey =
+    `${profile.id}|DAMAGE_NOTIFICATION`;
 
-  for (const code of codesFor(kind)) {
-    const explicitKey = `${profile.id}|${code}`;
-    const allowed = explicitPermissions.has(explicitKey)
-      ? explicitPermissions.get(explicitKey) === true
-      : rolePermissions.has(`${profile.role}|${code}`);
-    if (allowed) return { allowed: true, view: managerView };
+  if(
+    explicitPermissions.get(
+      notificationKey
+    )!==true
+  ){
+    return {
+      allowed:false,
+      view:'',
+    };
   }
 
-  if (profile.id === creatorId) return { allowed: true, view: ownView };
-  return { allowed: false, view: '' };
-}
+  const managerView =
+    kind==='delivery'
+      ?'avaria-admin'
+      :'sales-avaria-gestao';
 
+  const ownView =
+    kind==='delivery'
+      ?'avaria-cadastro'
+      :'sales-avaria-minhas';
+
+  if(profile.role==='ADMIN'){
+    return {
+      allowed:true,
+      view:managerView,
+    };
+  }
+
+  for(const code of codesFor(kind)){
+
+    const explicitKey =
+      `${profile.id}|${code}`;
+
+    const allowed =
+      explicitPermissions.has(
+        explicitKey
+      )
+        ? explicitPermissions.get(
+            explicitKey
+          )===true
+        : rolePermissions.has(
+            `${profile.role}|${code}`
+          );
+
+    if(allowed){
+      return {
+        allowed:true,
+        view:managerView,
+      };
+    }
+  }
+
+  if(profile.id===creatorId){
+    return {
+      allowed:true,
+      view:ownView,
+    };
+  }
+
+  // Pode receber o alerta mesmo que nao tenha
+  // acesso a tela de gestao.
+  return {
+    allowed:true,
+    view:'',
+  };
+}
 async function loadRecipients(admin: ReturnType<typeof createClient>, kind: DamageKind, unit: string, creatorId: string) {
   const { data: deviceRows, error: deviceError } = await admin
     .from('push_devices')
@@ -117,7 +172,7 @@ async function loadRecipients(admin: ReturnType<typeof createClient>, kind: Dama
 
   const profiles = (profileRows || []) as Profile[];
   const roles = [...new Set(profiles.map(p => p.role).filter(Boolean))];
-  const permissionCodes = codesFor(kind);
+  const permissionCodes = [...codesFor(kind), 'DAMAGE_NOTIFICATION'];
 
   const [roleResult, userResult] = await Promise.all([
     roles.length
