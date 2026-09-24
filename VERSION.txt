@@ -1,1 +1,1 @@
-v1.6.8 - adiciona CSV de Avarias de Entrega e Vendas, permite decisao final direta em Avarias de Vendas e corrige emojis do comprovante WhatsApp
+v1.7.0 - Push Notifications externas para novas avarias no PWA/Windows e APK Android, com registro de dispositivos e envio remoto.

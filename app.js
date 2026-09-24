@@ -166,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.6.1-user-units',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-avarias',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -1225,6 +1225,7 @@ async function submitSalesDamage(e){
     for(let i=0;i<salesDamageItems.length;i++){const x=salesDamageItems[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${authUser.id}/${key}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadSalesDamagePhoto(path,ph.blob);uploaded.push(path);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}items.push({product:x.product,quantity:x.quantity,unit:x.unit,reason:x.reason,validity_date:x.validity_date||'',photos,photo_path:photos[0]?.photo_path||''});}
     const observation=String($('salesDamageObservation')?.value||'').trim().slice(0,500);
     const {data,error}=await sb.rpc('create_sales_damage_request',{p_payload:{unit:activeUnit,customer_id:customer.id,observation,items}});if(error)throw error;
+    await dispatchDamagePushV170('sales',data?.id);
     toast(`Solicitação ${data?.request_code||''} registrada com sucesso.`,'success');clearSalesDamageRequest();if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))await loadSalesDamageManage(true);
   }catch(err){if(uploaded.length)await sb.storage.from('avarias-vendas').remove(uploaded).catch(()=>{});toast(humanSalesDamageError(err),'error');}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -3666,7 +3667,7 @@ async function processOfflineRecord(row){
   if(row.type==='DAMAGE_CREATE'){
     const p=row.payload,base=`${authUser.id}/offline_${row.id}`,signaturePath=`${base}/assinatura.jpg`;await offlineUploadDamageStorage(signaturePath,p.signature_blob);const uploaded=[];
     for(let i=0;i<p.items.length;i++){const x=p.items[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${base}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await offlineUploadDamageStorage(path,ph.blob);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}uploaded.push({...x,photos});}
-    const serverPayload={unit:p.unit||p.receiptCtx?.unit||activeUnit,date:p.date,customer_code:p.customer.code,customer_name:p.customer.name,city:p.customer.city,map_number:p.map_number,signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first?.photo_path||'',latitude:first?.latitude,longitude:first?.longitude,accuracy:first?.accuracy,gps_at:first?.gps_at};})};const {data,error}=await sb.rpc('offline_sync_damage_request',{p_operation_id:row.id,p_payload:serverPayload});if(error)throw error;const ctx={...p.receiptCtx,request_id:data?.request_id||null};await offlineSaveDamageReceipt(ctx);return data;
+    const serverPayload={unit:p.unit||p.receiptCtx?.unit||activeUnit,date:p.date,customer_code:p.customer.code,customer_name:p.customer.name,city:p.customer.city,map_number:p.map_number,signature_path:signaturePath,items:uploaded.map(x=>{const first=x.photos[0];return {product:x.product,lot:x.lot,quantity:x.quantity,unit:x.unit,reason:x.reason,photos:x.photos,photo_path:first?.photo_path||'',latitude:first?.latitude,longitude:first?.longitude,accuracy:first?.accuracy,gps_at:first?.gps_at};})};const {data,error}=await sb.rpc('offline_sync_damage_request',{p_operation_id:row.id,p_payload:serverPayload});if(error)throw error;const ctx={...p.receiptCtx,request_id:data?.request_id||null};await offlineSaveDamageReceipt(ctx);await dispatchDamagePushV170('delivery',data?.request_id||null);return data;
   }
   throw new Error(`TIPO_OFFLINE_DESCONHECIDO:${row.type}`);
 }
@@ -3837,5 +3838,140 @@ startApp=async function(){
   const select=$('activeUnitSelect');if(select&&!select.dataset.bound){select.addEventListener('change',e=>changeActiveUnit(e.target.value));select.dataset.bound='1';}
   if(!hasCurrentUnit())toast('Seu usuário não possui unidade associada. Solicite ao Admin a liberação em Usuários e perfis.','error');
 };
+
+
+// =============================================================================
+// v1.7.0 - PUSH NOTIFICATIONS REAIS (PWA / WINDOWS + APK ANDROID)
+// =============================================================================
+const PUSH_CHANNEL_V170='disb_avarias';
+const PUSH_DEVICE_KEY_V170='disb_push_device_key_v170';
+let pushNativeListenersBoundV170=false;
+let pushLocalCounterV170=0;
+
+function getCapacitorPushV170(){
+  const cap=window.Capacitor;if(!cap)return null;
+  return cap.Plugins?.PushNotifications || (typeof cap.registerPlugin==='function'?cap.registerPlugin('PushNotifications'):null);
+}
+function getCapacitorLocalV170(){
+  const cap=window.Capacitor;if(!cap)return null;
+  return cap.Plugins?.LocalNotifications || (typeof cap.registerPlugin==='function'?cap.registerPlugin('LocalNotifications'):null);
+}
+function pushDeviceKeyV170(){
+  try{let k=localStorage.getItem(PUSH_DEVICE_KEY_V170);if(!k){k=uuid();localStorage.setItem(PUSH_DEVICE_KEY_V170,k);}return k;}catch(_e){return uuid();}
+}
+function pushViewForKindV170(kind){
+  if(kind==='delivery')return hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST')?'avaria-admin':'avaria-cadastro';
+  return hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST')?'sales-avaria-gestao':'sales-avaria-minhas';
+}
+function openPushViewV170(view){
+  const target=String(view||'').trim();if(!target)return;
+  const el=$(`view-${target}`);if(el&&!el.classList.contains('hidden'))openView(target,true);
+}
+function pushPayloadDataV170(payload){
+  const data=payload?.data||payload?.notification?.data||payload?.extra||{};
+  return {view:String(data?.view||''),kind:String(data?.kind||''),request_id:String(data?.request_id||'')};
+}
+function pushTitleBodyV170(payload){
+  return {title:String(payload?.title||payload?.notification?.title||'Disb Gestão'),body:String(payload?.body||payload?.notification?.body||'Nova atualização disponível.')};
+}
+function showPushInAppV170(payload){
+  const stack=$('damageNotificationStack');if(!stack)return;
+  const data=pushPayloadDataV170(payload),tb=pushTitleBodyV170(payload),kind=data.kind==='sales'?'sales':'delivery';
+  const card=document.createElement('div');card.className=`damage-notification-card ${kind}`;card.setAttribute('role','button');card.tabIndex=0;
+  const icon=kind==='sales'?'&#128722;':'&#128666;';
+  card.innerHTML=`<div class="damage-notification-icon">${icon}</div><div class="damage-notification-content"><strong>${esc(tb.title)}</strong><span>${esc(tb.body)}</span><small>Clique para abrir</small></div><button type="button" class="damage-notification-close" aria-label="Fechar">&times;</button>`;
+  const open=()=>{card.remove();openPushViewV170(data.view||pushViewForKindV170(kind));};
+  card.addEventListener('click',open);card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});card.querySelector('.damage-notification-close')?.addEventListener('click',e=>{e.stopPropagation();card.remove();});
+  stack.prepend(card);while(stack.children.length>4)stack.lastElementChild?.remove();setTimeout(()=>card.remove(),9000);
+}
+function base64UrlToBytesV170(value){
+  const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(base64),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;
+}
+async function savePushDeviceV170(channel,data={}){
+  if(!sb||!authUser||!activeUnit)return false;
+  const row={user_id:authUser.id,device_key:pushDeviceKeyV170(),channel,unit:activeUnit,subscription:channel==='WEB'?(data.subscription||null):null,fcm_token:channel==='FCM'?String(data.token||''):null,platform:isNativeCapacitor()?'ANDROID':'WEB',device_name:isNativeCapacitor()?'Disb Gestão Android':'Disb Gestão PWA',user_agent:String(navigator.userAgent||'').slice(0,900),active:true,last_seen_at:new Date().toISOString()};
+  const {error}=await sb.from('push_devices').upsert(row,{onConflict:'user_id,device_key,channel'});if(error)throw error;return true;
+}
+async function deactivatePushDeviceV170(){
+  if(!sb||!authUser)return;
+  try{await sb.from('push_devices').update({active:false,last_seen_at:new Date().toISOString()}).eq('user_id',authUser.id).eq('device_key',pushDeviceKeyV170());}catch(e){console.warn('Desativar push',e);}
+}
+async function getVapidPublicKeyV170(){
+  const {data,error}=await sb.functions.invoke('push-notifications',{body:{action:'config'}});if(error)throw error;if(!data?.vapid_public_key)throw new Error(data?.error||'VAPID_NAO_CONFIGURADO');return String(data.vapid_public_key);
+}
+async function registerWebPushV170({requestPermission=false}={}){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw new Error('PUSH_WEB_NAO_SUPORTADO');
+  let permission=Notification.permission;if(requestPermission&&permission!=='granted')permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('PERMISSAO_NOTIFICACOES_NEGADA');
+  const reg=await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
+  if(!sub){const key=await getVapidPublicKeyV170();sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64UrlToBytesV170(key)});}
+  await savePushDeviceV170('WEB',{subscription:sub.toJSON()});return true;
+}
+async function nativeForegroundSystemNotificationV170(payload){
+  const local=getCapacitorLocalV170();if(!local)return false;try{let p=await local.checkPermissions();if(String(p?.display||'').toLowerCase()!=='granted')return false;const tb=pushTitleBodyV170(payload),data=pushPayloadDataV170(payload);pushLocalCounterV170=(pushLocalCounterV170+1)%1000;const id=(Math.floor(Date.now()/1000)%2000000000)+pushLocalCounterV170;await local.schedule({notifications:[{id,title:tb.title,body:tb.body,channelId:PUSH_CHANNEL_V170,extra:data}]});return true;}catch(e){console.warn('Notificação local de push',e);return false;}
+}
+async function setupNativePushV170({requestPermission=false}={}){
+  const push=getCapacitorPushV170();if(!push)throw new Error('PUSH_ANDROID_INDISPONIVEL');
+  if(!pushNativeListenersBoundV170){
+    await push.addListener('registration',async token=>{try{await savePushDeviceV170('FCM',{token:token?.value||''});await updatePushButtonV170();}catch(e){console.warn('Salvar token FCM',e);}});
+    await push.addListener('registrationError',e=>console.error('FCM registration',e));
+    await push.addListener('pushNotificationReceived',async notification=>{showPushInAppV170(notification);await nativeForegroundSystemNotificationV170(notification);});
+    await push.addListener('pushNotificationActionPerformed',action=>openPushViewV170(pushPayloadDataV170(action?.notification).view));
+    pushNativeListenersBoundV170=true;
+  }
+  try{await push.createChannel({id:PUSH_CHANNEL_V170,name:'Avarias',description:'Novas avarias de entrega e vendas',importance:5,visibility:1,vibration:true});}catch(_e){}
+  const local=getCapacitorLocalV170();if(local){try{await local.createChannel({id:PUSH_CHANNEL_V170,name:'Avarias',description:'Novas avarias de entrega e vendas',importance:5,visibility:1,vibration:true});}catch(_e){}}
+  let permission=await push.checkPermissions();if(requestPermission&&String(permission?.receive||'').toLowerCase()!=='granted')permission=await push.requestPermissions();if(String(permission?.receive||'').toLowerCase()!=='granted')throw new Error('PERMISSAO_NOTIFICACOES_NEGADA');
+  if(local&&requestPermission){try{const lp=await local.checkPermissions();if(String(lp?.display||'').toLowerCase()!=='granted')await local.requestPermissions();}catch(_e){}}
+  await push.register();return true;
+}
+async function pushPermissionStatusV170(){
+  if(isNativeCapacitor()){const push=getCapacitorPushV170();if(!push)return 'unsupported';try{const p=await push.checkPermissions(),v=String(p?.receive||'').toLowerCase();return v==='granted'?'granted':v==='denied'?'denied':'default';}catch{return 'default';}}
+  if(!('Notification' in window)||!('PushManager' in window))return 'unsupported';return Notification.permission;
+}
+async function updatePushButtonV170(){
+  const btn=$('btnNotifications');if(!btn)return;const status=await pushPermissionStatusV170();btn.classList.toggle('enabled',status==='granted');btn.classList.toggle('denied',status==='denied');btn.classList.toggle('attention',status==='default');btn.title=status==='granted'?'Push de avarias ativado neste dispositivo':status==='denied'?'Notificações bloqueadas no dispositivo':'Ativar notificações mesmo com o sistema em segundo plano';
+}
+async function enablePushNotificationsV170(){
+  try{if(isNativeCapacitor())await setupNativePushV170({requestPermission:true});else await registerWebPushV170({requestPermission:true});toast('Notificações externas ativadas neste dispositivo.','success');}
+  catch(e){const m=String(e?.message||e||'');console.warn('Ativar push',e);toast(m.includes('NEGADA')?'As notificações estão bloqueadas. Libere a permissão nas configurações do dispositivo/navegador.':m.includes('VAPID')?'O Push Web ainda não foi configurado no servidor.':'Não foi possível ativar o Push neste dispositivo.','error');}
+  await updatePushButtonV170();
+}
+async function refreshPushRegistrationV170(){
+  if(!authUser||!activeUnit||!navigator.onLine)return false;try{const status=await pushPermissionStatusV170();if(status!=='granted')return false;if(isNativeCapacitor())await setupNativePushV170({requestPermission:false});else await registerWebPushV170({requestPermission:false});return true;}catch(e){console.warn('Atualizar registro push',e);return false;}
+}
+async function dispatchDamagePushV170(kind,requestId){
+  if(!sb||!authUser||!navigator.onLine||!requestId)return false;try{const {data,error}=await sb.functions.invoke('push-notifications',{body:{action:'dispatch',kind,request_id:requestId}});if(error)throw error;if(data?.error)throw new Error(data.error);return true;}catch(e){console.warn('Push da avaria não enviado',kind,requestId,e);return false;}
+}
+async function initPushNotificationsV170(){
+  const btn=$('btnNotifications');if(btn&&!btn.dataset.pushV170){btn.addEventListener('click',enablePushNotificationsV170);btn.dataset.pushV170='1';}
+  if(isNativeCapacitor()){try{const status=await pushPermissionStatusV170();if(status==='granted')await setupNativePushV170({requestPermission:false});}catch(e){console.warn('Inicializar push Android',e);}}
+  else if('Notification' in window&&Notification.permission==='granted'){await registerWebPushV170({requestPermission:false}).catch(e=>console.warn('Inicializar Web Push',e));}
+  await updatePushButtonV170();
+  let pending='';try{pending=new URLSearchParams(location.search).get('notificationView')||'';}catch(_e){}
+  if(pending){setTimeout(()=>openPushViewV170(pending),150);try{history.replaceState({},'',location.pathname+location.hash);}catch(_e){}}
+}
+if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.type==='DISB_OPEN_PUSH_NOTIFICATION')openPushViewV170(e.data.view);});}
+
+// Realtime permanece somente para atualizar telas; o alerta externo agora vem do Push remoto.
+setupRealtime=function(){
+  teardownRealtime();
+  realtimeChannel=sb.channel(`ops-${authUser.id}`);
+  if(canNri()){realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'nris'},()=>debounceReload('nri'));realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'marketplace_receipts'},()=>debounceReload('marketplace'));}
+  if(hasAnyPerm('DELIVERY_DAMAGE_VIEW_ALL,DELIVERY_DAMAGE_REVIEW,DELIVERY_DAMAGE_POST'))realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'damage_requests'},()=>debounceReload('avaria'));
+  if(canSalesDamage()){realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'sales_damage_requests'},()=>debounceReload('sales_damage'));realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'sales_damage_items'},()=>debounceReload('sales_damage'));}
+  if(canConference())realtimeChannel.on('postgres_changes',{event:'INSERT',schema:'public',table:'container_conferences'},()=>debounceReload('conf'));
+  if(canFefo()){realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'fefo_counts'},()=>debounceReload('fefo'));realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'fefo_count_items'},()=>debounceReload('fefo'));}
+  if(canRotatingAsset()){realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'rotating_asset_counts'},()=>debounceReload('rotating_asset'));realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'rotating_asset_entries'},()=>debounceReload('rotating_asset'));}
+  realtimeChannel.subscribe();
+};
+
+const changeActiveUnitBeforePushV170=changeActiveUnit;
+changeActiveUnit=async function(next){await changeActiveUnitBeforePushV170(next);await refreshPushRegistrationV170();};
+
+const logoutBeforePushV170=logout;
+logout=async function(){await deactivatePushDeviceV170();return logoutBeforePushV170();};
+
+const startAppBeforePushV170=startApp;
+startApp=async function(){await startAppBeforePushV170();await initPushNotificationsV170();};
 
 })();

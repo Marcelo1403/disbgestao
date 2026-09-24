@@ -1,6 +1,6 @@
 {
   "name": "disb-gestao",
-  "version": "1.6.8",
+  "version": "1.7.0",
   "private": true,
   "scripts": {
     "prepare:web": "node scripts/copy-web.mjs",
@@ -12,7 +12,9 @@
   "dependencies": {
     "@capacitor/android": "latest",
     "@capacitor/core": "latest",
-    "@capacitor/geolocation": "latest"
+    "@capacitor/geolocation": "latest",
+    "@capacitor/local-notifications": "latest",
+    "@capacitor/push-notifications": "latest"
   },
   "devDependencies": {
     "@capacitor/cli": "latest"
