@@ -76,71 +76,146 @@ function throwSupabase(value: unknown, prefix = ''): never {
 }
 
 
-async function savePermissionOverrides(admin: any, userId: string, role: string, permissions: unknown, updatedBy: string) {
-  if (!Array.isArray(permissions)) return;
+async function savePermissionOverrides(
+  admin: any,
+  userId: string,
+  role: string,
+  permissions: unknown,
+  updatedBy: string
+) {
 
-  const normalized: string[] = [...new Set<string>(permissions.map((x: unknown) => String(x || '').trim().toUpperCase()).filter(Boolean))];
-
-  const [{ data: allPermissions, error: permissionsError }, { data: roleRows, error: roleError }] = await Promise.all([
-    admin.from('permissions').select('code').eq('active', true),
-    admin.from('role_permissions').select('permission_code').eq('role', role),
-  ]);
-  if (permissionsError) throwSupabase(permissionsError, 'PERMISSOES_CATALOGO');
-  if (roleError) throwSupabase(roleError, 'PERMISSOES_PERFIL');
-
-  const valid = new Set<string>((allPermissions || []).map((x: any) => String(x.code)));
-  const defaults = new Set<string>((roleRows || []).map((x: any) => String(x.permission_code)));
-  const enabled = new Set<string>(normalized.filter((code) => valid.has(code)));
-
-  const { error: deleteError } = await admin.from('user_permissions').delete().eq('user_id', userId);
-  if (deleteError) throwSupabase(deleteError, 'PERMISSOES_LIMPAR');
-
-  if (role === 'ADMIN') {
-
-    const notificationCode =
-      'DAMAGE_NOTIFICATION';
-
-    if (
-      valid.has(notificationCode)
-      &&
-      enabled.has(notificationCode)
-    ) {
-
-      const {
-        error: notificationError
-      } = await admin
-        .from('user_permissions')
-        .insert({
-          user_id: userId,
-          permission_code:
-            notificationCode,
-          allowed: true,
-          updated_by: updatedBy,
-        });
-
-      if(notificationError){
-
-        throwSupabase(
-          notificationError,
-          'PERMISSAO_NOTIFICACAO_SALVAR'
-        );
-
-      }
-    }
-
+  if(!Array.isArray(permissions)){
     return;
   }
 
-  const overrides = [...valid]
-    .filter((code) => enabled.has(code) !== defaults.has(code))
-    .map((code) => ({ user_id: userId, permission_code: code, allowed: enabled.has(code), updated_by: updatedBy }));
+  const normalized: string[] =
+    [...new Set<string>(
+      permissions
+        .map(
+          (x: unknown)=>
+            String(x||'')
+              .trim()
+              .toUpperCase()
+        )
+        .filter(Boolean)
+    )];
 
-  if (overrides.length) {
-    const { error: insertError } = await admin.from('user_permissions').insert(overrides);
-    if (insertError) throwSupabase(insertError, 'PERMISSOES_SALVAR');
+  const [
+    {
+      data:allPermissions,
+      error:permissionsError
+    },
+    {
+      data:roleRows,
+      error:roleError
+    }
+  ] = await Promise.all([
+
+    admin
+      .from('permissions')
+      .select('code')
+      .eq('active',true),
+
+    admin
+      .from('role_permissions')
+      .select('permission_code')
+      .eq('role',role),
+
+  ]);
+
+  if(permissionsError){
+    throwSupabase(
+      permissionsError,
+      'PERMISSOES_CATALOGO'
+    );
+  }
+
+  if(roleError){
+    throwSupabase(
+      roleError,
+      'PERMISSOES_PERFIL'
+    );
+  }
+
+  const valid=
+    new Set<string>(
+      (allPermissions||[])
+        .map(
+          (x:any)=>
+            String(x.code)
+        )
+    );
+
+  const defaults=
+    new Set<string>(
+      (roleRows||[])
+        .map(
+          (x:any)=>
+            String(
+              x.permission_code
+            )
+        )
+    );
+
+  const enabled=
+    new Set<string>(
+      normalized.filter(
+        code=>valid.has(code)
+      )
+    );
+
+  const {error:deleteError}=
+    await admin
+      .from('user_permissions')
+      .delete()
+      .eq('user_id',userId);
+
+  if(deleteError){
+
+    throwSupabase(
+      deleteError,
+      'PERMISSOES_LIMPAR'
+    );
+
+  }
+
+  // Inclusive para ADMIN.
+  // Como DAMAGE_NOTIFICATION nao pertence a role_permissions,
+  // quando estiver marcada sera criada como override individual.
+  const overrides=
+    [...valid]
+      .filter(
+        code=>
+          enabled.has(code)
+          !==
+          defaults.has(code)
+      )
+      .map(
+        code=>({
+          user_id:userId,
+          permission_code:code,
+          allowed:enabled.has(code),
+          updated_by:updatedBy
+        })
+      );
+
+  if(overrides.length){
+
+    const {error:insertError}=
+      await admin
+        .from('user_permissions')
+        .insert(overrides);
+
+    if(insertError){
+
+      throwSupabase(
+        insertError,
+        'PERMISSOES_SALVAR'
+      );
+
+    }
   }
 }
-
 async function saveUserUnits(caller: any, userId: string, units: unknown, active: boolean) {
   const requested = Array.isArray(units)
     ? [...new Set<string>(units.map((x: unknown) => String(x || '').trim()).filter(Boolean))]

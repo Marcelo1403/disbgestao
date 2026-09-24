@@ -1,5 +1,5 @@
-const CACHE='disb-gestao-v1.7.0-push-perfil-notificacao';
-const STATIC=['./','index.html','styles.css?v=1.7.0-push-perfil-notificacao','app.js?v=1.7.0-push-perfil-notificacao','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
+const CACHE='disb-gestao-v1.7.0-push-multidevice-final';
+const STATIC=['./','index.html','styles.css?v=1.7.0-push-multidevice-final','app.js?v=1.7.0-push-multidevice-final','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
 
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())

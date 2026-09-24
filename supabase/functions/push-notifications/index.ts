@@ -80,20 +80,22 @@ function recipientDecision(
   explicitPermissions: Map<string, boolean>,
 ): PermissionDecision {
 
-  // Somente recebe notificacao quem tiver
-  // DAMAGE_NOTIFICATION marcada individualmente.
   const notificationKey =
     `${profile.id}|DAMAGE_NOTIFICATION`;
 
+  // So recebe Push quem tiver a permissao
+  // Notificacao avaria marcada individualmente.
   if(
     explicitPermissions.get(
       notificationKey
     )!==true
   ){
+
     return {
       allowed:false,
       view:'',
     };
+
   }
 
   const managerView =
@@ -107,45 +109,53 @@ function recipientDecision(
       :'sales-avaria-minhas';
 
   if(profile.role==='ADMIN'){
+
     return {
       allowed:true,
       view:managerView,
     };
+
   }
 
-  for(const code of codesFor(kind)){
+  for(
+    const code of codesFor(kind)
+  ){
 
-    const explicitKey =
+    const explicitKey=
       `${profile.id}|${code}`;
 
-    const allowed =
+    const allowed=
       explicitPermissions.has(
         explicitKey
       )
-        ? explicitPermissions.get(
+        ?explicitPermissions.get(
             explicitKey
           )===true
-        : rolePermissions.has(
+        :rolePermissions.has(
             `${profile.role}|${code}`
           );
 
     if(allowed){
+
       return {
         allowed:true,
         view:managerView,
       };
+
     }
   }
 
   if(profile.id===creatorId){
+
     return {
       allowed:true,
       view:ownView,
     };
+
   }
 
-  // Pode receber o alerta mesmo que nao tenha
-  // acesso a tela de gestao.
+  // Tem permissao para receber notificacao,
+  // mesmo sem acesso a tela de gestao.
   return {
     allowed:true,
     view:'',
@@ -411,7 +421,15 @@ async function dispatchPush(admin: ReturnType<typeof createClient>, reader: Retu
     }
   }
 
-  return { ok: true, recipients: recipients.length, sent, failed, errors: errors.slice(0, 5) };
+  return {
+    ok: true,
+    recipients: recipients.length,
+    web_recipients: webRecipients.length,
+    fcm_recipients: fcmRecipients.length,
+    sent,
+    failed,
+    errors: errors.slice(0,5)
+  };
 }
 
 Deno.serve(async (req) => {
