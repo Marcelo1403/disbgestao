@@ -1,5 +1,0 @@
-Disb Gestao v1.1.9
-1) Garanta que a migracao 12_v1_1_8_corrige_limite_gps_rpc.sql foi executada.
-2) Execute supabase/13_v1_1_9_bloqueia_etapas_ocorrencia.sql no Supabase.
-3) Aplique o PATCH na raiz do projeto, rode npm install e npm run android:sync.
-4) Commit/push e gere o APK normalmente.

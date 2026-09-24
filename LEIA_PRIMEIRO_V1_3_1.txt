@@ -1,7 +1,0 @@
-DISB GESTAO v1.3.1
-
-1. Nao existe SQL novo para esta versao.
-2. Aplique o PATCH sobre a v1.3.0.
-3. Placas da NRI e da Puxada/Transferencia passam a vir do cadastro de Veiculos / parceiros.
-4. O FEFO continua com CSV para download, mas sem botao de compartilhar.
-5. Nenhuma selecao de area do armazem foi incluida.

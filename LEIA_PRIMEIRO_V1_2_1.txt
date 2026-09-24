@@ -1,1 +1,0 @@
-v1.2.1: sem SQL novo. Copie o patch sobre a raiz do projeto e publique pelo Git. Como o acesso atual será pelo link, não é necessário gerar APK agora.

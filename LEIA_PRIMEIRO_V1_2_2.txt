@@ -1,8 +1,0 @@
-DISB GESTAO v1.2.2
-
-1. Execute supabase/16_v1_2_2_nf_historico_paletes_avariados.sql no Supabase.
-2. Copie os arquivos do patch para a raiz C:\disbgestao-git.
-3. Como o uso atual e pelo link, faca commit e push para publicar.
-4. Atualize o navegador com Ctrl+F5.
-
-Nao e necessario gerar APK para usar esta versao pela web.
