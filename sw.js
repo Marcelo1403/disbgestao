@@ -1,5 +1,5 @@
-const CACHE='disb-gestao-v1.6.7-observacao-avarias-vendas';
-const STATIC=['./','index.html','styles.css?v=1.6.7-observacao-avarias-vendas','app.js?v=1.6.7-observacao-avarias-vendas','config.js?v=1.6.7','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
+const CACHE='disb-gestao-v1.6.8-relatorios-fluxo-emojis';
+const STATIC=['./','index.html','styles.css?v=1.6.8-relatorios-fluxo-emojis','app.js?v=1.6.8-relatorios-fluxo-emojis','config.js?v=1.6.8','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{

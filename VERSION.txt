@@ -1,1 +1,1 @@
-v1.6.7 - adiciona observacao opcional exclusivamente na solicitacao de Avarias de Vendas, exibida aos aprovadores durante a analise
+v1.6.8 - adiciona CSV de Avarias de Entrega e Vendas, permite decisao final direta em Avarias de Vendas e corrige emojis do comprovante WhatsApp
