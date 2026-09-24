@@ -166,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-avarias',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-hotfix3',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -3888,23 +3888,198 @@ function base64UrlToBytesV170(value){
   const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/'),raw=atob(base64),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;
 }
 async function savePushDeviceV170(channel,data={}){
-  if(!sb||!authUser||!activeUnit)return false;
-  const row={user_id:authUser.id,device_key:pushDeviceKeyV170(),channel,unit:activeUnit,subscription:channel==='WEB'?(data.subscription||null):null,fcm_token:channel==='FCM'?String(data.token||''):null,platform:isNativeCapacitor()?'ANDROID':'WEB',device_name:isNativeCapacitor()?'Disb Gestão Android':'Disb Gestão PWA',user_agent:String(navigator.userAgent||'').slice(0,900),active:true,last_seen_at:new Date().toISOString()};
-  const {error}=await sb.from('push_devices').upsert(row,{onConflict:'user_id,device_key,channel'});if(error)throw error;return true;
+  if(!sb)throw new Error('SUPABASE_PUSH_INDISPONIVEL');
+  if(!authUser?.id)throw new Error('USUARIO_PUSH_NAO_AUTENTICADO');
+
+  const unit=String(activeUnit||'').trim();
+
+  if(!unit)throw new Error('UNIDADE_PUSH_NAO_DEFINIDA');
+
+  const row={
+    user_id:authUser.id,
+    device_key:pushDeviceKeyV170(),
+    channel,
+    unit,
+    subscription:channel==='WEB'?(data.subscription||null):null,
+    fcm_token:channel==='FCM'?String(data.token||''):null,
+    platform:isNativeCapacitor()?'ANDROID':'WEB',
+    device_name:isNativeCapacitor()?'Disb Gestao Android':'Disb Gestao PWA',
+    user_agent:String(navigator.userAgent||'').slice(0,900),
+    active:true,
+    last_seen_at:new Date().toISOString()
+  };
+
+  console.log('[PUSH] Tentando salvar dispositivo',{
+    channel:row.channel,
+    unit:row.unit,
+    user_id:row.user_id,
+    platform:row.platform
+  });
+
+  const {data:saved,error}=await sb
+    .from('push_devices')
+    .upsert(row,{
+      onConflict:'user_id,device_key,channel'
+    })
+    .select('id,user_id,channel,unit,active')
+    .single();
+
+  if(error){
+    console.error('[PUSH] ERRO push_devices',error);
+
+    throw new Error(
+      'PUSH_DATABASE: '+
+      String(error?.message||error?.code||error)
+    );
+  }
+
+  if(!saved?.id){
+    throw new Error('DISPOSITIVO_PUSH_NAO_GRAVADO');
+  }
+
+  console.log('[PUSH] DISPOSITIVO REGISTRADO',saved);
+
+  return true;
 }
 async function deactivatePushDeviceV170(){
   if(!sb||!authUser)return;
   try{await sb.from('push_devices').update({active:false,last_seen_at:new Date().toISOString()}).eq('user_id',authUser.id).eq('device_key',pushDeviceKeyV170());}catch(e){console.warn('Desativar push',e);}
 }
 async function getVapidPublicKeyV170(){
-  const {data,error}=await sb.functions.invoke('push-notifications',{body:{action:'config'}});if(error)throw error;if(!data?.vapid_public_key)throw new Error(data?.error||'VAPID_NAO_CONFIGURADO');return String(data.vapid_public_key);
+  const {
+    data:{session},
+    error:sessionError
+  }=await sb.auth.getSession();
+
+  if(sessionError){
+    console.error('[PUSH] Erro ao obter sessao',sessionError);
+    throw new Error('SESSAO_PUSH_ERRO');
+  }
+
+  if(!session?.access_token){
+    throw new Error('SESSAO_PUSH_EXPIRADA');
+  }
+
+  console.log('[PUSH] Solicitando VAPID');
+
+  const {data,error}=await sb.functions.invoke(
+    'push-notifications',
+    {
+      body:{
+        action:'config'
+      },
+      headers:{
+        Authorization:`Bearer ${session.access_token}`
+      }
+    }
+  );
+
+  if(error){
+    console.error('[PUSH] Erro Edge Function config',error);
+
+    throw new Error(
+      'EDGE_CONFIG_PUSH: '+
+      String(error?.message||error)
+    );
+  }
+
+  if(data?.error){
+    throw new Error(
+      'EDGE_CONFIG_PUSH: '+
+      String(data.error)
+    );
+  }
+
+  if(!data?.vapid_public_key){
+    throw new Error('VAPID_NAO_CONFIGURADO');
+  }
+
+  console.log('[PUSH] VAPID recebida');
+
+  return String(data.vapid_public_key);
 }
 async function registerWebPushV170({requestPermission=false}={}){
-  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window))throw new Error('PUSH_WEB_NAO_SUPORTADO');
-  let permission=Notification.permission;if(requestPermission&&permission!=='granted')permission=await Notification.requestPermission();if(permission!=='granted')throw new Error('PERMISSAO_NOTIFICACOES_NEGADA');
-  const reg=await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
-  if(!sub){const key=await getVapidPublicKeyV170();sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64UrlToBytesV170(key)});}
-  await savePushDeviceV170('WEB',{subscription:sub.toJSON()});return true;
+  console.log('[PUSH] Iniciando registro WEB',{
+    requestPermission,
+    permission:('Notification' in window?Notification.permission:'unsupported'),
+    unit:String(activeUnit||''),
+    user:authUser?.id||''
+  });
+
+  if(!('serviceWorker' in navigator)){
+    throw new Error('SERVICE_WORKER_NAO_SUPORTADO');
+  }
+
+  if(!('PushManager' in window)){
+    throw new Error('PUSH_MANAGER_NAO_SUPORTADO');
+  }
+
+  if(!('Notification' in window)){
+    throw new Error('NOTIFICATION_API_NAO_SUPORTADA');
+  }
+
+  let permission=Notification.permission;
+
+  if(requestPermission&&permission!=='granted'){
+    permission=await Notification.requestPermission();
+  }
+
+  console.log('[PUSH] Permissao',permission);
+
+  if(permission!=='granted'){
+    throw new Error('PERMISSAO_NOTIFICACOES_NEGADA');
+  }
+
+  const reg=await navigator.serviceWorker.ready;
+
+  if(!reg){
+    throw new Error('SERVICE_WORKER_NAO_PRONTO');
+  }
+
+  console.log('[PUSH] Service Worker pronto');
+
+  let sub=await reg.pushManager.getSubscription();
+
+  if(!sub){
+    console.log('[PUSH] Criando subscription');
+
+    const key=await getVapidPublicKeyV170();
+
+    sub=await reg.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:base64UrlToBytesV170(key)
+    });
+  }
+  else{
+    console.log('[PUSH] Subscription existente');
+  }
+
+  if(!sub){
+    throw new Error('SUBSCRIPTION_PUSH_NAO_CRIADA');
+  }
+
+  const subscription=sub.toJSON();
+
+  if(!subscription?.endpoint){
+    throw new Error('SUBSCRIPTION_SEM_ENDPOINT');
+  }
+
+  console.log('[PUSH] Endpoint pronto');
+
+  const saved=await savePushDeviceV170(
+    'WEB',
+    {
+      subscription
+    }
+  );
+
+  if(!saved){
+    throw new Error('DISPOSITIVO_PUSH_NAO_GRAVADO');
+  }
+
+  console.log('[PUSH] Registro WEB concluido');
+
+  return true;
 }
 async function nativeForegroundSystemNotificationV170(payload){
   const local=getCapacitorLocalV170();if(!local)return false;try{let p=await local.checkPermissions();if(String(p?.display||'').toLowerCase()!=='granted')return false;const tb=pushTitleBodyV170(payload),data=pushPayloadDataV170(payload);pushLocalCounterV170=(pushLocalCounterV170+1)%1000;const id=(Math.floor(Date.now()/1000)%2000000000)+pushLocalCounterV170;await local.schedule({notifications:[{id,title:tb.title,body:tb.body,channelId:PUSH_CHANNEL_V170,extra:data}]});return true;}catch(e){console.warn('Notificação local de push',e);return false;}
@@ -3932,15 +4107,117 @@ async function updatePushButtonV170(){
   const btn=$('btnNotifications');if(!btn)return;const status=await pushPermissionStatusV170();btn.classList.toggle('enabled',status==='granted');btn.classList.toggle('denied',status==='denied');btn.classList.toggle('attention',status==='default');btn.title=status==='granted'?'Push de avarias ativado neste dispositivo':status==='denied'?'Notificações bloqueadas no dispositivo':'Ativar notificações mesmo com o sistema em segundo plano';
 }
 async function enablePushNotificationsV170(){
-  try{if(isNativeCapacitor())await setupNativePushV170({requestPermission:true});else await registerWebPushV170({requestPermission:true});toast('Notificações externas ativadas neste dispositivo.','success');}
-  catch(e){const m=String(e?.message||e||'');console.warn('Ativar push',e);toast(m.includes('NEGADA')?'As notificações estão bloqueadas. Libere a permissão nas configurações do dispositivo/navegador.':m.includes('VAPID')?'O Push Web ainda não foi configurado no servidor.':'Não foi possível ativar o Push neste dispositivo.','error');}
+  try{
+    console.log('[PUSH] Clique no sino',{
+      user:authUser?.id||'',
+      unit:String(activeUnit||''),
+      online:navigator.onLine
+    });
+
+    if(isNativeCapacitor()){
+      await setupNativePushV170({
+        requestPermission:true
+      });
+    }
+    else{
+      await registerWebPushV170({
+        requestPermission:true
+      });
+    }
+
+    toast(
+      'Notificacoes ativadas e dispositivo registrado.',
+      'success'
+    );
+  }
+  catch(e){
+    const m=String(e?.message||e||'');
+
+    console.error('[PUSH] Falha completa',e);
+
+    let mensagem='Push: '+m;
+
+    if(m.includes('PERMISSAO_NOTIFICACOES_NEGADA')){
+      mensagem='As notificacoes estao bloqueadas no navegador.';
+    }
+    else if(m.includes('UNIDADE_PUSH_NAO_DEFINIDA')){
+      mensagem='Push: unidade ativa nao foi identificada.';
+    }
+    else if(m.includes('USUARIO_PUSH_NAO_AUTENTICADO')){
+      mensagem='Push: usuario nao esta autenticado.';
+    }
+    else if(m.includes('SESSAO_PUSH')){
+      mensagem='Push: sua sessao expirou. Saia e entre novamente.';
+    }
+    else if(m.includes('VAPID')){
+      mensagem='Push: nao foi possivel obter a chave VAPID.';
+    }
+    else if(m.includes('EDGE_CONFIG_PUSH')){
+      mensagem='Push: erro ao consultar a Edge Function.';
+    }
+    else if(m.includes('PUSH_DATABASE')){
+      mensagem='Push: Supabase recusou o cadastro. '+m;
+    }
+    else if(m.includes('SERVICE_WORKER')){
+      mensagem='Push: Service Worker nao esta disponivel.';
+    }
+    else if(m.includes('SUBSCRIPTION')){
+      mensagem='Push: navegador nao conseguiu criar a inscricao.';
+    }
+
+    toast(
+      mensagem,
+      'error'
+    );
+  }
+
   await updatePushButtonV170();
 }
 async function refreshPushRegistrationV170(){
   if(!authUser||!activeUnit||!navigator.onLine)return false;try{const status=await pushPermissionStatusV170();if(status!=='granted')return false;if(isNativeCapacitor())await setupNativePushV170({requestPermission:false});else await registerWebPushV170({requestPermission:false});return true;}catch(e){console.warn('Atualizar registro push',e);return false;}
 }
 async function dispatchDamagePushV170(kind,requestId){
-  if(!sb||!authUser||!navigator.onLine||!requestId)return false;try{const {data,error}=await sb.functions.invoke('push-notifications',{body:{action:'dispatch',kind,request_id:requestId}});if(error)throw error;if(data?.error)throw new Error(data.error);return true;}catch(e){console.warn('Push da avaria não enviado',kind,requestId,e);return false;}
+  if(!sb||!authUser||!navigator.onLine||!requestId)return false;
+
+  try{
+    const {
+      data:{session},
+      error:sessionError
+    }=await sb.auth.getSession();
+
+    if(sessionError||!session?.access_token){
+      throw new Error('SESSAO_PUSH_EXPIRADA');
+    }
+
+    const {data,error}=await sb.functions.invoke(
+      'push-notifications',
+      {
+        body:{
+          action:'dispatch',
+          kind,
+          request_id:requestId
+        },
+        headers:{
+          Authorization:`Bearer ${session.access_token}`
+        }
+      }
+    );
+
+    if(error)throw error;
+    if(data?.error)throw new Error(data.error);
+
+    return true;
+  }
+  catch(e){
+    console.warn(
+      'Push da avaria nao enviado',
+      kind,
+      requestId,
+      e
+    );
+
+    return false;
+  }
 }
 async function initPushNotificationsV170(){
   const btn=$('btnNotifications');if(btn&&!btn.dataset.pushV170){btn.addEventListener('click',enablePushNotificationsV170);btn.dataset.pushV170='1';}
