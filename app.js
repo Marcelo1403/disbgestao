@@ -166,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-diagnostico4',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-hotfix5-rpc',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -1224,9 +1224,104 @@ async function submitSalesDamage(e){
     const key=uuid(),items=[];
     for(let i=0;i<salesDamageItems.length;i++){const x=salesDamageItems[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${authUser.id}/${key}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadSalesDamagePhoto(path,ph.blob);uploaded.push(path);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}items.push({product:x.product,quantity:x.quantity,unit:x.unit,reason:x.reason,validity_date:x.validity_date||'',photos,photo_path:photos[0]?.photo_path||''});}
     const observation=String($('salesDamageObservation')?.value||'').trim().slice(0,500);
-    const {data,error}=await sb.rpc('create_sales_damage_request',{p_payload:{unit:activeUnit,customer_id:customer.id,observation,items}});if(error)throw error;
-    await dispatchDamagePushV170('sales',data?.id);
-    toast(`Solicitação ${data?.request_code||''} registrada com sucesso.`,'success');clearSalesDamageRequest();if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(hasAnyPerm('SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'))await loadSalesDamageManage(true);
+    const {data,error}=await sb.rpc(
+      'create_sales_damage_request',
+      {
+        p_payload:{
+          unit:activeUnit,
+          customer_id:customer.id,
+          observation,
+          items
+        }
+      }
+    );
+
+    if(error)throw error;
+
+    // PostgREST pode entregar retorno composto como objeto
+    // ou como uma lista com uma unica linha.
+    const created=Array.isArray(data)
+      ? (data[0]||null)
+      : data;
+
+    window.__lastSalesDamageCreateV170={
+      at:new Date().toISOString(),
+      raw:data,
+      created
+    };
+
+    console.log(
+      '[PUSH SALES] retorno create_sales_damage_request',
+      {
+        isArray:Array.isArray(data),
+        created
+      }
+    );
+
+    if(!created?.id){
+      window.__lastPushDispatchV170={
+        at:new Date().toISOString(),
+        kind:'sales',
+        requestId:null,
+        stage:'rpc-result',
+        data:null,
+        error:'SOLICITACAO_SEM_ID_PARA_PUSH'
+      };
+
+      throw new Error('SOLICITACAO_SEM_ID_PARA_PUSH');
+    }
+
+    console.log(
+      '[PUSH SALES] request ID',
+      created.id
+    );
+
+    const pushOk=await dispatchDamagePushV170(
+      'sales',
+      created.id
+    );
+
+    const pushDiag=window.__lastPushDispatchV170||null;
+
+    clearSalesDamageRequest();
+
+    if(hasPerm('SALES_DAMAGE_VIEW_OWN')){
+      await loadSalesDamageMy(true);
+    }
+
+    if(hasAnyPerm(
+      'SALES_DAMAGE_VIEW_ALL,SALES_DAMAGE_REVIEW,SALES_DAMAGE_OVERRIDE,SALES_DAMAGE_POST'
+    )){
+      await loadSalesDamageManage(true);
+    }
+
+    if(pushOk){
+
+      const enviados=Number(
+        pushDiag?.data?.sent||0
+      );
+
+      toast(
+        `Solicitacao ${created?.request_code||''} registrada. Push enviado para ${enviados} dispositivo(s).`,
+        'success'
+      );
+
+    }
+    else{
+
+      const detalhe=String(
+        pushDiag?.data?.error||
+        pushDiag?.error||
+        pushDiag?.exception||
+        'falha sem detalhe'
+      ).slice(0,180);
+
+      toast(
+        `Solicitacao ${created?.request_code||''} registrada, mas o Push falhou: ${detalhe}`,
+        'error'
+      );
+
+    }
   }catch(err){if(uploaded.length)await sb.storage.from('avarias-vendas').remove(uploaded).catch(()=>{});toast(humanSalesDamageError(err),'error');}
   finally{btn.disabled=false;btn.textContent=old;}
 }
@@ -4178,12 +4273,28 @@ async function refreshPushRegistrationV170(){
 }
 async function dispatchDamagePushV170(kind,requestId){
   if(!sb||!authUser||!navigator.onLine||!requestId){
-    console.warn('[PUSH DISPATCH] parametros ausentes',{
-      sb:!!sb,
-      user:authUser?.id||'',
-      online:navigator.onLine,
-      requestId
-    });
+
+    const motivos=[];
+
+    if(!sb)motivos.push('SUPABASE_AUSENTE');
+    if(!authUser)motivos.push('USUARIO_AUSENTE');
+    if(!navigator.onLine)motivos.push('OFFLINE');
+    if(!requestId)motivos.push('REQUEST_ID_AUSENTE');
+
+    window.__lastPushDispatchV170={
+      at:new Date().toISOString(),
+      kind,
+      requestId:requestId||null,
+      stage:'precheck',
+      data:null,
+      error:'PRECHECK_PUSH:'+motivos.join(',')
+    };
+
+    console.warn(
+      '[PUSH DISPATCH] parametros ausentes',
+      window.__lastPushDispatchV170
+    );
+
     return false;
   }
 
