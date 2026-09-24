@@ -166,7 +166,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-hotfix3',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-diagnostico4',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -4177,15 +4177,37 @@ async function refreshPushRegistrationV170(){
   if(!authUser||!activeUnit||!navigator.onLine)return false;try{const status=await pushPermissionStatusV170();if(status!=='granted')return false;if(isNativeCapacitor())await setupNativePushV170({requestPermission:false});else await registerWebPushV170({requestPermission:false});return true;}catch(e){console.warn('Atualizar registro push',e);return false;}
 }
 async function dispatchDamagePushV170(kind,requestId){
-  if(!sb||!authUser||!navigator.onLine||!requestId)return false;
+  if(!sb||!authUser||!navigator.onLine||!requestId){
+    console.warn('[PUSH DISPATCH] parametros ausentes',{
+      sb:!!sb,
+      user:authUser?.id||'',
+      online:navigator.onLine,
+      requestId
+    });
+    return false;
+  }
 
   try{
+    console.log('[PUSH DISPATCH] iniciando',{
+      kind,
+      requestId,
+      user:authUser.id,
+      unit:activeUnit
+    });
+
     const {
       data:{session},
       error:sessionError
     }=await sb.auth.getSession();
 
-    if(sessionError||!session?.access_token){
+    if(sessionError){
+      throw new Error(
+        'SESSAO_PUSH_ERRO: '+
+        String(sessionError?.message||sessionError)
+      );
+    }
+
+    if(!session?.access_token){
       throw new Error('SESSAO_PUSH_EXPIRADA');
     }
 
@@ -4203,17 +4225,112 @@ async function dispatchDamagePushV170(kind,requestId){
       }
     );
 
-    if(error)throw error;
-    if(data?.error)throw new Error(data.error);
+    console.log('[PUSH DISPATCH] retorno',{
+      data,
+      error
+    });
+
+    window.__lastPushDispatchV170={
+      at:new Date().toISOString(),
+      kind,
+      requestId,
+      data,
+      error:error?String(error?.message||error):null
+    };
+
+    if(error){
+      const msg=String(
+        error?.message||
+        error?.context?.statusText||
+        error
+      );
+
+      toast(
+        'Push: erro ao chamar servidor. '+msg,
+        'error'
+      );
+
+      console.error('[PUSH DISPATCH] erro Edge Function',error);
+
+      return false;
+    }
+
+    if(data?.error){
+
+      toast(
+        'Push: servidor recusou o envio. '+String(data.error),
+        'error'
+      );
+
+      console.error('[PUSH DISPATCH] servidor',data);
+
+      return false;
+    }
+
+    const recipients=Number(data?.recipients||0);
+    const sent=Number(data?.sent||0);
+    const failed=Number(data?.failed||0);
+    const errors=Array.isArray(data?.errors)?data.errors:[];
+
+    console.log('[PUSH DISPATCH] resultado',{
+      recipients,
+      sent,
+      failed,
+      errors
+    });
+
+    if(!recipients){
+
+      toast(
+        'Push: nenhum dispositivo elegivel encontrado.',
+        'error'
+      );
+
+      return false;
+    }
+
+    if(failed>0 || sent===0){
+
+      const detail=errors.length
+        ? ' Erro: '+String(errors[0]).slice(0,180)
+        : '';
+
+      toast(
+        `Push: ${recipients} destinatario(s), ${sent} enviado(s), ${failed} falha(s).${detail}`,
+        'error'
+      );
+
+      return false;
+    }
+
+    toast(
+      `Push: ${recipients} destinatario(s), ${sent} enviado(s), ${failed} falha(s).`,
+      'success'
+    );
 
     return true;
   }
   catch(e){
-    console.warn(
-      'Push da avaria nao enviado',
+
+    const msg=String(e?.message||e||'ERRO_PUSH');
+
+    console.error(
+      '[PUSH DISPATCH] excecao',
       kind,
       requestId,
       e
+    );
+
+    window.__lastPushDispatchV170={
+      at:new Date().toISOString(),
+      kind,
+      requestId,
+      exception:msg
+    };
+
+    toast(
+      'Push: '+msg,
+      'error'
     );
 
     return false;
