@@ -1,5 +1,5 @@
-const CACHE='disb-gestao-v1.7.0-push-persistente-ativo33';
-const STATIC=['./','index.html','styles.css?v=1.7.0-push-persistente-ativo33','app.js?v=1.7.0-push-persistente-ativo33','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
+const CACHE='disb-gestao-v1.7.0-pull-transfer-hotfix1';
+const STATIC=['./','index.html','styles.css?v=1.7.0-pull-transfer-hotfix1','app.js?v=1.7.0-pull-transfer-hotfix1','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
 
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())

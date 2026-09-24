@@ -167,7 +167,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-push-persistente-ativo33',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-pull-transfer-hotfix1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 async function init(){
@@ -3734,6 +3734,7 @@ const OFFLINE_PROFILE_KEY='disb_profile_cache_v160';
 const OFFLINE_PERMS_KEY='disb_permissions_cache_v160';
 let offlineDbPromise=null;
 let offlineSyncRunning=false;
+let offlineSyncPromise=null;
 let offlineSyncTimer=null;
 let offlineSyncLastError='';
 let offlinePillBound=false;
@@ -4037,25 +4038,616 @@ refreshPullGpsTarget = async function(){
   try{const {data,error}=await sb.from('pull_settings').select('singleton,gps_max_accuracy_m,track_interval_seconds,track_min_distance_m,updated_at').eq('singleton',true).maybeSingle();if(error)throw error;if(data)pullSettings={...(pullSettings||{}),...data};await cachePullOfflineSnapshot();return pullGpsTarget();}catch(e){console.warn('GPS: usando tolerância em cache.',e);return pullGpsTarget();}
 };
 loadPullActiveTrip = async function(silent=false){
+
   if(!isPullDriver())return;
-  if(!navigator.onLine){const ok=await restorePullOfflineSnapshot();if(!ok&&!silent)toast('Nenhuma viagem recente disponível no aparelho.','error');return;}
-  try{await loadPullReferenceData();const {data,error}=await sb.from('pull_trips').select('*').eq('origin_unit',activeUnit).eq('status','IN_PROGRESS').or(`driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`).order('started_at',{ascending:false}).limit(1).maybeSingle();if(error)throw error;pullActiveTrip=data||null;if(pullActiveTrip){const [ev,oc]=await Promise.all([sb.from('pull_events').select('*').eq('trip_id',pullActiveTrip.id).order('step_order'),sb.from('pull_occurrences').select('*').eq('trip_id',pullActiveTrip.id).order('started_at')]);if(ev.error)throw ev.error;if(oc.error)throw oc.error;pullDriverEvents=ev.data||[];pullDriverOccurrences=oc.data||[];}else{pullDriverEvents=[];pullDriverOccurrences=[];}renderPullDriver();syncPullTracking();await cachePullOfflineSnapshot();}catch(e){const ok=await restorePullOfflineSnapshot();if(!ok&&!silent)toast(humanPullError(e),'error');}
+
+  if(!navigator.onLine){
+
+    const ok=
+      await restorePullOfflineSnapshot();
+
+    if(!ok&&!silent){
+      toast(
+        'Nenhuma viagem recente disponível no aparelho.',
+        'error'
+      );
+    }
+
+    return;
+  }
+
+  try{
+
+    await loadPullReferenceData();
+
+    const {data,error}=
+      await sb
+        .from('pull_trips')
+        .select('*')
+        .eq(
+          'origin_unit',
+          activeUnit
+        )
+        .eq(
+          'status',
+          'IN_PROGRESS'
+        )
+        .or(
+          `driver1_id.eq.${authUser.id},driver2_id.eq.${authUser.id}`
+        )
+        .order(
+          'started_at',
+          {ascending:false}
+        )
+        .limit(1)
+        .maybeSingle();
+
+    if(error)throw error;
+
+    pullActiveTrip=
+      data||null;
+
+    // IMPORTANTE:
+    // somente agora sabemos se o ciclo atual
+    // e PULL ou TRANSFER.
+    pullMainSteps=
+      pullStepsForCycle(
+        pullActiveTrip?.cycle_type
+        ||
+        'PULL'
+      );
+
+    if(pullActiveTrip){
+
+      const [ev,oc]=
+        await Promise.all([
+
+          sb
+            .from('pull_events')
+            .select('*')
+            .eq(
+              'trip_id',
+              pullActiveTrip.id
+            )
+            .order('step_order'),
+
+          sb
+            .from('pull_occurrences')
+            .select('*')
+            .eq(
+              'trip_id',
+              pullActiveTrip.id
+            )
+            .order('started_at')
+
+        ]);
+
+      if(ev.error)throw ev.error;
+      if(oc.error)throw oc.error;
+
+      pullDriverEvents=
+        ev.data||[];
+
+      pullDriverOccurrences=
+        oc.data||[];
+
+    }
+    else{
+
+      pullDriverEvents=[];
+      pullDriverOccurrences=[];
+
+    }
+
+    renderPullDriver();
+    syncPullTracking();
+
+    await cachePullOfflineSnapshot();
+
+  }
+  catch(e){
+
+    console.error(
+      '[PUXADA] Falha ao carregar viagem ativa',
+      e
+    );
+
+    if(
+      !navigator.onLine
+      ||
+      offlineIsNetworkError(e)
+    ){
+
+      const ok=
+        await restorePullOfflineSnapshot();
+
+      if(!ok&&!silent){
+        toast(
+          humanPullError(e),
+          'error'
+        );
+      }
+
+      return;
+    }
+
+    if(!silent){
+      toast(
+        humanPullError(e),
+        'error'
+      );
+    }
+  }
 };
+async function pendingPullStepOperation(
+  tripId,
+  stepId
+){
+
+  return await offlineQueueFind(
+    row=>
+      row.type==='PULL_STEP'
+      &&
+      String(
+        row.payload?.p_trip_id||''
+      )===String(tripId||'')
+      &&
+      String(
+        row.payload?.p_step_id||''
+      )===String(stepId||'')
+  );
+}
+
+
+async function reconcilePullStepQueueRow(row){
+
+  if(
+    !row
+    ||
+    row.type!=='PULL_STEP'
+    ||
+    !navigator.onLine
+  ){
+    return false;
+  }
+
+  const p=row.payload||{};
+
+  if(
+    !p.p_trip_id
+    ||
+    !p.p_step_id
+  ){
+    return false;
+  }
+
+  const [eventResult,tripResult]=
+    await Promise.all([
+
+      sb
+        .from('pull_events')
+        .select('id,trip_id,step_id,step_order')
+        .eq(
+          'trip_id',
+          p.p_trip_id
+        )
+        .eq(
+          'step_id',
+          p.p_step_id
+        )
+        .limit(1),
+
+      sb
+        .from('pull_trips')
+        .select('id,status,cycle_type')
+        .eq(
+          'id',
+          p.p_trip_id
+        )
+        .maybeSingle()
+
+    ]);
+
+  if(eventResult.error){
+    throw eventResult.error;
+  }
+
+  if(tripResult.error){
+    throw tripResult.error;
+  }
+
+  // A etapa ja chegou ao servidor.
+  // A pendencia local e apenas duplicada.
+  if(
+    (eventResult.data||[]).length
+  ){
+
+    console.info(
+      '[PUXADA OFFLINE] removendo etapa ja sincronizada',
+      {
+        operation_id:row.id,
+        trip_id:p.p_trip_id,
+        step_id:p.p_step_id
+      }
+    );
+
+    await offlineDelete(
+      'queue',
+      row.id
+    );
+
+    return true;
+  }
+
+  // O ciclo ja terminou.
+  // Uma operacao antiga nao pode bloquear
+  // a proxima viagem do motorista.
+  if(
+    !tripResult.data
+    ||
+    tripResult.data.status!=='IN_PROGRESS'
+  ){
+
+    console.warn(
+      '[PUXADA OFFLINE] removendo pendencia de ciclo encerrado',
+      {
+        operation_id:row.id,
+        trip_id:p.p_trip_id,
+        step_id:p.p_step_id,
+        status:
+          tripResult.data?.status
+          ||
+          'NAO_ENCONTRADO'
+      }
+    );
+
+    await offlineDelete(
+      'queue',
+      row.id
+    );
+
+    return true;
+  }
+
+  return false;
+}
+
 
 recordPullNextStep = async function(){
-  if(!pullActiveTrip)return;const step=pullNextStep();if(!step||!pullCanExecuteStep(step))return;const openOcc=pullDriverOccurrences.find(x=>x.status==='OPEN');if(openOcc&&step.required!==false){toast(`Finalize a ocorrência “${openOcc.occurrence_name}” antes de registrar a próxima etapa obrigatória.`,'error');renderPullDriver();return;}
-  const btn=$('btnPullNextStep');btn.disabled=true;btn.textContent='Capturando GPS…';const hint=$('pullNextStepHint'),baseHint=hint?.textContent||'';
-  try{
-    const target=await refreshPullGpsTarget();const gps=await captureGps({maxAccuracy:target,maxWaitMs:15000,onProgress:s=>{if(hint)hint.textContent=`Buscando posição… sinal atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m.`;}});
-    const op=await offlineQueueAdd('PULL_STEP',{p_trip_id:pullActiveTrip.id,p_step_id:step.id,p_latitude:gps.latitude,p_longitude:gps.longitude,p_accuracy:gps.accuracy,p_exception_reason:'',p_device_at:gps.capturedAt});
-    pullDriverEvents.push({id:offlineLocalId('pull-event'),trip_id:pullActiveTrip.id,step_id:step.id,step_name:step.name,action_code:step.action_code,step_order:step.sort_order,user_id:authUser.id,user_name:profile.name,recorded_at:gps.capturedAt||new Date().toISOString(),device_at:gps.capturedAt,latitude:gps.latitude,longitude:gps.longitude,gps_accuracy:gps.accuracy,geofence_status:'PENDING_SYNC',exception_reason:'',_offline:true,offline_operation_id:op.id});
-    const after=pullMainSteps.find(x=>Number(x.sort_order)>Number(step.sort_order));if(after?.executor_driver===1){pullActiveTrip.active_driver_id=pullActiveTrip.driver1_id;pullActiveTrip.active_driver_name=pullActiveTrip.driver1_name;}if(after?.executor_driver===2){pullActiveTrip.active_driver_id=pullActiveTrip.driver2_id;pullActiveTrip.active_driver_name=pullActiveTrip.driver2_name;}
-    await cachePullOfflineSnapshot();renderPullDriver();
-    if(navigator.onLine){await syncOfflineQueue({silent:true});await loadPullActiveTrip(true);toast('Etapa registrada e sincronizada.','success');}else toast('Sem sinal: etapa salva no aparelho e será sincronizada automaticamente.','success');
-  }catch(err){if(hint)hint.textContent=baseHint;toast(humanGpsOrPullError(err),'error');}
-  finally{btn.disabled=false;renderPullDriver();}
-};
 
+  if(!pullActiveTrip)return;
+
+  const step=
+    pullNextStep();
+
+  if(
+    !step
+    ||
+    !pullCanExecuteStep(step)
+  ){
+    return;
+  }
+
+  const openOcc=
+    pullDriverOccurrences
+      .find(
+        x=>x.status==='OPEN'
+      );
+
+  if(
+    openOcc
+    &&
+    step.required!==false
+  ){
+
+    toast(
+      `Finalize a ocorrência “${openOcc.occurrence_name}” antes de registrar a próxima etapa obrigatória.`,
+      'error'
+    );
+
+    renderPullDriver();
+
+    return;
+  }
+
+  const btn=
+    $('btnPullNextStep');
+
+  const hint=
+    $('pullNextStepHint');
+
+  const baseHint=
+    hint?.textContent||'';
+
+  btn.disabled=true;
+  btn.textContent='Capturando GPS…';
+
+  try{
+
+    const target=
+      await refreshPullGpsTarget();
+
+    const gps=
+      await captureGps({
+        maxAccuracy:target,
+        maxWaitMs:15000,
+        onProgress:s=>{
+
+          if(hint){
+
+            hint.textContent=
+              `Buscando posição… sinal atual ±${Math.round(s.accuracy)} m • limite ≤ ${target} m.`;
+
+          }
+        }
+      });
+
+    // Nao cria duas operacoes para
+    // a mesma viagem + mesma etapa.
+    let op=
+      await pendingPullStepOperation(
+        pullActiveTrip.id,
+        step.id
+      );
+
+    if(op){
+
+      op.status='PENDING';
+      op.last_error='';
+
+      // Mantemos a coordenada mais recente.
+      op.payload={
+        ...op.payload,
+        p_latitude:gps.latitude,
+        p_longitude:gps.longitude,
+        p_accuracy:gps.accuracy,
+        p_device_at:gps.capturedAt
+      };
+
+      await offlineQueueUpdate(op);
+
+      console.warn(
+        '[PUXADA] reutilizando etapa que ja estava pendente',
+        {
+          operation_id:op.id,
+          trip_id:pullActiveTrip.id,
+          step_id:step.id
+        }
+      );
+
+    }
+    else{
+
+      op=
+        await offlineQueueAdd(
+          'PULL_STEP',
+          {
+            p_trip_id:
+              pullActiveTrip.id,
+
+            p_step_id:
+              step.id,
+
+            p_latitude:
+              gps.latitude,
+
+            p_longitude:
+              gps.longitude,
+
+            p_accuracy:
+              gps.accuracy,
+
+            p_exception_reason:
+              '',
+
+            p_device_at:
+              gps.capturedAt
+          }
+        );
+
+    }
+
+    // Movimento otimista na tela,
+    // mas sem duplicar o mesmo passo.
+    const alreadyLocal=
+      pullDriverEvents.some(
+        x=>
+          String(x.step_id)
+          ===
+          String(step.id)
+      );
+
+    if(!alreadyLocal){
+
+      pullDriverEvents.push({
+
+        id:
+          offlineLocalId(
+            'pull-event'
+          ),
+
+        trip_id:
+          pullActiveTrip.id,
+
+        step_id:
+          step.id,
+
+        step_name:
+          step.name,
+
+        action_code:
+          step.action_code,
+
+        step_order:
+          step.sort_order,
+
+        user_id:
+          authUser.id,
+
+        user_name:
+          profile.name,
+
+        recorded_at:
+          gps.capturedAt
+          ||
+          new Date().toISOString(),
+
+        device_at:
+          gps.capturedAt,
+
+        latitude:
+          gps.latitude,
+
+        longitude:
+          gps.longitude,
+
+        gps_accuracy:
+          gps.accuracy,
+
+        geofence_status:
+          'PENDING_SYNC',
+
+        exception_reason:
+          '',
+
+        _offline:
+          true,
+
+        offline_operation_id:
+          op.id
+
+      });
+    }
+
+    const after=
+      pullMainSteps.find(
+        x=>
+          Number(x.sort_order)
+          >
+          Number(step.sort_order)
+      );
+
+    if(after?.executor_driver===1){
+
+      pullActiveTrip.active_driver_id=
+        pullActiveTrip.driver1_id;
+
+      pullActiveTrip.active_driver_name=
+        pullActiveTrip.driver1_name;
+
+    }
+
+    if(after?.executor_driver===2){
+
+      pullActiveTrip.active_driver_id=
+        pullActiveTrip.driver2_id;
+
+      pullActiveTrip.active_driver_name=
+        pullActiveTrip.driver2_name;
+
+    }
+
+    await cachePullOfflineSnapshot();
+
+    renderPullDriver();
+
+    if(navigator.onLine){
+
+      btn.textContent=
+        'Sincronizando…';
+
+      await syncOfflineQueue({
+        silent:true
+      });
+
+      // A operacao precisa realmente ter
+      // desaparecido da fila.
+      const pending=
+        await offlineGet(
+          'queue',
+          op.id
+        );
+
+      if(pending){
+
+        const detail=
+          String(
+            pending.last_error
+            ||
+            'aguardando sincronização'
+          );
+
+        throw new Error(
+          `ETAPA_AGUARDANDO_SINCRONIZACAO:${detail}`
+        );
+      }
+
+      await loadPullActiveTrip(true);
+
+      toast(
+        'Etapa registrada e sincronizada.',
+        'success'
+      );
+
+    }
+    else{
+
+      toast(
+        'Sem sinal: etapa salva no aparelho e será sincronizada automaticamente.',
+        'success'
+      );
+
+    }
+
+  }
+  catch(err){
+
+    if(hint){
+      hint.textContent=
+        baseHint;
+    }
+
+    if(navigator.onLine){
+
+      await loadPullActiveTrip(true);
+
+    }
+
+    const message=
+      String(
+        err?.message||err||''
+      );
+
+    if(
+      message.includes(
+        'ETAPA_AGUARDANDO_SINCRONIZACAO'
+      )
+    ){
+
+      toast(
+        'A etapa ficou salva no aparelho, mas ainda não chegou ao servidor. O sistema tentará novamente sem criar outra etapa duplicada.',
+        'error'
+      );
+
+    }
+    else{
+
+      toast(
+        humanGpsOrPullError(err),
+        'error'
+      );
+
+    }
+
+  }
+  finally{
+
+    btn.disabled=false;
+
+    renderPullDriver();
+
+  }
+};
 const renderPullDriverV151=renderPullDriver;
 renderPullDriver = function(){renderPullDriverV151();const tl=$('pullDriverTimeline');if(tl){tl.querySelectorAll('.pull-timeline-item').forEach((el,i)=>{const ordered=[...pullDriverEvents.map(x=>({kind:'STEP',raw:x})),...pullDriverOccurrences.map(x=>({kind:'OCC',raw:x}))].sort((a,b)=>new Date(a.raw.recorded_at||a.raw.started_at)-new Date(b.raw.recorded_at||b.raw.started_at));if(ordered[i]?.raw?._offline)el.classList.add('offline-pending-row');});}const hint=$('pullNextStepHint');if(hint&&!navigator.onLine&&pullActiveTrip)hint.textContent+=` • OFFLINE: a etapa ficará salva neste aparelho até a conexão voltar.`;};
 
@@ -4157,17 +4749,270 @@ async function processOfflineRecord(row){
   throw new Error(`TIPO_OFFLINE_DESCONHECIDO:${row.type}`);
 }
 
-async function syncOfflineQueue({silent=false}={}){
-  if(offlineSyncRunning||!navigator.onLine||!sb||!authUser)return false;offlineSyncRunning=true;offlineSyncLastError='';updateOnlineStatus();let success=0,touchedFefo=false,touchedPull=false,touchedDamage=false;
-  try{
-    const rows=await offlineQueueRows();
-    for(const row of rows){try{row.status='SYNCING';row.tries=Number(row.tries||0)+1;row.last_error='';await offlineQueueUpdate(row);await processOfflineRecord(row);await offlineDelete('queue',row.id);success++;if(row.type.startsWith('FEFO_'))touchedFefo=true;if(row.type==='PULL_STEP')touchedPull=true;if(row.type==='DAMAGE_CREATE')touchedDamage=true;}catch(e){row.status='ERROR';row.last_error=String(e?.message||e||'Erro de sincronização');offlineSyncLastError=row.last_error;await offlineQueueUpdate(row);console.warn('Fila offline',row.type,row.id,e);break;}}
-    if(touchedFefo&&hasPerm('FEFO_CREATE'))await loadFefoCurrent(true);if(touchedPull&&isPullDriver())await loadPullActiveTrip(true);if(touchedDamage&&success&&!silent)toast('Avaria sincronizada. Toque no status Online para abrir o comprovante.','success');
-    if(success&&!silent&&!touchedDamage)toast(`${success} registro${success===1?'':'s'} sincronizado${success===1?'':'s'}.`,'success');
-    return !offlineSyncLastError;
-  }finally{offlineSyncRunning=false;updateOnlineStatus();}
-}
+async function syncOfflineQueue({
+  silent=false
+}={}){
 
+  if(
+    !navigator.onLine
+    ||
+    !sb
+    ||
+    !authUser
+  ){
+    return false;
+  }
+
+  // Cada chamada entra atras da chamada anterior.
+  // Nenhuma sincronizacao e simplesmente ignorada.
+  const previous=
+    offlineSyncPromise;
+
+  const current=
+    (async()=>{
+
+      if(previous){
+
+        try{
+          await previous;
+        }
+        catch(_e){}
+
+      }
+
+      if(
+        !navigator.onLine
+        ||
+        !sb
+        ||
+        !authUser
+      ){
+        return false;
+      }
+
+      offlineSyncRunning=true;
+      offlineSyncLastError='';
+
+      updateOnlineStatus();
+
+      let success=0;
+      let touchedFefo=false;
+      let touchedPull=false;
+      let touchedDamage=false;
+
+      try{
+
+        const rows=
+          await offlineQueueRows();
+
+        for(const row of rows){
+
+          try{
+
+            // Antes de reenviar uma etapa,
+            // verifica se o servidor ja a recebeu
+            // ou se aquela viagem ja terminou.
+            if(
+              row.type==='PULL_STEP'
+              &&
+              await reconcilePullStepQueueRow(
+                row
+              )
+            ){
+
+              success++;
+              touchedPull=true;
+
+              continue;
+            }
+
+            row.status='SYNCING';
+
+            row.tries=
+              Number(row.tries||0)+1;
+
+            row.last_error='';
+
+            await offlineQueueUpdate(row);
+
+            await processOfflineRecord(row);
+
+            await offlineDelete(
+              'queue',
+              row.id
+            );
+
+            success++;
+
+            if(
+              row.type.startsWith(
+                'FEFO_'
+              )
+            ){
+              touchedFefo=true;
+            }
+
+            if(
+              row.type==='PULL_STEP'
+            ){
+              touchedPull=true;
+            }
+
+            if(
+              row.type==='DAMAGE_CREATE'
+            ){
+              touchedDamage=true;
+            }
+
+          }
+          catch(e){
+
+            // Pode ter acontecido:
+            // servidor processou a etapa,
+            // mas o navegador perdeu a resposta.
+            if(row.type==='PULL_STEP'){
+
+              try{
+
+                if(
+                  await reconcilePullStepQueueRow(
+                    row
+                  )
+                ){
+
+                  success++;
+                  touchedPull=true;
+
+                  continue;
+                }
+
+              }
+              catch(reconcileError){
+
+                console.warn(
+                  '[PUXADA] falha ao reconciliar fila',
+                  reconcileError
+                );
+
+              }
+            }
+
+            row.status='ERROR';
+
+            row.last_error=
+              String(
+                e?.message
+                ||
+                e
+                ||
+                'Erro de sincronização'
+              );
+
+            offlineSyncLastError=
+              row.last_error;
+
+            await offlineQueueUpdate(row);
+
+            console.warn(
+              'Fila offline',
+              row.type,
+              row.id,
+              e
+            );
+
+            // Se realmente perdeu internet,
+            // nao adianta tentar os demais.
+            if(
+              offlineIsNetworkError(e)
+              ||
+              !navigator.onLine
+            ){
+              break;
+            }
+
+            // Um erro logico antigo nao pode
+            // bloquear outras viagens/modulos.
+            continue;
+          }
+        }
+
+        if(
+          touchedFefo
+          &&
+          hasPerm('FEFO_CREATE')
+        ){
+          await loadFefoCurrent(true);
+        }
+
+        if(
+          touchedPull
+          &&
+          isPullDriver()
+        ){
+          await loadPullActiveTrip(true);
+        }
+
+        if(
+          touchedDamage
+          &&
+          success
+          &&
+          !silent
+        ){
+
+          toast(
+            'Avaria sincronizada. Toque no status Online para abrir o comprovante.',
+            'success'
+          );
+
+        }
+
+        if(
+          success
+          &&
+          !silent
+          &&
+          !touchedDamage
+        ){
+
+          toast(
+            `${success} registro${success===1?'':'s'} sincronizado${success===1?'':'s'}.`,
+            'success'
+          );
+
+        }
+
+        return !offlineSyncLastError;
+
+      }
+      finally{
+
+        offlineSyncRunning=false;
+
+        updateOnlineStatus();
+
+      }
+
+    })();
+
+  offlineSyncPromise=
+    current;
+
+  try{
+
+    return await current;
+
+  }
+  finally{
+
+    if(
+      offlineSyncPromise===current
+    ){
+      offlineSyncPromise=null;
+    }
+
+  }
+}
 const startAppV151=startApp;
 startApp = async function(){await startAppV151();if(!offlinePillBound){$('syncPill')?.addEventListener('click',async()=>{if(navigator.onLine)await syncOfflineQueue({silent:false});if(await offlineOpenNextDamageReceipt())return;if(!navigator.onLine)toast('Sem internet. Os registros continuarão salvos no aparelho.','');else if(!(await offlinePendingCount()))toast('Tudo sincronizado.','success');});offlinePillBound=true;}updateOnlineStatus();if(navigator.onLine)syncOfflineQueue({silent:true});};
 
