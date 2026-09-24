@@ -212,10 +212,103 @@ async function deactivateDevice(admin: ReturnType<typeof createClient>, id: stri
   if (error) console.warn('Falha ao desativar dispositivo', id, error.message);
 }
 
-async function dispatchPush(admin: ReturnType<typeof createClient>, kind: DamageKind, requestId: string, callerId: string) {
+async function dispatchPush(admin: ReturnType<typeof createClient>, reader: ReturnType<typeof createClient>, kind: DamageKind, requestId: string, callerId: string) {
   const table = kind === 'delivery' ? 'damage_requests' : 'sales_damage_requests';
-  const { data: row, error } = await admin.from(table).select('*').eq('id', requestId).single();
-  if (error || !row) throw new Error('SOLICITACAO_NAO_ENCONTRADA');
+  let row: any = null;
+  let lastLookupError: any = null;
+
+  for (let attempt = 1; attempt <= 3 && !row; attempt++) {
+
+    const adminLookup = await admin
+      .from(table)
+      .select('*')
+      .eq('id', requestId)
+      .maybeSingle();
+
+    if (adminLookup.error) {
+
+      lastLookupError = adminLookup.error;
+
+      console.error('lookup admin request', {
+        attempt,
+        table,
+        requestId,
+        code: adminLookup.error.code || '',
+        message: adminLookup.error.message || '',
+        details: adminLookup.error.details || '',
+        hint: adminLookup.error.hint || '',
+      });
+
+    } else if (adminLookup.data) {
+
+      row = adminLookup.data;
+
+      console.log('lookup admin request OK', {
+        attempt,
+        table,
+        requestId,
+      });
+
+      break;
+    }
+
+    const userLookup = await reader
+      .from(table)
+      .select('*')
+      .eq('id', requestId)
+      .maybeSingle();
+
+    if (userLookup.error) {
+
+      lastLookupError = userLookup.error;
+
+      console.error('lookup user request', {
+        attempt,
+        table,
+        requestId,
+        code: userLookup.error.code || '',
+        message: userLookup.error.message || '',
+        details: userLookup.error.details || '',
+        hint: userLookup.error.hint || '',
+      });
+
+    } else if (userLookup.data) {
+
+      row = userLookup.data;
+
+      console.log('lookup user request OK', {
+        attempt,
+        table,
+        requestId,
+      });
+
+      break;
+    }
+
+    if (attempt < 3) {
+      await new Promise(resolve => setTimeout(resolve, attempt * 300));
+    }
+  }
+
+  if (!row) {
+
+    if (lastLookupError) {
+
+      throw new Error(
+        'BUSCA_SOLICITACAO_FALHOU:' +
+        String(lastLookupError.code || '') +
+        ':' +
+        String(lastLookupError.message || lastLookupError)
+      );
+    }
+
+    throw new Error(
+      'SOLICITACAO_NAO_ENCONTRADA:' +
+      kind +
+      ':' +
+      requestId
+    );
+  }
 
   const creatorId = String(row.created_by || row.delivery_user_id || row.seller_id || '');
   if (!creatorId || creatorId !== callerId) throw new Error('SOLICITACAO_NAO_PERTENCE_AO_USUARIO');
@@ -277,6 +370,24 @@ Deno.serve(async (req) => {
   const user = await authenticatedUser(req);
   if (!user) return json({ error: 'UNAUTHORIZED' }, 401);
 
+  const authHeader = req.headers.get('Authorization') || '';
+
+  const reader = createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    },
+  );
+
   let body: any = {};
   try { body = await req.json(); } catch { return json({ error: 'JSON_INVALIDO' }, 400); }
   const action = String(body?.action || '').trim().toLowerCase();
@@ -295,7 +406,7 @@ Deno.serve(async (req) => {
     const requestId = String(body?.request_id || '').trim();
     if (!['delivery', 'sales'].includes(kind) || !requestId) return json({ error: 'PARAMETROS_INVALIDOS' }, 400);
     try {
-      return json(await dispatchPush(admin, kind, requestId, user.id));
+      return json(await dispatchPush(admin, reader, kind, requestId, user.id));
     } catch (error) {
       console.error('dispatch push', error);
       return json({ error: String((error as any)?.message || error || 'PUSH_ERROR') }, 400);
