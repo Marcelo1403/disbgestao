@@ -1,5 +1,5 @@
-const CACHE='disb-gestao-v1.7.0-offline-login1';
-const STATIC=['./','index.html','styles.css?v=1.7.0-offline-login1','app.js?v=1.7.0-offline-login1','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
+const CACHE='disb-gestao-v1.7.0-native-track-validade34';
+const STATIC=['./','index.html','styles.css?v=1.7.0-native-track-validade34','app.js?v=1.7.0-native-track-validade34','config.js?v=1.7.0','manifest.webmanifest','assets/icon-192.png','assets/icon-512.png'];
 
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(STATIC)).then(()=>self.skipWaiting())

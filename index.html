@@ -7,7 +7,7 @@
   <title>Disb Gestão</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=1.7.0-offline-login1">
+  <link rel="stylesheet" href="styles.css?v=1.7.0-native-track-validade34">
 </head>
 <body>
   <section id="loginScreen" class="login-screen">
@@ -299,7 +299,7 @@
             </div>
 
             <div class="form-block accent sales-damage-item-editor">
-              <div class="block-head"><span class="step">2</span><div><strong>Produto avariado</strong><small>Não há captura de localização. Cada produto exige exatamente uma foto.</small></div></div>
+              <div class="block-head"><span class="step">2</span><div><strong>Produto avariado</strong><small>Cada foto registra GPS. Para Validade, informe data e lote e podem ser registradas até 2 fotos.</small></div></div>
               <div class="grid grid-4">
                 <div class="field span-2 sales-product-field">
                   <label>Produto avariado *</label>
@@ -314,6 +314,11 @@
                 <div class="field"><label>Unidade *</label><select id="salesDamageUnit"><option value="CAIXA">Caixa</option><option value="UNIDADE">Unidade</option></select></div>
                 <div class="field span-2"><label>Motivo *</label><select id="salesDamageReason"><option value="">Selecione</option><option value="VALIDADE">Validade</option><option value="QUEBRADO">Quebrado</option><option value="EMBALAGEM">Embalagem amassada/rasgada</option><option value="FURADA">Furada</option><option value="SEM_TAMPA">Sem tampa</option><option value="MAL_CHEIA">Mal cheia</option><option value="OUTROS">Outros</option></select></div>
                 <div id="salesDamageValidityWrap" class="field hidden"><label>Data de validade *</label><input id="salesDamageValidity" type="date"></div>
+                <div id="salesDamageLotWrap" class="field hidden">
+                  <label>Lote *</label>
+                  <input id="salesDamageLot" maxlength="40" autocomplete="off" placeholder="Informe o lote">
+                  <small>Obrigatório quando o motivo for Validade.</small>
+                </div>
               </div>
               <div class="evidence-card sales-photo-card">
                 <div class="evidence-card-head"><div><strong>Foto do produto *</strong><small>Somente câmera. 1 foto obrigatória; para avaria por validade, até 2 fotos. Cada foto registra GPS.</small></div><span id="salesDamagePhotoStatus" class="counter">0/1 foto</span></div>
@@ -529,7 +534,7 @@
       <!-- PUXADA - CONFIGURACOES -->
       <section id="view-puxada-config" class="view admin-only role-puxada" data-permission="PULL_CONFIG">
         <div class="page-head"><div><div class="breadcrumb">Puxada / Admin</div><h1>Configurações</h1><p>GPS, raio de auditoria das fábricas, veículos, etapas e ocorrências. A origem é escolhida pelo motorista em cada viagem.</p></div><span class="page-chip admin">CONFIG</span></div>
-        <div class="card"><div class="section-title">Configuração geral</div><form id="formPullSettings"><div class="grid grid-3"><div class="field"><label>Tolerância máxima do GPS para registrar etapa (m)</label><input id="pullGpsAccuracy" type="number" min="5" max="500"><small>Configurável de 5 a 500 m. Para os aparelhos atuais, comece com 200 m e reduza se o GPS conseguir maior precisão. Quanto menor, mais rigoroso.</small></div><div class="field"><label>Intervalo do rastreio (s)</label><input id="pullTrackInterval" type="number" min="30" max="3600"></div><div class="field"><label>Distância mínima entre pontos (m)</label><input id="pullTrackDistance" type="number" min="0" max="10000"></div></div><div class="actions right"><button class="btn primary">Salvar configuração</button></div></form></div>
+        <div class="card"><div class="section-title">Configuração geral</div><form id="formPullSettings"><div class="grid grid-3"><div class="field"><label>Tolerância máxima do GPS para registrar etapa (m)</label><input id="pullGpsAccuracy" type="number" min="5" max="500"><small>Configurável de 5 a 500 m. Para os aparelhos atuais, comece com 200 m e reduza se o GPS conseguir maior precisão. Quanto menor, mais rigoroso.</small></div><div class="field"><label>Intervalo do rastreio (s)</label><input id="pullTrackInterval" type="number" min="5" max="3600"></div><div class="field"><label>Distância mínima entre pontos (m)</label><input id="pullTrackDistance" type="number" min="0" max="10000"></div></div><div class="actions right"><button class="btn primary">Salvar configuração</button></div></form></div>
         <div class="admin-grid">
           <div class="card"><div class="section-title">Fábricas e raio de auditoria</div><form id="formPullFactory"><input id="pullFactoryOriginal" type="hidden"><div class="field"><label>Fábrica *</label><select id="pullFactoryName" required></select></div><div class="grid grid-3"><div class="field"><label>Latitude *</label><input id="pullFactoryLat" type="number" step="any" required></div><div class="field"><label>Longitude *</label><input id="pullFactoryLon" type="number" step="any" required></div><div class="field"><label>Raio (m) *</label><input id="pullFactoryRadius" type="number" min="1" required></div></div><div class="actions"><button id="btnPullFactoryGps" type="button" class="btn secondary">Usar minha localização</button><button type="submit" class="btn primary">Salvar localização/raio</button></div></form><div id="pullFactoryList" class="compact-list"></div></div>
           <div class="card"><div class="section-title">Veículos / parceiros</div><form id="formPullVehicle"><input id="pullVehicleId" type="hidden"><div class="grid grid-2"><div class="field"><label>Placa *</label><input id="pullVehiclePlate" maxlength="12" required></div><div class="field"><label>Parceiro / transportadora *</label><input id="pullVehicleCarrier" required></div></div><label class="check"><input id="pullVehicleActive" type="checkbox" checked> Veículo ativo</label><div class="actions right"><button id="btnPullVehicleNew" type="button" class="btn secondary">Novo</button><button class="btn primary">Salvar veículo</button></div></form><div id="pullVehicleRows" class="compact-list"></div></div>
@@ -627,6 +632,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js?v=1.7.0"></script>
-  <script src="app.js?v=1.7.0-offline-login1"></script>
+  <script src="app.js?v=1.7.0-native-track-validade34"></script>
 </body>
 </html>

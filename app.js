@@ -167,7 +167,7 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-offline-login1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-native-track-validade34',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
 
@@ -565,6 +565,7 @@ function bindBaseEvents(){
   $('btnSalesDamageProductClear')?.addEventListener('click',()=>clearSalesDamageProductSelection(true));
   document.addEventListener('click',e=>{if(!$('salesDamageProductPicker')?.contains(e.target))hideSalesDamageProductOptions();});
   $('salesDamageReason')?.addEventListener('change',updateSalesDamageValidityMode);
+  $('salesDamageLot')?.addEventListener('input',enforceLotInput);
   $('btnSalesDamageCamera')?.addEventListener('click',()=>$('salesDamageCamera')?.click());
   $('salesDamageCamera')?.addEventListener('change',onSalesDamagePhoto);
   $('salesDamagePhotoPreview')?.addEventListener('click',onSalesDamagePhotoPreviewClick);
@@ -1635,10 +1636,33 @@ function prepareSalesDamageForm(){
 }
 function salesDamagePhotoLimit(){return $('salesDamageReason')?.value==='VALIDADE'?2:1;}
 function updateSalesDamageValidityMode(){
-  const validity=$('salesDamageValidity'),wrap=$('salesDamageValidityWrap'),needed=$('salesDamageReason')?.value==='VALIDADE';if(!validity||!wrap)return;
-  wrap.classList.toggle('hidden',!needed);validity.required=needed;if(!needed)validity.value='';
+  const validity=$('salesDamageValidity');
+  const validityWrap=$('salesDamageValidityWrap');
+  const lot=$('salesDamageLot');
+  const lotWrap=$('salesDamageLotWrap');
+  const needed=$('salesDamageReason')?.value==='VALIDADE';
+
+  if(!validity||!validityWrap||!lot||!lotWrap)return;
+
+  validityWrap.classList.toggle('hidden',!needed);
+  lotWrap.classList.toggle('hidden',!needed);
+  validity.required=needed;
+  lot.required=needed;
+
+  if(!needed){
+    validity.value='';
+    lot.value='';
+  }
+
   const max=salesDamagePhotoLimit();
-  if(salesDamagePhotos.length>max){const removed=salesDamagePhotos.slice(max);removed.forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);});salesDamagePhotos=salesDamagePhotos.slice(0,max);toast('Para este motivo é permitida apenas 1 foto. A foto excedente foi removida.','');}
+
+  if(salesDamagePhotos.length>max){
+    const removed=salesDamagePhotos.slice(max);
+    removed.forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);});
+    salesDamagePhotos=salesDamagePhotos.slice(0,max);
+    toast('Para este motivo é permitida apenas 1 foto. A foto excedente foi removida.','');
+  }
+
   renderSalesDamagePhoto();
 }
 async function onSalesDamagePhoto(e){
@@ -1664,30 +1688,165 @@ function renderSalesDamagePhoto(){
 function onSalesDamagePhotoPreviewClick(e){const b=e.target.closest('[data-sales-photo-remove]');if(!b)return;const ph=salesDamagePhotos.find(p=>p.id===b.dataset.salesPhotoRemove);if(ph?.previewUrl)URL.revokeObjectURL(ph.previewUrl);salesDamagePhotos=salesDamagePhotos.filter(p=>p.id!==b.dataset.salesPhotoRemove);renderSalesDamagePhoto();}
 function salesReasonLabel(code){return ({VALIDADE:'Validade',QUEBRADO:'Quebrado',EMBALAGEM:'Embalagem amassada/rasgada',FURADA:'Furada',SEM_TAMPA:'Sem tampa',MAL_CHEIA:'Mal cheia',OUTROS:'Outros'})[code]||code||'—';}
 function addSalesDamageItem(){
-  const selected=salesDamageSelectedProduct,quantity=num($('salesDamageQuantity')?.value),unit=$('salesDamageUnit')?.value||'',reason=$('salesDamageReason')?.value||'',validity=$('salesDamageValidity')?.value||'',maxPhotos=salesDamagePhotoLimit();
+  const selected=salesDamageSelectedProduct;
+  const quantity=num($('salesDamageQuantity')?.value);
+  const unit=$('salesDamageUnit')?.value||'';
+  const reason=$('salesDamageReason')?.value||'';
+  const validity=$('salesDamageValidity')?.value||'';
+  const lot=sanitizeLot($('salesDamageLot')?.value||'');
+  const maxPhotos=salesDamagePhotoLimit();
+
   if(!selected?.code)return toast('Selecione um produto da lista da base.','error');
   if(quantity<=0||!['CAIXA','UNIDADE'].includes(unit)||!reason)return toast('Preencha quantidade, unidade e motivo.','error');
   if(reason==='VALIDADE'&&!validity)return toast('Informe a data de validade para o motivo Validade.','error');
+  if(reason==='VALIDADE'&&!lot)return toast('Informe o lote para o motivo Validade.','error');
   if(!salesDamagePhotos.length)return toast('Tire ao menos uma foto do produto avariado.','error');
   if(salesDamagePhotos.length>maxPhotos)return toast(`O limite para este motivo é de ${maxPhotos} foto${maxPhotos===1?'':'s'}.`,'error');
   if(salesDamagePhotos.some(p=>!p.gps))return toast('Todas as fotos precisam ter localização GPS.','error');
-  const product=salesDamageProductLabel(selected),id=salesDamageEditingId||uuid(),item={id,product,product_code:selected.code,product_name:selected.name,quantity,unit,reason,validity_date:reason==='VALIDADE'?validity:null,photos:salesDamagePhotos.map(p=>({...p}))};
-  const idx=salesDamageItems.findIndex(x=>x.id===id);if(idx>=0){const keep=new Set(item.photos.map(p=>p.previewUrl));(salesDamageItems[idx]?.photos||[]).forEach(p=>{if(p.previewUrl&&!keep.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);});salesDamageItems[idx]=item;}else salesDamageItems.push(item);
-  renderSalesDamageItems();clearSalesDamageItemEditor(false);
+
+  const product=salesDamageProductLabel(selected);
+  const id=salesDamageEditingId||uuid();
+  const item={
+    id,
+    product,
+    product_code:selected.code,
+    product_name:selected.name,
+    quantity,
+    unit,
+    reason,
+    validity_date:reason==='VALIDADE'?validity:null,
+    lot:reason==='VALIDADE'?lot:null,
+    photos:salesDamagePhotos.map(p=>({...p}))
+  };
+
+  const idx=salesDamageItems.findIndex(x=>x.id===id);
+  if(idx>=0){
+    const keep=new Set(item.photos.map(p=>p.previewUrl));
+    (salesDamageItems[idx]?.photos||[]).forEach(p=>{
+      if(p.previewUrl&&!keep.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);
+    });
+    salesDamageItems[idx]=item;
+  }else{
+    salesDamageItems.push(item);
+  }
+
+  renderSalesDamageItems();
+  clearSalesDamageItemEditor(false);
 }
 function renderSalesDamageItems(){
-  const box=$('salesDamageItemList'),counter=$('salesDamageItemCounter');if(!box||!counter)return;counter.textContent=`${salesDamageItems.length} produto(s)`;
-  if(!salesDamageItems.length){box.className='item-list empty-state';box.textContent='Nenhum produto adicionado.';return;}
-  box.className='item-list';box.innerHTML=salesDamageItems.map(x=>`<div class="item-row sales-damage-row" data-sales-item="${x.id}"><div class="info"><small>Produto • Código ${esc(x.product_code||'—')}</small><strong>${esc(x.product_name||x.product)}</strong></div><div class="info"><small>Quantidade</small><strong>${fmtNum(x.quantity)} ${x.unit==='CAIXA'?'Caixa':'Unidade'}${num(x.quantity)===1?'':'s'}</strong></div><div class="info"><small>Motivo</small><strong>${esc(salesReasonLabel(x.reason))}</strong>${x.validity_date?`<small>Validade ${fmtDate(x.validity_date)}</small>`:''}</div><div class="info sales-list-photo"><strong>${(x.photos||[]).length} foto(s)</strong><small>GPS ✓</small></div><div class="mini-actions"><button type="button" class="mini-btn" data-sales-act="edit">Editar</button><button type="button" class="mini-btn danger" data-sales-act="del">Excluir</button></div></div>`).join('');
+  const box=$('salesDamageItemList');
+  const counter=$('salesDamageItemCounter');
+  if(!box||!counter)return;
+
+  counter.textContent=`${salesDamageItems.length} produto(s)`;
+
+  if(!salesDamageItems.length){
+    box.className='item-list empty-state';
+    box.textContent='Nenhum produto adicionado.';
+    return;
+  }
+
+  box.className='item-list';
+  box.innerHTML=salesDamageItems.map(x=>`
+    <div class="item-row sales-damage-row" data-sales-item="${x.id}">
+      <div class="info">
+        <small>Produto • Código ${esc(x.product_code||'—')}</small>
+        <strong>${esc(x.product_name||x.product)}</strong>
+      </div>
+      <div class="info">
+        <small>Quantidade</small>
+        <strong>${fmtNum(x.quantity)} ${x.unit==='CAIXA'?'Caixa':'Unidade'}${num(x.quantity)===1?'':'s'}</strong>
+      </div>
+      <div class="info">
+        <small>Motivo</small>
+        <strong>${esc(salesReasonLabel(x.reason))}</strong>
+        ${x.validity_date?`<small>Validade ${fmtDate(x.validity_date)} • Lote ${esc(x.lot||'—')}</small>`:''}
+      </div>
+      <div class="info sales-list-photo">
+        <strong>${(x.photos||[]).length} foto(s)</strong>
+        <small>GPS ✓</small>
+      </div>
+      <div class="mini-actions">
+        <button type="button" class="mini-btn" data-sales-act="edit">Editar</button>
+        <button type="button" class="mini-btn danger" data-sales-act="del">Excluir</button>
+      </div>
+    </div>
+  `).join('');
 }
 function onSalesDamageItemListClick(e){
-  const b=e.target.closest('[data-sales-act]');if(!b)return;const row=b.closest('[data-sales-item]'),item=salesDamageItems.find(x=>x.id===row?.dataset.salesItem);if(!item)return;
-  if(b.dataset.salesAct==='del'){(item.photos||[]).forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);});salesDamageItems=salesDamageItems.filter(x=>x.id!==item.id);if(salesDamageEditingId===item.id)clearSalesDamageItemEditor(false);renderSalesDamageItems();return;}
-  salesDamageEditingId=item.id;const picked=item.product_code?productsByCode.get(String(item.product_code)):refs.products.find(p=>norm(p.name)===norm(item.product_name||item.product));salesDamageSelectedProduct=picked?{code:String(picked.code),name:picked.name}:item.product_code?{code:String(item.product_code),name:item.product_name||item.product}:null;$('salesDamageProduct').value=salesDamageSelectedProduct?salesDamageProductLabel(salesDamageSelectedProduct):(item.product_name||item.product||'');renderSalesDamageProductSelection();$('salesDamageQuantity').value=item.quantity;$('salesDamageUnit').value=item.unit;$('salesDamageReason').value=item.reason;$('salesDamageValidity').value=item.validity_date||'';salesDamagePhotos=(item.photos||[]).map(p=>({...p}));updateSalesDamageValidityMode();renderSalesDamagePhoto();$('btnSalesDamageAddItem').textContent='Salvar alteração';$('btnSalesDamageCancelItem').classList.remove('hidden');
+  const b=e.target.closest('[data-sales-act]');
+  if(!b)return;
+
+  const row=b.closest('[data-sales-item]');
+  const item=salesDamageItems.find(x=>x.id===row?.dataset.salesItem);
+  if(!item)return;
+
+  if(b.dataset.salesAct==='del'){
+    (item.photos||[]).forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);});
+    salesDamageItems=salesDamageItems.filter(x=>x.id!==item.id);
+    if(salesDamageEditingId===item.id)clearSalesDamageItemEditor(false);
+    renderSalesDamageItems();
+    return;
+  }
+
+  salesDamageEditingId=item.id;
+
+  const picked=item.product_code
+    ?productsByCode.get(String(item.product_code))
+    :refs.products.find(p=>norm(p.name)===norm(item.product_name||item.product));
+
+  salesDamageSelectedProduct=picked
+    ?{code:String(picked.code),name:picked.name}
+    :item.product_code
+      ?{code:String(item.product_code),name:item.product_name||item.product}
+      :null;
+
+  $('salesDamageProduct').value=salesDamageSelectedProduct
+    ?salesDamageProductLabel(salesDamageSelectedProduct)
+    :(item.product_name||item.product||'');
+
+  renderSalesDamageProductSelection();
+  $('salesDamageQuantity').value=item.quantity;
+  $('salesDamageUnit').value=item.unit;
+  $('salesDamageReason').value=item.reason;
+  $('salesDamageValidity').value=item.validity_date||'';
+  $('salesDamageLot').value=item.lot||'';
+
+  salesDamagePhotos=(item.photos||[]).map(p=>({...p}));
+
+  updateSalesDamageValidityMode();
+  renderSalesDamagePhoto();
+
+  $('btnSalesDamageAddItem').textContent='Salvar alteração';
+  $('btnSalesDamageCancelItem').classList.remove('hidden');
 }
 function clearSalesDamageItemEditor(revoke=true){
-  salesDamageEditingId=null;if(revoke){const used=new Set(salesDamageItems.flatMap(x=>(x.photos||[]).map(p=>p.previewUrl)));salesDamagePhotos.forEach(p=>{if(p.previewUrl&&!used.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);});}salesDamagePhotos=[];salesDamageSelectedProduct=null;
-  ['salesDamageProduct','salesDamageQuantity','salesDamageReason','salesDamageValidity'].forEach(id=>{if($(id))$(id).value='';});if($('salesDamageUnit'))$('salesDamageUnit').value='CAIXA';hideSalesDamageProductOptions();renderSalesDamageProductSelection();updateSalesDamageValidityMode();renderSalesDamagePhoto();if($('btnSalesDamageAddItem'))$('btnSalesDamageAddItem').textContent='+ Adicionar produto';$('btnSalesDamageCancelItem')?.classList.add('hidden');
+  salesDamageEditingId=null;
+
+  if(revoke){
+    const used=new Set(
+      salesDamageItems.flatMap(x=>(x.photos||[]).map(p=>p.previewUrl))
+    );
+    salesDamagePhotos.forEach(p=>{
+      if(p.previewUrl&&!used.has(p.previewUrl))URL.revokeObjectURL(p.previewUrl);
+    });
+  }
+
+  salesDamagePhotos=[];
+  salesDamageSelectedProduct=null;
+
+  ['salesDamageProduct','salesDamageQuantity','salesDamageReason','salesDamageValidity','salesDamageLot']
+    .forEach(id=>{if($(id))$(id).value='';});
+
+  if($('salesDamageUnit'))$('salesDamageUnit').value='CAIXA';
+
+  hideSalesDamageProductOptions();
+  renderSalesDamageProductSelection();
+  updateSalesDamageValidityMode();
+  renderSalesDamagePhoto();
+
+  if($('btnSalesDamageAddItem'))$('btnSalesDamageAddItem').textContent='+ Adicionar produto';
+  $('btnSalesDamageCancelItem')?.classList.add('hidden');
 }
 function clearSalesDamageRequest(){
   salesDamageItems.forEach(x=>(x.photos||[]).forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl);}));salesDamageItems=[];clearSalesDamageItemEditor(false);selectedSalesCustomerKey='';if($('salesDamagePdv'))$('salesDamagePdv').value='';if($('salesDamageObservation'))$('salesDamageObservation').value='';if($('salesDamageCustomerChoice'))$('salesDamageCustomerChoice').innerHTML='<option value="">Selecione o cliente</option>';$('salesDamageCustomerDuplicate')?.classList.add('hidden');showSalesDamageCustomer(null);prepareSalesDamageForm();
@@ -1704,10 +1863,10 @@ async function submitSalesDamage(e){
   const btn=$('btnSalesDamageSubmit'),old=btn.textContent,uploaded=[];btn.disabled=true;btn.textContent='Enviando…';
   try{
     const key=uuid(),items=[];
-    for(let i=0;i<salesDamageItems.length;i++){const x=salesDamageItems[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${authUser.id}/${key}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadSalesDamagePhoto(path,ph.blob);uploaded.push(path);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}items.push({product:x.product,quantity:x.quantity,unit:x.unit,reason:x.reason,validity_date:x.validity_date||'',photos,photo_path:photos[0]?.photo_path||''});}
+    for(let i=0;i<salesDamageItems.length;i++){const x=salesDamageItems[i],photos=[];for(let j=0;j<(x.photos||[]).length;j++){const ph=x.photos[j],path=`${authUser.id}/${key}/produto_${String(i+1).padStart(2,'0')}_foto_${String(j+1).padStart(2,'0')}.jpg`;await uploadSalesDamagePhoto(path,ph.blob);uploaded.push(path);photos.push({photo_path:path,latitude:ph.gps.latitude,longitude:ph.gps.longitude,accuracy:ph.gps.accuracy||'',gps_at:ph.gps.capturedAt});}items.push({product:x.product,product_code:x.product_code||'',product_name:x.product_name||'',quantity:x.quantity,unit:x.unit,reason:x.reason,validity_date:x.validity_date||'',lot:x.lot||'',photos,photo_path:photos[0]?.photo_path||''});}
     const observation=String($('salesDamageObservation')?.value||'').trim().slice(0,500);
     const {data,error}=await sb.rpc(
-      'create_sales_damage_request',
+      'create_sales_damage_request_v2',
       {
         p_payload:{
           unit:activeUnit,
@@ -1810,7 +1969,7 @@ async function submitSalesDamage(e){
 async function loadSalesDamageMy(silent=false){
   if(!hasPerm('SALES_DAMAGE_VIEW_OWN'))return;try{const {data,error}=await sb.from('sales_damage_requests').select('*,sales_damage_items(*,sales_damage_item_photos(*))').eq('unit',activeUnit).eq('seller_id',authUser.id).order('created_at',{ascending:false}).limit(1000);if(error)throw error;salesDamageMyRequests=data||[];renderSalesDamageMy();}catch(e){if(!silent)toast(humanSalesDamageError(e),'error');}
 }
-function filterSalesDamageRows(rows,searchId,statusId){const q=norm($(searchId)?.value||''),status=$(statusId)?.value||'';return rows.filter(r=>(!status||r.status===status)&&(!q||norm([r.request_code,r.seller_name,r.customer_code,r.customer_name,r.city,r.branch,...(r.sales_damage_items||[]).flatMap(i=>[i.product_text,i.reason,i.review_justification,i.final_justification,i.admin_override_justification])].join(' ')).includes(q)));}
+function filterSalesDamageRows(rows,searchId,statusId){const q=norm($(searchId)?.value||''),status=$(statusId)?.value||'';return rows.filter(r=>(!status||r.status===status)&&(!q||norm([r.request_code,r.seller_name,r.customer_code,r.customer_name,r.city,r.branch,...(r.sales_damage_items||[]).flatMap(i=>[i.product_text,i.reason,i.lot,i.review_justification,i.final_justification,i.admin_override_justification])].join(' ')).includes(q)));}
 function salesDamageStatusLabel(status){return ({PENDENTE:'Pendente',EM_ANALISE:'Em análise',PARCIAL:'Parcial',APROVADO:'Aprovado',REPROVADO:'Reprovado',LANCADO:'Lançado'})[status]||status||'—';}
 function salesRequestItemsSummary(r){const items=r.sales_damage_items||[],counts={};items.forEach(x=>counts[x.status]=(counts[x.status]||0)+1);const open=(counts.PENDENTE||0)+(counts.EM_ANALISE||0)+(counts.APROVADO||0);return `<strong>${items.length} produto(s)</strong><small>${open?`${open} aguardando conclusão`:'Fluxo concluído'}</small>`;}
 function renderSalesDamageMy(){const box=$('tbodySalesDamageMy');if(!box)return;const rows=filterSalesDamageRows(salesDamageMyRequests,'salesDamageMySearch','salesDamageMyStatus');box.innerHTML=rows.length?rows.map(r=>`<tr><td><strong>${esc(r.request_code)}</strong><small>${fmtDate(r.occurrence_date)} • ${fmtDateTime(r.created_at)}</small></td><td><strong>PDV ${esc(r.customer_code)}</strong><small>${esc(r.customer_name)} • ${esc(r.city||'—')}</small></td><td>${salesRequestItemsSummary(r)}</td><td>${statusBadge(r.status)}</td><td><button class="mini-btn" data-sales-request="${r.id}">Visualizar</button></td></tr>`).join(''):'<tr><td colspan="5">Nenhuma solicitação encontrada.</td></tr>';}
@@ -1821,14 +1980,14 @@ function renderSalesDamageManage(){const box=$('tbodySalesDamageManage');if(!box
 function exportSalesDamageCsv(){
   const requests=filterSalesDamageRows(salesDamageManageRequests,'salesDamageManageSearch','salesDamageManageStatus');
   if(!requests.length)return toast('Nao ha avarias de vendas para exportar com os filtros atuais.','error');
-  const headers=['Solicitacao','Data ocorrencia','Data/hora cadastro','Unidade','Vendedor','Usuario vendedor','Codigo PDV','Cliente','Cidade','Filial','Observacao vendedor','Status solicitacao','Produto','Quantidade','Unidade quantidade','Motivo','Validade','Status produto','Qtd. fotos','Fluxo aprovacao','GV','Data decisao GV','Justificativa GV','Decisao final por','Data decisao final','Justificativa final','Lancado por','Data lancamento','Entregue por','Data entrega'];
+  const headers=['Solicitacao','Data ocorrencia','Data/hora cadastro','Unidade','Vendedor','Usuario vendedor','Codigo PDV','Cliente','Cidade','Filial','Observacao vendedor','Status solicitacao','Produto','Quantidade','Unidade quantidade','Motivo','Validade','Lote','Status produto','Qtd. fotos','Fluxo aprovacao','GV','Data decisao GV','Justificativa GV','Decisao final por','Data decisao final','Justificativa final','Lancado por','Data lancamento','Entregue por','Data entrega'];
   const rows=[];
   requests.forEach(r=>{
     const items=[...(r.sales_damage_items||[])].sort((a,b)=>Number(a.item_order||0)-Number(b.item_order||0));
     if(!items.length){rows.push([r.request_code||'',r.occurrence_date||'',fmtDateTime(r.created_at),r.unit||'',r.seller_name||'',r.seller_username||'',r.customer_code||'',r.customer_name||'',r.city||'',r.branch||'',r.observation||'',r.status||'']);return;}
     items.forEach(i=>{
       const flow=i.final_reviewed_at?(i.reviewed_at?'GV + decisao final':'Decisao final direta'):i.reviewed_at?'Somente GV':'';
-      rows.push([r.request_code||'',r.occurrence_date||'',fmtDateTime(r.created_at),r.unit||'',r.seller_name||'',r.seller_username||'',r.customer_code||'',r.customer_name||'',r.city||'',r.branch||'',r.observation||'',r.status||'',i.product_text||'',i.quantity??'',i.quantity_unit||'',salesReasonLabel(i.reason),i.validity_date||'',i.status||'',salesDamageItemPhotos(i).length,flow,i.reviewer_name||'',i.reviewed_at?fmtDateTime(i.reviewed_at):'',i.review_justification||'',i.final_reviewer_name||'',i.final_reviewed_at?fmtDateTime(i.final_reviewed_at):'',i.final_justification||'',i.launched_by_name||'',i.launched_at?fmtDateTime(i.launched_at):'',i.delivered_by_name||'',i.delivered_at?fmtDateTime(i.delivered_at):'']);
+      rows.push([r.request_code||'',r.occurrence_date||'',fmtDateTime(r.created_at),r.unit||'',r.seller_name||'',r.seller_username||'',r.customer_code||'',r.customer_name||'',r.city||'',r.branch||'',r.observation||'',r.status||'',i.product_text||'',i.quantity??'',i.quantity_unit||'',salesReasonLabel(i.reason),i.validity_date||'',i.lot||'',i.status||'',salesDamageItemPhotos(i).length,flow,i.reviewer_name||'',i.reviewed_at?fmtDateTime(i.reviewed_at):'',i.review_justification||'',i.final_reviewer_name||'',i.final_reviewed_at?fmtDateTime(i.final_reviewed_at):'',i.final_justification||'',i.launched_by_name||'',i.launched_at?fmtDateTime(i.launched_at):'',i.delivered_by_name||'',i.delivered_at?fmtDateTime(i.delivered_at):'']);
     });
   });
   downloadCsv(`avarias_vendas_${activeUnit?norm(activeUnit).replace(/[^a-z0-9]+/g,'_')+'_':''}${localIsoDate(new Date())}.csv`,[headers,...rows]);
@@ -1880,7 +2039,7 @@ async function markSalesDamageLaunchedBulk(){
   const ids=selectedSalesReviewIds('launch');if(!ids.length)return toast('Selecione ao menos um produto aprovado para marcar como lançado.','error');if(!confirm(`Confirmar o lançamento de ${ids.length} produto(s) no sistema?`))return;
   try{for(const itemId of ids){const {error}=await sb.rpc('mark_sales_damage_item_launched',{p_item_id:itemId});if(error)throw error;}toast(`${ids.length} produto(s) marcado(s) como Lançado.`,'success');const requestId=currentSalesDamageDetail?.id;closeModal();await loadSalesDamageManage(true);if(hasPerm('SALES_DAMAGE_VIEW_OWN'))await loadSalesDamageMy(true);if(requestId)await showSalesDamageDetail(requestId);}catch(e){toast(humanSalesDamageError(e),'error');}
 }
-function humanSalesDamageError(e){const m=String(e?.message||e||'Erro em Avarias de Vendas');const map={PDV_INVALIDO:'PDV inválido ou não localizado.',PRODUTO_OBRIGATORIO:'Adicione ao menos um produto avariado.',QUANTIDADE_INVALIDA:'Informe uma quantidade maior que zero.',UNIDADE_INVALIDA:'Selecione Caixa ou Unidade.',MOTIVO_OBRIGATORIO:'Informe o motivo da avaria.',VALIDADE_OBRIGATORIA:'Para o motivo Validade, informe a data de validade.',FOTO_OBRIGATORIA:'Cada produto precisa de ao menos uma foto.',FOTOS_EXCEDIDAS:'Validade permite até 2 fotos; os demais motivos permitem 1 foto.',GPS_FOTO_OBRIGATORIO:'Todas as fotos precisam de localização GPS.',OBSERVACAO_EXCEDIDA:'A observação deve ter no máximo 500 caracteres.',JUSTIFICATIVA_OBRIGATORIA:'A justificativa é obrigatória para esta decisão.',NENHUM_ITEM_PENDENTE:'Nenhum dos produtos selecionados está pendente.',NENHUM_ITEM_EM_ANALISE:'Selecione ao menos um produto em análise.',NENHUM_ITEM_FINALIZAVEL:'Selecione ao menos um produto pendente ou em análise.',ITEM_NAO_APROVADO:'Somente produtos aprovados podem ser marcados como lançados.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/sales_damage_item_photos|finalize_sales_damage_items|mark_sales_damage_item_launched/i.test(m))return 'A atualização do fluxo de Avarias de Vendas ainda não foi aplicada no Supabase. Execute o SQL 21_v1_5_1_avarias_vendas_fluxo_final_camera_gps.sql.';if(/sales_damage|avarias-vendas|relation .*does not exist/i.test(m))return 'O módulo Avarias de Vendas ainda não foi criado no Supabase. Execute primeiro o SQL 18 e depois o SQL 21 da v1.5.1.';return humanError(e);}
+function humanSalesDamageError(e){const m=String(e?.message||e||'Erro em Avarias de Vendas');const map={PDV_INVALIDO:'PDV inválido ou não localizado.',PRODUTO_OBRIGATORIO:'Adicione ao menos um produto avariado.',QUANTIDADE_INVALIDA:'Informe uma quantidade maior que zero.',UNIDADE_INVALIDA:'Selecione Caixa ou Unidade.',MOTIVO_OBRIGATORIO:'Informe o motivo da avaria.',VALIDADE_OBRIGATORIA:'Para o motivo Validade, informe a data de validade.',LOTE_OBRIGATORIO:'Para o motivo Validade, informe o lote.',FOTO_OBRIGATORIA:'Cada produto precisa de ao menos uma foto.',FOTOS_EXCEDIDAS:'Validade permite até 2 fotos; os demais motivos permitem 1 foto.',GPS_FOTO_OBRIGATORIO:'Todas as fotos precisam de localização GPS.',OBSERVACAO_EXCEDIDA:'A observação deve ter no máximo 500 caracteres.',JUSTIFICATIVA_OBRIGATORIA:'A justificativa é obrigatória para esta decisão.',NENHUM_ITEM_PENDENTE:'Nenhum dos produtos selecionados está pendente.',NENHUM_ITEM_EM_ANALISE:'Selecione ao menos um produto em análise.',NENHUM_ITEM_FINALIZAVEL:'Selecione ao menos um produto pendente ou em análise.',ITEM_NAO_APROVADO:'Somente produtos aprovados podem ser marcados como lançados.',FORBIDDEN:'Seu usuário não possui permissão para esta ação.'};const key=Object.keys(map).find(k=>m.includes(k));if(key)return map[key];if(/sales_damage_item_photos|finalize_sales_damage_items|mark_sales_damage_item_launched/i.test(m))return 'A atualização do fluxo de Avarias de Vendas ainda não foi aplicada no Supabase. Execute o SQL 21_v1_5_1_avarias_vendas_fluxo_final_camera_gps.sql.';if(/sales_damage|avarias-vendas|relation .*does not exist/i.test(m))return 'O módulo Avarias de Vendas ainda não foi criado no Supabase. Execute primeiro o SQL 18 e depois o SQL 21 da v1.5.1.';return humanError(e);}
 
 // CONFERENCIA ----------------------------------------------------------------
 function clearConferenceForm(){$('confMapa').value='';['confG300','confG600V','confG600M','confLitrao','confB30','confB50'].forEach(id=>$(id).value=0);}
@@ -6999,5 +7158,730 @@ logout=async function(){await deactivatePushDeviceV170();return logoutBeforePush
 
 const startAppBeforePushV170=startApp;
 startApp=async function(){await startAppBeforePushV170();await initPushNotificationsV170();};
+
+
+// =============================================================================
+// V1.7.0 - NATIVE_TRACKING_V170 + LOTE DE VALIDADE
+// =============================================================================
+
+const showSalesDamageDetailBeforeLotV170=showSalesDamageDetail;
+
+showSalesDamageDetail=async function(id){
+  await showSalesDamageDetailBeforeLotV170(id);
+
+  const r=currentSalesDamageDetail;
+  if(!r||String(r.id)!==String(id)||!sb)return;
+
+  const validityItems=(r.sales_damage_items||[])
+    .filter(i=>String(i.reason||'').toUpperCase()==='VALIDADE');
+
+  if(!validityItems.length)return;
+
+  let rows=[];
+
+  try{
+    const {data,error}=await sb.rpc(
+      'get_sales_damage_lot_matches',
+      {p_request_id:r.id}
+    );
+    if(error)throw error;
+    rows=data||[];
+  }catch(e){
+    console.warn('[AVARIA VENDAS] compatibilidade lote',e);
+  }
+
+  const byItem=new Map();
+
+  rows.forEach(x=>{
+    const key=String(x.item_id||'');
+    if(!byItem.has(key))byItem.set(key,[]);
+    byItem.get(key).push(x);
+  });
+
+  const modal=$('modalBody');
+  if(!modal)return;
+
+  validityItems.forEach(item=>{
+    const article=[...modal.querySelectorAll('[data-sales-detail-item]')]
+      .find(el=>String(el.dataset.salesDetailItem)===String(item.id));
+
+    if(!article)return;
+
+    article.querySelector('.sales-lot-compat-v170')?.remove();
+
+    const matches=byItem.get(String(item.id))||[];
+    const box=document.createElement('div');
+    box.className='notice sales-lot-compat-v170';
+
+    if(!item.lot){
+      box.innerHTML='<strong>Lote:</strong> — <span class="status pending">Registro legado sem lote</span>';
+    }else if(matches.length){
+      const nris=[...new Set(matches.map(x=>String(x.nri||'')).filter(Boolean))];
+      box.innerHTML=
+        '<strong>Lote '+esc(item.lot)+'</strong> '+
+        '<span class="status approved">Lote compatível</span>'+
+        (nris.length?'<br><small>NRI: '+nris.slice(0,6).map(esc).join(', ')+'</small>':'');
+    }else{
+      box.innerHTML=
+        '<strong>Lote '+esc(item.lot)+'</strong> '+
+        '<span class="status rejected">Lote não encontrado na NRI</span>';
+    }
+
+    const summary=article.querySelector('.damage-summary-grid');
+    if(summary)summary.after(box);
+    else article.prepend(box);
+  });
+};
+
+
+// -----------------------------------------------------------------------------
+// BACKGROUND GEOLOCATION
+// -----------------------------------------------------------------------------
+
+const PULL_NATIVE_TOKEN_PREFIX_V170='disb_pull_tracking_token_v170_';
+let pullNativeTrackingTripIdV170='';
+let pullNativeTrackingStartingV170=null;
+let pullNativeLastQueuedV170=null;
+let pullLiveMapTimerV170=null;
+
+function getBackgroundGeolocationV170(){
+  const cap=window.Capacitor;
+  if(!cap)return null;
+
+  return cap.Plugins?.BackgroundGeolocation
+    ||(
+      typeof cap.registerPlugin==='function'
+        ?cap.registerPlugin('BackgroundGeolocation')
+        :null
+    );
+}
+
+function pullNativeTokenKeyV170(tripId){
+  return PULL_NATIVE_TOKEN_PREFIX_V170+String(tripId||'');
+}
+
+function pullReadNativeTokenV170(tripId){
+  try{
+    return localStorage.getItem(pullNativeTokenKeyV170(tripId))||'';
+  }catch(_e){
+    return '';
+  }
+}
+
+function pullSaveNativeTokenV170(tripId,token){
+  try{
+    if(token)localStorage.setItem(pullNativeTokenKeyV170(tripId),String(token));
+  }catch(_e){}
+}
+
+function pullNativePointV170(location){
+  if(!location)return null;
+
+  const latitude=Number(location.latitude);
+  const longitude=Number(location.longitude);
+  const accuracy=Number(location.accuracy);
+
+  if(!Number.isFinite(latitude)||!Number.isFinite(longitude))return null;
+
+  let rawTime=location.time??location.timestamp??Date.now();
+  if(typeof rawTime==='number'&&rawTime<100000000000)rawTime*=1000;
+
+  const dt=new Date(rawTime);
+
+  return {
+    latitude,
+    longitude,
+    accuracy:Number.isFinite(accuracy)?accuracy:null,
+    speed:Number.isFinite(Number(location.speed))?Number(location.speed):null,
+    bearing:Number.isFinite(Number(location.bearing))?Number(location.bearing):null,
+    capturedAt:Number.isNaN(dt.getTime())?new Date().toISOString():dt.toISOString()
+  };
+}
+
+function pullNativeIngestKeyV170(tripId,p){
+  return [
+    String(tripId||''),
+    String(authUser?.id||''),
+    String(p?.capturedAt||''),
+    Number(p?.latitude||0).toFixed(6),
+    Number(p?.longitude||0).toFixed(6)
+  ].join('|');
+}
+
+async function queuePullTrackPointV170(tripId,p){
+  if(!tripId||!p)return;
+
+  const now=Date.now();
+
+  if(pullNativeLastQueuedV170){
+    const elapsed=now-pullNativeLastQueuedV170.at;
+    const d=distanceMeters(
+      p.latitude,p.longitude,
+      pullNativeLastQueuedV170.latitude,pullNativeLastQueuedV170.longitude
+    );
+
+    if(elapsed<5000&&d<10)return;
+  }
+
+  pullNativeLastQueuedV170={
+    at:now,
+    latitude:p.latitude,
+    longitude:p.longitude
+  };
+
+  await offlineQueueAdd('PULL_TRACK_POINT',{
+    p_trip_id:tripId,
+    p_latitude:p.latitude,
+    p_longitude:p.longitude,
+    p_accuracy:p.accuracy,
+    p_device_at:p.capturedAt,
+    p_ingest_key:pullNativeIngestKeyV170(tripId,p),
+    p_speed_mps:p.speed,
+    p_bearing:p.bearing,
+    p_source:'APK_OFFLINE'
+  });
+}
+
+const processOfflineRecordBeforeTrackV170=processOfflineRecord;
+
+processOfflineRecord=async function(row){
+  if(row?.type==='PULL_TRACK_POINT'){
+    const p=row.payload||{};
+    const {data,error}=await sb.rpc(
+      'record_pull_track_point_v2',
+      {
+        p_trip_id:p.p_trip_id,
+        p_latitude:p.p_latitude,
+        p_longitude:p.p_longitude,
+        p_accuracy:p.p_accuracy,
+        p_device_at:p.p_device_at,
+        p_ingest_key:p.p_ingest_key,
+        p_speed_mps:p.p_speed_mps,
+        p_bearing:p.p_bearing,
+        p_source:p.p_source||'APK_OFFLINE'
+      }
+    );
+    if(error)throw error;
+    return data;
+  }
+
+  return await processOfflineRecordBeforeTrackV170(row);
+};
+
+async function getPullNativeTokenV170(tripId){
+  let token=pullReadNativeTokenV170(tripId);
+
+  if(navigator.onLine&&sb&&authUser){
+    try{
+      const {data,error}=await sb.rpc(
+        'get_pull_tracking_token',
+        {p_trip_id:tripId}
+      );
+
+      if(error)throw error;
+
+      if(data){
+        token=String(data);
+        pullSaveNativeTokenV170(tripId,token);
+      }
+    }catch(e){
+      console.warn('[PUXADA GPS NATIVO] token',e);
+    }
+  }
+
+  return token;
+}
+
+async function startPullNativeTrackingV170(){
+  const trip=pullActiveTrip;
+
+  if(!isNativeCapacitor()||!trip||trip.status!=='IN_PROGRESS')return false;
+
+  if(
+    pullTrackWatch?.kind==='background-v170'
+    &&String(pullNativeTrackingTripIdV170)===String(trip.id)
+  ){
+    return true;
+  }
+
+  const bg=getBackgroundGeolocationV170();
+  if(!bg||typeof bg.start!=='function'){
+    throw new Error('BACKGROUND_GEOLOCATION_NAO_DISPONIVEL');
+  }
+
+  let token=await getPullNativeTokenV170(trip.id);
+
+  try{await bg.stop();}catch(_e){}
+
+  const url=token
+    ?CFG.SUPABASE_URL+'/functions/v1/pull-track-ingest?trip_id='+encodeURIComponent(trip.id)
+    :'';
+
+  const options={
+    backgroundTitle:'Disb Gestão • Rastreamento ativo',
+    backgroundMessage:
+      (trip.trip_code||'Viagem')+
+      ' • '+
+      (trip.plate||'')+
+      ' • localização da carreta em acompanhamento.',
+    requestPermissions:true,
+    stale:false,
+    distanceFilter:10,
+    minIntervalMs:5000,
+    networkFallback:true
+  };
+
+  if(url){
+    options.url=url;
+    options.headers={
+      'X-Pull-Track-Token':String(token)
+    };
+  }
+
+  await bg.start(
+    options,
+    (location,error)=>{
+      if(error){
+        console.warn('[PUXADA GPS NATIVO]',error);
+        return;
+      }
+
+      const p=pullNativePointV170(location);
+      if(!p)return;
+
+      rememberPullGpsSample(p);
+
+      // O POST nativo cuida do online. A fila local cobre ausencia de internet
+      // enquanto o WebView continua vivo.
+      if(!navigator.onLine || !token){
+        if(p.accuracy==null||p.accuracy<=100){
+          queuePullTrackPointV170(trip.id,p)
+            .catch(e=>console.warn('[PUXADA GPS OFFLINE]',e));
+        }
+      }
+    }
+  );
+
+  pullNativeTrackingTripIdV170=String(trip.id);
+  pullTrackWatch={
+    kind:'background-v170',
+    id:'native',
+    tripId:String(trip.id)
+  };
+
+  console.info('[PUXADA GPS NATIVO] iniciado',{
+    trip_id:trip.id,
+    plate:trip.plate,
+    native_post:!!url
+  });
+
+  return true;
+}
+
+const stopPullTrackingBeforeNativeV170=stopPullTracking;
+
+stopPullTracking=function(){
+  if(pullTrackWatch?.kind==='background-v170'){
+    const bg=getBackgroundGeolocationV170();
+
+    pullTrackWatch=null;
+    pullTrackLast=null;
+    pullNativeTrackingTripIdV170='';
+    pullNativeLastQueuedV170=null;
+
+    if(bg?.stop){
+      Promise.resolve(bg.stop())
+        .catch(e=>console.warn('[PUXADA GPS NATIVO] stop',e));
+    }
+
+    return;
+  }
+
+  return stopPullTrackingBeforeNativeV170();
+};
+
+const syncPullTrackingBeforeNativeV170=syncPullTracking;
+
+syncPullTracking=async function(){
+  const next=pullNextStep();
+
+  const shouldTrack=
+    isPullDriver()
+    &&pullActiveTrip
+    &&next
+    &&pullCanExecuteStep(next)
+    &&pullActiveTrip.status==='IN_PROGRESS';
+
+  if(!shouldTrack){
+    stopPullTracking();
+    return false;
+  }
+
+  if(!isNativeCapacitor()){
+    return syncPullTrackingBeforeNativeV170();
+  }
+
+  if(
+    pullTrackWatch?.kind==='background-v170'
+    &&String(pullNativeTrackingTripIdV170)===String(pullActiveTrip.id)
+  ){
+    return true;
+  }
+
+  if(pullNativeTrackingStartingV170){
+    return await pullNativeTrackingStartingV170;
+  }
+
+  pullNativeTrackingStartingV170=startPullNativeTrackingV170();
+
+  try{
+    return await pullNativeTrackingStartingV170;
+  }finally{
+    pullNativeTrackingStartingV170=null;
+  }
+};
+
+window.addEventListener('online',()=>{
+  if(!isNativeCapacitor()||!pullActiveTrip)return;
+
+  // Se o servico foi iniciado offline sem URL/token, reinicia com envio nativo.
+  if(pullTrackWatch?.kind==='background-v170'){
+    stopPullTracking();
+  }
+
+  setTimeout(()=>{
+    syncPullTracking().catch(e=>console.warn('[PUXADA GPS NATIVO] retorno online',e));
+  },800);
+});
+
+
+// -----------------------------------------------------------------------------
+// MAPA: usa somente pontos reais do rastreamento para formar a linha
+// -----------------------------------------------------------------------------
+
+function pullTrackMomentV170(x){
+  const d=new Date(x?.device_at||x?.recorded_at||0);
+  return Number.isNaN(d.getTime())?0:d.getTime();
+}
+
+function cleanPullTrackV170(track){
+  const rows=[...(track||[])]
+    .filter(x=>
+      Number.isFinite(Number(x.latitude))
+      &&Number.isFinite(Number(x.longitude))
+      &&(
+        x.gps_accuracy==null
+        ||Number(x.gps_accuracy)<=80
+      )
+    )
+    .sort((a,b)=>pullTrackMomentV170(a)-pullTrackMomentV170(b));
+
+  const out=[];
+  let prev=null;
+
+  for(const row of rows){
+    const cur={
+      row,
+      lat:Number(row.latitude),
+      lon:Number(row.longitude),
+      at:pullTrackMomentV170(row)
+    };
+
+    if(prev){
+      const sec=Math.max(0,(cur.at-prev.at)/1000);
+      const dist=distanceMeters(cur.lat,cur.lon,prev.lat,prev.lon);
+
+      if(sec>0&&dist/sec>60)continue;
+      if(sec<3&&dist<2)continue;
+    }
+
+    out.push(row);
+    prev=cur;
+  }
+
+  return out;
+}
+
+function pullTrackSegmentsV170(track){
+  const rows=cleanPullTrackV170(track);
+  const segments=[];
+  let current=[];
+  let prev=null;
+
+  for(const row of rows){
+    const cur={
+      row,
+      lat:Number(row.latitude),
+      lon:Number(row.longitude),
+      at:pullTrackMomentV170(row)
+    };
+
+    if(prev){
+      const sec=Math.max(0,(cur.at-prev.at)/1000);
+      const dist=distanceMeters(cur.lat,cur.lon,prev.lat,prev.lon);
+
+      // Nao inventa uma reta durante grande periodo sem sinal.
+      if(sec>180||dist>5000){
+        if(current.length)segments.push(current);
+        current=[];
+      }
+    }
+
+    current.push(row);
+    prev=cur;
+  }
+
+  if(current.length)segments.push(current);
+  return segments;
+}
+
+function pullTrackStatusTextV170(track){
+  const rows=[...(track||[])]
+    .filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)))
+    .sort((a,b)=>pullTrackMomentV170(a)-pullTrackMomentV170(b));
+
+  const last=rows.at(-1);
+
+  if(!last)return 'GPS aguardando primeira localização real.';
+
+  const age=Math.max(0,Date.now()-pullTrackMomentV170(last));
+  const min=Math.floor(age/60000);
+  const accuracy=last.gps_accuracy==null?'—':Math.round(Number(last.gps_accuracy))+' m';
+
+  if(age>120000){
+    return 'GPS sem atualização há '+min+' min • última precisão ±'+accuracy;
+  }
+
+  return 'GPS ativo • última localização '+fmtDateTime(last.device_at||last.recorded_at)+' • precisão ±'+accuracy;
+}
+
+function updatePullMapStatusV170(mapId,track){
+  const el=$(mapId+'-track-status');
+  if(el)el.textContent=pullTrackStatusTextV170(track);
+}
+
+renderPullMap=function(mapId,t,track,events){
+  const el=$(mapId);
+  if(!el||!window.L)return null;
+
+  try{
+    const old=pullMapContexts.get(mapId);
+    if(old?.map){
+      try{old.map.remove();}catch(_e){}
+    }
+
+    pullMapContexts.delete(mapId);
+
+    const map=L.map(el);
+    pullMapInstances.push(map);
+
+    const markers=new Map();
+
+    L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {maxZoom:19,attribution:'© OpenStreetMap'}
+    ).addTo(map);
+
+    const clean=cleanPullTrackV170(track);
+    const segments=pullTrackSegmentsV170(track);
+    const trackPts=clean.map(x=>[Number(x.latitude),Number(x.longitude)]);
+
+    segments.forEach(seg=>{
+      const pts=seg.map(x=>[Number(x.latitude),Number(x.longitude)]);
+      if(pts.length>1){
+        L.polyline(pts,{
+          color:'#2563eb',
+          weight:5,
+          opacity:.9,
+          smoothFactor:.3
+        }).addTo(map);
+      }
+    });
+
+    const eventRows=(events||[])
+      .filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)))
+      .sort((a,b)=>(Number(a.step_order)||0)-(Number(b.step_order)||0)||new Date(a.recorded_at)-new Date(b.recorded_at));
+
+    const eventPts=eventRows.map(x=>[Number(x.latitude),Number(x.longitude)]);
+
+    // As etapas continuam como marcadores de auditoria, nunca como linha ficticia.
+    eventRows.forEach((ev,idx)=>{
+      const n=pullMainStepNumber(ev)||idx+1;
+      const key=String(ev.id||`${ev.action_code||'STEP'}-${ev.step_order||''}-${ev.recorded_at||''}`);
+      const icon=L.divIcon({
+        className:'pull-stage-marker-shell',
+        html:`<span class="pull-stage-map-marker">${n}</span>`,
+        iconSize:[34,34],
+        iconAnchor:[17,17],
+        popupAnchor:[0,-18]
+      });
+
+      const audit=ev.geofence_status==='INSIDE'
+        ?`<br>Dentro do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`
+        :ev.geofence_status==='OUTSIDE'
+          ?`<br>Fora do raio • ${Math.round(Number(ev.distance_factory_m)||0)} m`
+          :'';
+
+      const marker=L.marker(
+        [Number(ev.latitude),Number(ev.longitude)],
+        {icon}
+      )
+      .addTo(map)
+      .bindPopup(
+        `<strong>Etapa ${n}: ${esc(ev.step_name||'Etapa')}</strong><br>${esc(fmtDateTime(ev.recorded_at))}<br>${esc(ev.user_name||'')}${audit}`
+      );
+
+      markers.set(key,marker);
+    });
+
+    const allTrack=[...(track||[])]
+      .filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)))
+      .sort((a,b)=>pullTrackMomentV170(a)-pullTrackMomentV170(b));
+
+    const latest=allTrack.at(-1)||null;
+
+    if(latest){
+      L.circleMarker(
+        [Number(latest.latitude),Number(latest.longitude)],
+        {
+          radius:9,
+          color:'#ffffff',
+          weight:3,
+          fillColor:'#dc2626',
+          fillOpacity:1
+        }
+      )
+      .addTo(map)
+      .bindPopup(
+        '<strong>Localização atual da carreta</strong><br>'+
+        esc(fmtDateTime(latest.device_at||latest.recorded_at))+
+        (latest.gps_accuracy!=null?'<br>Precisão ±'+Math.round(Number(latest.gps_accuracy))+' m':'')
+      );
+    }
+
+    const boundsPts=[...trackPts,...eventPts];
+
+    if(boundsPts.length){
+      map.fitBounds(L.latLngBounds(boundsPts).pad(.15));
+    }else{
+      map.setView([-6.5,-36.5],6);
+    }
+
+    const f=pullFactories.find(x=>x.name===t.factory);
+
+    if(f?.latitude!=null&&f?.longitude!=null){
+      L.marker([f.latitude,f.longitude]).addTo(map).bindPopup(`Fábrica ${esc(f.name)}`);
+      if(f.radius_meters){
+        L.circle([f.latitude,f.longitude],{radius:Number(f.radius_meters)}).addTo(map);
+      }
+    }
+
+    const ctx={map,markers,container:el};
+    pullMapContexts.set(mapId,ctx);
+    updatePullMapStatusV170(mapId,track);
+    return ctx;
+
+  }catch(e){
+    console.warn('[PUXADA MAPA]',e);
+    return null;
+  }
+};
+
+async function refreshPullLiveMapV170(mapId,tripId,trip){
+  if(!$(mapId))return false;
+
+  try{
+    const {data,error}=await sb
+      .from('pull_track_points')
+      .select('*')
+      .eq('trip_id',tripId)
+      .order('recorded_at')
+      .limit(10000);
+
+    if(error)throw error;
+
+    const old=pullMapContexts.get(mapId);
+    const center=old?.map?.getCenter?.();
+    const zoom=old?.map?.getZoom?.();
+
+    renderPullMap(mapId,trip,data||[],[]);
+
+    const fresh=pullMapContexts.get(mapId);
+
+    if(center&&Number.isFinite(zoom)){
+      fresh?.map?.setView(center,zoom,{animate:false});
+    }
+
+    return true;
+
+  }catch(e){
+    console.warn('[PUXADA MAPA TEMPO REAL]',e);
+    return false;
+  }
+}
+
+function startPullLiveMapV170(mapId,tripId,trip){
+  if(pullLiveMapTimerV170){
+    clearInterval(pullLiveMapTimerV170);
+    pullLiveMapTimerV170=null;
+  }
+
+  pullLiveMapTimerV170=setInterval(()=>{
+    if(!$(mapId)){
+      clearInterval(pullLiveMapTimerV170);
+      pullLiveMapTimerV170=null;
+      return;
+    }
+
+    refreshPullLiveMapV170(mapId,tripId,trip);
+  },10000);
+}
+
+const openPullTripDetailBeforeNativeV170=openPullTripDetail;
+
+openPullTripDetail=async function(id,live=false){
+  await openPullTripDetailBeforeNativeV170(id,live);
+
+  const trip=
+    (pullHistory.find(x=>String(x.id)===String(id))
+      ||($('pullFarolCards')?._rows||[]).find(x=>String(x.id)===String(id))
+      ||null);
+
+  const mapId='pullMap-'+String(id).replace(/-/g,'');
+
+  setTimeout(()=>{
+    const mapEl=$(mapId);
+    if(!mapEl)return;
+
+    if(!$(mapId+'-track-status')){
+      const title=document.createElement('div');
+      title.className='section-title';
+      title.textContent='LOCALIZAÇÃO DO VEÍCULO';
+
+      const status=document.createElement('div');
+      status.id=mapId+'-track-status';
+      status.className='notice';
+      status.textContent='GPS aguardando atualização...';
+
+      mapEl.before(title,status);
+    }
+
+    if(live&&trip){
+      startPullLiveMapV170(mapId,id,trip);
+    }
+  },180);
+};
+
+const cleanupPullMapsBeforeNativeV170=cleanupPullMaps;
+
+cleanupPullMaps=function(){
+  if(pullLiveMapTimerV170){
+    clearInterval(pullLiveMapTimerV170);
+    pullLiveMapTimerV170=null;
+  }
+
+  return cleanupPullMapsBeforeNativeV170();
+};
+
 
 })();
