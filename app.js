@@ -7884,4 +7884,317 @@ cleanupPullMaps=function(){
 };
 
 
+
+// =============================================================================
+// V1.7.0 - STAGE_MARKERS_LIVE_MAP_V171
+// Mantem trajeto real + localizacao atual + etapas numeradas no mapa.
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+// REFRESH DO MAPA AO VIVO
+// Busca novamente tanto o GPS real quanto os apontamentos das etapas.
+// -----------------------------------------------------------------------------
+
+refreshPullLiveMapV170=
+  async function(
+    mapId,
+    tripId,
+    trip
+  ){
+
+  if(
+    !$(mapId)
+    ||
+    !sb
+  ){
+    return false;
+  }
+
+
+  try{
+
+    const [
+      trackResult,
+      eventResult
+    ]=
+      await Promise.all([
+
+        sb
+          .from(
+            'pull_track_points'
+          )
+          .select('*')
+          .eq(
+            'trip_id',
+            tripId
+          )
+          .order(
+            'recorded_at'
+          )
+          .limit(10000),
+
+        sb
+          .from(
+            'pull_events'
+          )
+          .select('*')
+          .eq(
+            'trip_id',
+            tripId
+          )
+          .order(
+            'recorded_at'
+          )
+
+      ]);
+
+
+    if(trackResult.error){
+      throw trackResult.error;
+    }
+
+
+    if(eventResult.error){
+      throw eventResult.error;
+    }
+
+
+    const old=
+      pullMapContexts.get(
+        mapId
+      );
+
+
+    const center=
+      old?.map
+        ?.getCenter?.();
+
+
+    const zoom=
+      old?.map
+        ?.getZoom?.();
+
+
+    // IMPORTANTE:
+    // trackResult = linha real do GPS
+    // eventResult = marcadores das etapas
+    //
+    // A linha continua sendo formada SOMENTE
+    // pelos pontos reais do GPS.
+    renderPullMap(
+      mapId,
+      trip,
+      trackResult.data||[],
+      eventResult.data||[]
+    );
+
+
+    const fresh=
+      pullMapContexts.get(
+        mapId
+      );
+
+
+    // Se o usuario estava olhando uma determinada
+    // regiao do mapa, o refresh nao arranca o mapa
+    // daquele ponto.
+    if(
+      center
+      &&
+      Number.isFinite(
+        Number(zoom)
+      )
+    ){
+
+      fresh?.map?.setView(
+        center,
+        Number(zoom),
+        {
+          animate:false
+        }
+      );
+
+    }
+
+
+    updatePullMapStatusV170(
+      mapId,
+      trackResult.data||[]
+    );
+
+
+    return true;
+
+  }
+  catch(e){
+
+    console.warn(
+      '[PUXADA MAPA TEMPO REAL]',
+      e
+    );
+
+    return false;
+
+  }
+};
+
+
+// -----------------------------------------------------------------------------
+// VER NO MAPA
+// Rola ate o mapa, aproxima a etapa e abre automaticamente o popup.
+// -----------------------------------------------------------------------------
+
+const focusPullMapPointBeforeStageV171=
+  focusPullMapPoint;
+
+
+focusPullMapPoint=
+  function(
+    mapId,
+    mapKey
+  ){
+
+  const ctx=
+    pullMapContexts.get(
+      mapId
+    );
+
+
+  const marker=
+    ctx?.markers?.get(
+      String(
+        mapKey||''
+      )
+    );
+
+
+  const mapEl=
+    $(mapId);
+
+
+  if(
+    !ctx
+    ||
+    !marker
+  ){
+
+    return toast(
+      'Não foi possível localizar esta etapa no mapa.',
+      'error'
+    );
+
+  }
+
+
+  // Primeiro leva a tela para o mapa.
+  if(mapEl){
+
+    try{
+
+      mapEl.scrollIntoView({
+        behavior:'smooth',
+        block:'center'
+      });
+
+    }
+    catch(_e){
+
+      mapEl.scrollIntoView();
+
+    }
+
+  }
+
+
+  // Espera o scroll iniciar antes de alterar
+  // centro/zoom do Leaflet.
+  setTimeout(
+    ()=>{
+
+      try{
+
+        ctx.map.invalidateSize?.();
+
+
+        const point=
+          marker.getLatLng();
+
+
+        const currentZoom=
+          Number(
+            ctx.map.getZoom?.()
+            ||
+            0
+          );
+
+
+        const targetZoom=
+          Math.max(
+            currentZoom,
+            15
+          );
+
+
+        ctx.map.setView(
+          point,
+          targetZoom,
+          {
+            animate:true
+          }
+        );
+
+
+        marker.openPopup();
+
+
+        // Traz temporariamente o marcador clicado
+        // para frente dos demais.
+        marker.setZIndexOffset?.(
+          1000
+        );
+
+
+        setTimeout(
+          ()=>{
+            marker.setZIndexOffset?.(
+              0
+            );
+          },
+          2500
+        );
+
+
+      }
+      catch(e){
+
+        console.warn(
+          '[PUXADA VER NO MAPA]',
+          e
+        );
+
+
+        focusPullMapPointBeforeStageV171(
+          mapId,
+          mapKey
+        );
+
+      }
+
+    },
+    350
+  );
+
+};
+
+
+// -----------------------------------------------------------------------------
+// Se o mapa estiver atualizando automaticamente, os marcadores permanecem.
+// -----------------------------------------------------------------------------
+
+console.info(
+  '[PUXADA MAPA] trajeto real + etapas habilitados'
+);
+
+
 })();
