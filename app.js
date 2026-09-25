@@ -6552,7 +6552,13 @@ async function registerWebPushV170({requestPermission=false}={}){
 async function nativeForegroundSystemNotificationV170(payload){
   const local=getCapacitorLocalV170();if(!local)return false;try{let p=await local.checkPermissions();if(String(p?.display||'').toLowerCase()!=='granted')return false;const tb=pushTitleBodyV170(payload),data=pushPayloadDataV170(payload);pushLocalCounterV170=(pushLocalCounterV170+1)%1000;const id=(Math.floor(Date.now()/1000)%2000000000)+pushLocalCounterV170;await local.schedule({notifications:[{id,title:tb.title,body:tb.body,channelId:PUSH_CHANNEL_V170,extra:data}]});return true;}catch(e){console.warn('Notificação local de push',e);return false;}
 }
+const ANDROID_FCM_ENABLED_V170=false;
+
 async function setupNativePushV170({requestPermission=false}={}){
+  if(isNativeCapacitor()&&!ANDROID_FCM_ENABLED_V170){
+    if(requestPermission)throw new Error('PUSH_ANDROID_NAO_CONFIGURADO');
+    return false;
+  }
   const push=getCapacitorPushV170();if(!push)throw new Error('PUSH_ANDROID_INDISPONIVEL');
   if(!pushNativeListenersBoundV170){
     await push.addListener('registration',async token=>{try{await savePushDeviceV170('FCM',{token:token?.value||''});await updatePushButtonV170();}catch(e){console.warn('Salvar token FCM',e);}});
@@ -6568,7 +6574,7 @@ async function setupNativePushV170({requestPermission=false}={}){
   await push.register();return true;
 }
 async function pushPermissionStatusV170(){
-  if(isNativeCapacitor()){const push=getCapacitorPushV170();if(!push)return 'unsupported';try{const p=await push.checkPermissions(),v=String(p?.receive||'').toLowerCase();return v==='granted'?'granted':v==='denied'?'denied':'default';}catch{return 'default';}}
+  if(isNativeCapacitor()){if(!ANDROID_FCM_ENABLED_V170)return 'unsupported';const push=getCapacitorPushV170();if(!push)return 'unsupported';try{const p=await push.checkPermissions(),v=String(p?.receive||'').toLowerCase();return v==='granted'?'granted':v==='denied'?'denied':'default';}catch{return 'default';}}
   if(!('Notification' in window)||!('PushManager' in window))return 'unsupported';return Notification.permission;
 }
 async function updatePushButtonV170(){
@@ -8198,3 +8204,611 @@ console.info(
 
 
 })();
+
+// V1.7.0 - OFFLINE_RECONNECT_RESYNC_V172
+
+let disbOfflineReconnectPromiseV172=null;
+let disbOfflineReconnectTimerV172=null;
+
+
+/*
+ * Garante que, ao voltar a internet, nao basta navigator.onLine=true.
+ * Antes de enviar a fila, recuperamos uma sessao REAL do Supabase.
+ */
+async function disbEnsureOnlineSupabaseSessionV172(){
+
+  if(
+    !navigator.onLine
+    ||
+    !sb
+  ){
+    return null;
+  }
+
+  let session=null;
+
+  try{
+
+    const current=
+      await sb.auth.getSession();
+
+    if(current.error){
+      throw current.error;
+    }
+
+    session=
+      current.data?.session
+      ||
+      null;
+
+  }
+  catch(e){
+
+    console.warn(
+      '[OFFLINE RESYNC] getSession falhou',
+      e
+    );
+
+  }
+
+
+  /*
+   * Se existe sessao mas esta perto de vencer,
+   * renova antes de subir foto, assinatura e RPC.
+   */
+  if(session){
+
+    const expiresAt=
+      Number(
+        session.expires_at
+        ||
+        0
+      )
+      *
+      1000;
+
+    const shouldRefresh=
+      !expiresAt
+      ||
+      expiresAt-Date.now()<120000;
+
+    if(shouldRefresh){
+
+      try{
+
+        const refreshed=
+          await sb.auth.refreshSession();
+
+        if(
+          !refreshed.error
+          &&
+          refreshed.data?.session
+        ){
+
+          session=
+            refreshed.data.session;
+
+        }
+        else if(refreshed.error){
+
+          console.warn(
+            '[OFFLINE RESYNC] refreshSession',
+            refreshed.error
+          );
+
+        }
+
+      }
+      catch(e){
+
+        console.warn(
+          '[OFFLINE RESYNC] refreshSession falhou',
+          e
+        );
+
+      }
+
+    }
+
+  }
+
+
+  /*
+   * Tenta uma recuperacao mesmo se getSession
+   * tiver retornado vazio.
+   */
+  if(!session){
+
+    try{
+
+      const refreshed=
+        await sb.auth.refreshSession();
+
+      if(
+        !refreshed.error
+        &&
+        refreshed.data?.session
+      ){
+
+        session=
+          refreshed.data.session;
+
+      }
+
+    }
+    catch(_e){}
+
+  }
+
+
+  if(
+    !session
+    ||
+    !session.user?.id
+  ){
+
+    throw new Error(
+      'SESSAO_SUPABASE_NAO_RECUPERADA'
+    );
+
+  }
+
+
+  /*
+   * Troca o usuario local/offline pelo usuario
+   * autenticado real da sessao Supabase.
+   */
+  const changedUser=
+    !authUser
+    ||
+    String(authUser.id||'')
+    !==
+    String(session.user.id);
+
+
+  authUser=
+    session.user;
+
+
+  /*
+   * Se o app veio de login offline, confirma
+   * o perfil online antes de sincronizar.
+   */
+  if(
+    changedUser
+    ||
+    !profile
+  ){
+
+    const ok=
+      await loadProfile(
+        session.user
+      );
+
+    if(!ok){
+
+      throw new Error(
+        'PERFIL_ONLINE_NAO_RECUPERADO'
+      );
+
+    }
+
+  }
+
+
+  /*
+   * Recupera unidade online se for necessario.
+   */
+  if(
+    !activeUnit
+    &&
+    typeof loadUnitAccess==='function'
+  ){
+
+    try{
+
+      await loadUnitAccess();
+
+    }
+    catch(e){
+
+      console.warn(
+        '[OFFLINE RESYNC] unidade',
+        e
+      );
+
+    }
+
+  }
+
+
+  return session;
+}
+
+
+/*
+ * Sincronizador de reconexao.
+ *
+ * A operacao so e considerada concluida
+ * quando realmente desaparece da fila local.
+ */
+async function disbSyncPendingAfterReconnectV172({
+  notify=false
+}={}){
+
+  if(
+    !navigator.onLine
+    ||
+    !sb
+  ){
+
+    return false;
+
+  }
+
+
+  if(disbOfflineReconnectPromiseV172){
+
+    return await disbOfflineReconnectPromiseV172;
+
+  }
+
+
+  const current=
+    (async()=>{
+
+      try{
+
+        await disbEnsureOnlineSupabaseSessionV172();
+
+
+        const before=
+          await offlinePendingCount();
+
+
+        if(!before){
+
+          updateOnlineStatus();
+
+          return true;
+
+        }
+
+
+        console.info(
+          '[OFFLINE RESYNC] iniciando',
+          {
+            pendentes:before
+          }
+        );
+
+
+        await syncOfflineQueue({
+          silent:true
+        });
+
+
+        const remainingRows=
+          await offlineQueueRows();
+
+
+        const remaining=
+          remainingRows.length;
+
+
+        if(!remaining){
+
+          console.info(
+            '[OFFLINE RESYNC] concluido',
+            {
+              enviados:before
+            }
+          );
+
+
+          updateOnlineStatus();
+
+
+          if(notify){
+
+            toast(
+              before===1
+                ?
+                'Registro offline sincronizado com sucesso.'
+                :
+                `${before} registros offline sincronizados com sucesso.`,
+              'success'
+            );
+
+          }
+
+
+          /*
+           * Se foi uma avaria, abre o comprovante
+           * que ficou aguardando sincronizacao.
+           */
+          try{
+
+            await offlineOpenNextDamageReceipt();
+
+          }
+          catch(_e){}
+
+
+          return true;
+
+        }
+
+
+        /*
+         * Ainda existe algo na fila.
+         * Mantemos o registro e mostramos a causa real.
+         */
+        const errorRow=
+          remainingRows.find(
+            row=>
+              String(
+                row.last_error
+                ||
+                ''
+              ).trim()
+          )
+          ||
+          remainingRows[0];
+
+
+        const detail=
+          String(
+            errorRow?.last_error
+            ||
+            'aguardando nova tentativa'
+          );
+
+
+        console.warn(
+          '[OFFLINE RESYNC] ainda pendente',
+          {
+            remaining,
+            type:errorRow?.type,
+            id:errorRow?.id,
+            error:detail
+          }
+        );
+
+
+        if(notify){
+
+          toast(
+            `Ainda ha ${remaining} registro${remaining===1?'':'s'} aguardando sincronizacao. ${detail}`,
+            'error'
+          );
+
+        }
+
+
+        return false;
+
+      }
+      catch(e){
+
+        const message=
+          String(
+            e?.message
+            ||
+            e
+            ||
+            'Falha na sincronizacao'
+          );
+
+
+        console.warn(
+          '[OFFLINE RESYNC] falhou',
+          e
+        );
+
+
+        if(notify){
+
+          if(
+            message.includes(
+              'SESSAO_SUPABASE_NAO_RECUPERADA'
+            )
+          ){
+
+            toast(
+              'A internet voltou, mas a sessao online precisa ser recuperada. Entre novamente no aplicativo; o registro offline continuara salvo no aparelho.',
+              'error'
+            );
+
+          }
+          else{
+
+            toast(
+              `Registro offline continua salvo no aparelho. Nova tentativa sera feita automaticamente. ${message}`,
+              'error'
+            );
+
+          }
+
+        }
+
+
+        return false;
+
+      }
+
+    })();
+
+
+  disbOfflineReconnectPromiseV172=
+    current;
+
+
+  try{
+
+    return await current;
+
+  }
+  finally{
+
+    if(
+      disbOfflineReconnectPromiseV172
+      ===
+      current
+    ){
+
+      disbOfflineReconnectPromiseV172=null;
+
+    }
+
+  }
+
+}
+
+
+/*
+ * Agenda uma tentativa sem criar diversas
+ * sincronizacoes simultaneas.
+ */
+function disbScheduleOfflineResyncV172(
+  notify=false,
+  delay=1200
+){
+
+  clearTimeout(
+    disbOfflineReconnectTimerV172
+  );
+
+
+  disbOfflineReconnectTimerV172=
+    setTimeout(
+      ()=>{
+
+        disbSyncPendingAfterReconnectV172({
+          notify
+        })
+        .catch(
+          e=>
+            console.warn(
+              '[OFFLINE RESYNC] agendamento',
+              e
+            )
+        );
+
+      },
+      delay
+    );
+
+}
+
+
+/*
+ * 1. Internet voltou.
+ */
+window.addEventListener(
+  'online',
+  ()=>{
+
+    disbScheduleOfflineResyncV172(
+      true,
+      1200
+    );
+
+  }
+);
+
+
+/*
+ * 2. Usuario voltou ao aplicativo.
+ */
+document.addEventListener(
+  'visibilitychange',
+  ()=>{
+
+    if(
+      !document.hidden
+      &&
+      navigator.onLine
+    ){
+
+      disbScheduleOfflineResyncV172(
+        false,
+        500
+      );
+
+    }
+
+  }
+);
+
+
+/*
+ * 3. Start/login concluido.
+ */
+const startAppBeforeOfflineResyncV172=
+  startApp;
+
+startApp=async function(){
+
+  const result=
+    await startAppBeforeOfflineResyncV172();
+
+  if(navigator.onLine){
+
+    disbScheduleOfflineResyncV172(
+      false,
+      1500
+    );
+
+  }
+
+  return result;
+
+};
+
+
+/*
+ * 4. Rede oscilante:
+ * se algum registro permanecer pendente,
+ * tenta novamente periodicamente.
+ */
+setInterval(
+  async()=>{
+
+    if(
+      !navigator.onLine
+      ||
+      !sb
+      ||
+      !authUser
+    ){
+      return;
+    }
+
+
+    try{
+
+      const pending=
+        await offlinePendingCount();
+
+      if(pending){
+
+        await disbSyncPendingAfterReconnectV172({
+          notify:false
+        });
+
+      }
+
+    }
+    catch(e){
+
+      console.warn(
+        '[OFFLINE RESYNC] retry',
+        e
+      );
+
+    }
+
+  },
+  15000
+);
