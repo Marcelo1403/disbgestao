@@ -167,40 +167,301 @@ async function prepareRuntimeCache(){
     try{if('caches' in window){const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));}}catch(e){console.warn('Cache clear',e);}
     return;
   }
-  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-pull-transfer-hotfix1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
+  try{const reg=await navigator.serviceWorker.register('sw.js?v=1.7.0-offline-login1',{updateViaCache:'none'});await reg.update();}catch(e){console.warn('SW register',e);}
 }
 
+
 async function init(){
+
   bindBaseEvents();
+
   updateOnlineStatus();
-  window.addEventListener('online', updateOnlineStatus);
-  window.addEventListener('offline', updateOnlineStatus);
+
+  window.addEventListener(
+    'online',
+    updateOnlineStatus
+  );
+
+  window.addEventListener(
+    'offline',
+    updateOnlineStatus
+  );
+
+  window.addEventListener(
+    'online',
+    ()=>{
+
+      setTimeout(
+        ()=>{
+
+          recoverOnlineAuthV171()
+            .catch(
+              e=>
+                console.warn(
+                  '[OFFLINE] recuperar online',
+                  e
+                )
+            );
+
+        },
+        300
+      );
+
+    }
+  );
+
   await prepareRuntimeCache();
 
-  if (!isConfigured()) {
-    setBackendStatus('error','Configure o Supabase em config.js');
-    showLogin('Preencha SUPABASE_URL e SUPABASE_ANON_KEY no arquivo config.js.');
+
+  if(!isConfigured()){
+
+    setBackendStatus(
+      'error',
+      'Configure o Supabase em config.js'
+    );
+
+    showLogin(
+      'Preencha SUPABASE_URL e SUPABASE_ANON_KEY no arquivo config.js.'
+    );
+
     return;
   }
-  try{
-    sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},
-      global:{fetch:(input,init={})=>fetch(input,{...init,cache:'no-store'})}
-    });
-    setBackendStatus('checking','Conectando ao Supabase…');
-    const {data:{session},error} = await sb.auth.getSession();
-    if(error) throw error;
-    if(session?.user){
-      const ok = await loadProfile(session.user);
-      if(ok) await startApp(); else showLogin();
-    }else showLogin();
-    setBackendStatus('ok','Supabase conectado');
 
-    sb.auth.onAuthStateChange((_event,sessionNow)=>{
-      if(!sessionNow && profile){ profile=null; authUser=null; teardownRealtime(); showLogin(); }
-    });
-  }catch(e){
-    console.error(e); setBackendStatus('error','Falha ao conectar ao Supabase'); showLogin(humanError(e));
+
+  try{
+
+    sb=
+      window.supabase.createClient(
+        CFG.SUPABASE_URL,
+        CFG.SUPABASE_ANON_KEY,
+        {
+          auth:{
+            persistSession:true,
+            autoRefreshToken:true,
+            detectSessionInUrl:true
+          },
+
+          global:{
+            fetch:(input,options={})=>
+              fetch(
+                input,
+                {
+                  ...options,
+                  cache:'no-store'
+                }
+              )
+          }
+        }
+      );
+
+
+    // ========================================================
+    // ABERTURA SEM INTERNET
+    // ========================================================
+
+    if(!navigator.onLine){
+
+      const cached=
+        offlineReadIdentityV171();
+
+      if(cached?.user_id){
+
+        const localUser={
+          id:
+            String(
+              cached.user_id
+            ),
+
+          email:
+            String(
+              cached.email||''
+            ),
+
+          aud:
+            'authenticated'
+        };
+
+        const ok=
+          await loadProfile(
+            localUser
+          );
+
+        if(ok){
+
+          setBackendStatus(
+            'checking',
+            'Modo offline'
+          );
+
+          await startApp();
+
+          toast(
+            'Modo offline ativo. Os registros ficarao salvos neste aparelho ate a internet voltar.',
+            'success'
+          );
+
+          return;
+        }
+      }
+
+
+      setBackendStatus(
+        'error',
+        'Sem internet'
+      );
+
+      showLogin(
+        'Sem internet. Este aparelho precisa fazer pelo menos um login online antes de usar o modo offline.'
+      );
+
+      return;
+    }
+
+
+    // ========================================================
+    // ABERTURA ONLINE
+    // ========================================================
+
+    setBackendStatus(
+      'checking',
+      'Conectando ao Supabase...'
+    );
+
+    const {
+      data:{
+        session
+      },
+      error
+    }=
+      await sb.auth.getSession();
+
+    if(error)throw error;
+
+
+    if(session?.user){
+
+      const ok=
+        await loadProfile(
+          session.user
+        );
+
+      if(ok){
+
+        await startApp();
+
+      }
+      else{
+
+        showLogin();
+
+      }
+
+    }
+    else{
+
+      showLogin();
+
+    }
+
+
+    setBackendStatus(
+      'ok',
+      'Supabase conectado'
+    );
+
+
+    sb.auth.onAuthStateChange(
+      (_event,currentSession)=>{
+
+        if(
+          !currentSession
+          &&
+          profile
+          &&
+          navigator.onLine
+        ){
+
+          profile=null;
+          authUser=null;
+
+          teardownRealtime();
+
+          showLogin();
+
+        }
+      }
+    );
+
+  }
+  catch(e){
+
+    console.error(
+      '[INIT]',
+      e
+    );
+
+
+    const networkFailure=
+      !navigator.onLine
+      ||
+      (
+        typeof offlineIsNetworkError==='function'
+        &&
+        offlineIsNetworkError(e)
+      );
+
+
+    if(networkFailure){
+
+      const cached=
+        offlineReadIdentityV171();
+
+      if(cached?.user_id){
+
+        try{
+
+          const ok=
+            await loadProfile({
+              id:
+                String(
+                  cached.user_id
+                ),
+
+              email:
+                String(
+                  cached.email||''
+                ),
+
+              aud:
+                'authenticated'
+            });
+
+          if(ok){
+
+            setBackendStatus(
+              'checking',
+              'Modo offline'
+            );
+
+            await startApp();
+
+            return;
+          }
+
+        }
+        catch(_offlineError){}
+      }
+    }
+
+
+    setBackendStatus(
+      'error',
+      'Falha ao conectar ao Supabase'
+    );
+
+    showLogin(
+      humanError(e)
+    );
   }
 }
 
@@ -382,21 +643,117 @@ function bindBaseEvents(){
   bindPullEvents();
 }
 
+
 async function login(e){
+
   e.preventDefault();
-  if(!sb) return;
-  const username=normalizeUsername($('loginUsuario').value); const password=$('loginSenha').value;
-  if(!username||!password) return setLoginMessage('Informe usuário e senha.');
-  const btn=$('btnEntrar'); btn.disabled=true; btn.textContent='Entrando…'; setLoginMessage('');
+
+  if(!sb)return;
+
+  const username=
+    normalizeUsername(
+      $('loginUsuario').value
+    );
+
+  const password=
+    $('loginSenha').value;
+
+
+  if(
+    !username
+    ||
+    !password
+  ){
+
+    return setLoginMessage(
+      'Informe usuario e senha.'
+    );
+
+  }
+
+
+  if(!navigator.onLine){
+
+    setLoginMessage(
+      'Sem internet. Neste aparelho, o acesso offline e automatico somente depois de pelo menos um login online.'
+    );
+
+    return;
+  }
+
+
+  const btn=
+    $('btnEntrar');
+
+  btn.disabled=true;
+  btn.textContent='Entrando...';
+
+  setLoginMessage('');
+
+
   try{
-    const email=`${username}@${CFG.USER_EMAIL_DOMAIN||'disbecol.app'}`;
-    const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error) throw error;
-    if(!await loadProfile(data.user)){ await sb.auth.signOut(); throw new Error('Usuário inativo ou sem perfil.'); }
-    $('loginSenha').value=''; await startApp();
-  }catch(err){ setLoginMessage(loginError(err)); }
-  finally{btn.disabled=false;btn.textContent='Entrar →';}
+
+    const email=
+      `${username}@${CFG.USER_EMAIL_DOMAIN||'disbecol.app'}`;
+
+
+    const {
+      data,
+      error
+    }=
+      await sb.auth.signInWithPassword({
+        email,
+        password
+      });
+
+
+    if(error)throw error;
+
+
+    const ok=
+      await loadProfile(
+        data.user
+      );
+
+
+    if(!ok){
+
+      await sb.auth.signOut();
+
+      throw new Error(
+        'Usuario inativo ou sem perfil.'
+      );
+
+    }
+
+
+    offlineRememberIdentityV171(
+      data.user,
+      username
+    );
+
+
+    $('loginSenha').value='';
+
+
+    await startApp();
+
+  }
+  catch(err){
+
+    setLoginMessage(
+      loginError(err)
+    );
+
+  }
+  finally{
+
+    btn.disabled=false;
+    btn.textContent='Entrar ->';
+
+  }
 }
+
 async function loadProfile(user){
   authUser=user;
   const {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();
@@ -486,14 +843,71 @@ function hasPerm(code){
   );
 }
 function hasAnyPerm(codes){return String(codes||'').split(',').map(x=>x.trim()).filter(Boolean).some(hasPerm);}
+
 async function logout(){
-  teardownRealtime(); teardownPullRealtime(); stopPullTracking(); profile=null;authUser=null;myUnits=[];activeUnit='';userUnitRows=[];userUnitAuditRows=[];myPermissions.clear(); refs={products:[],units:[],drivers:[],factories:[],customers:[]};
-  fefoActiveCount=null;fefoItems=[];fefoEditingItemId=null;fefoActiveCounts=[];fefoReports=[];fefoItemsByCount.clear();
-  salesDamageItems=[];salesDamagePhotos=[];salesDamageMyRequests=[];salesDamageManageRequests=[];currentSalesDamageDetail=null;
-  $('appShell').classList.add('hidden'); $('loginScreen').classList.remove('hidden');
-  try{await sb.auth.signOut();}catch(_e){}
+
+  offlineClearIdentityV171();
+
+  teardownRealtime();
+  teardownPullRealtime();
+  stopPullTracking();
+
+  profile=null;
+  authUser=null;
+
+  myUnits=[];
+  activeUnit='';
+
+  userUnitRows=[];
+  userUnitAuditRows=[];
+
+  myPermissions.clear();
+
+  refs={
+    products:[],
+    units:[],
+    drivers:[],
+    factories:[],
+    customers:[]
+  };
+
+  fefoActiveCount=null;
+  fefoItems=[];
+  fefoEditingItemId=null;
+  fefoActiveCounts=[];
+  fefoReports=[];
+  fefoItemsByCount.clear();
+
+  salesDamageItems=[];
+  salesDamagePhotos=[];
+  salesDamageMyRequests=[];
+  salesDamageManageRequests=[];
+  currentSalesDamageDetail=null;
+
+
+  $('appShell')
+    .classList
+    .add('hidden');
+
+
+  $('loginScreen')
+    .classList
+    .remove('hidden');
+
+
+  try{
+
+    if(navigator.onLine){
+      await sb.auth.signOut();
+    }
+
+  }
+  catch(_e){}
+
+
   setLoginMessage('');
 }
+
 function showLogin(msg=''){ $('appShell').classList.add('hidden');$('loginScreen').classList.remove('hidden');setLoginMessage(msg); }
 function setLoginMessage(msg){$('loginMessage').textContent=msg||'';}
 function loginError(e){ const m=String(e?.message||e||''); if(/invalid login/i.test(m))return 'Usuário ou senha inválidos.'; return humanError(e); }
@@ -3731,7 +4145,285 @@ function humanCustomerContactError(e){
 const OFFLINE_DB_NAME='disb_gestao_offline_v160';
 const OFFLINE_DB_VERSION=1;
 const OFFLINE_PROFILE_KEY='disb_profile_cache_v160';
+
 const OFFLINE_PERMS_KEY='disb_permissions_cache_v160';
+
+const OFFLINE_AUTH_KEY=
+  'disb_offline_auth_v171';
+
+const OFFLINE_UNIT_CACHE_PREFIX=
+  'disb_units_cache_v171_';
+
+const OFFLINE_AUTH_MAX_AGE_MS=
+  14*24*60*60*1000;
+
+
+function offlineReadIdentityV171(){
+
+  try{
+
+    const row=
+      JSON.parse(
+        localStorage.getItem(
+          OFFLINE_AUTH_KEY
+        )
+        ||
+        'null'
+      );
+
+    if(
+      !row?.user_id
+      ||
+      !row?.at
+    ){
+      return null;
+    }
+
+    if(
+      Date.now()
+      -
+      Number(row.at)
+      >
+      OFFLINE_AUTH_MAX_AGE_MS
+    ){
+      return null;
+    }
+
+    return row;
+
+  }
+  catch(_e){
+
+    return null;
+
+  }
+}
+
+
+function offlineRememberIdentityV171(
+  user,
+  username=''
+){
+
+  if(!user?.id)return;
+
+  try{
+
+    localStorage.setItem(
+      OFFLINE_AUTH_KEY,
+      JSON.stringify({
+        user_id:
+          String(user.id),
+
+        email:
+          String(
+            user.email||''
+          ),
+
+        username:
+          normalizeUsername(
+            username
+            ||
+            profile?.username
+            ||
+            ''
+          ),
+
+        at:
+          Date.now()
+      })
+    );
+
+  }
+  catch(_e){}
+}
+
+
+function offlineClearIdentityV171(){
+
+  try{
+
+    localStorage.removeItem(
+      OFFLINE_AUTH_KEY
+    );
+
+  }
+  catch(_e){}
+}
+
+
+function offlineUnitCacheKeyV171(
+  userId=authUser?.id
+){
+
+  return (
+    OFFLINE_UNIT_CACHE_PREFIX
+    +
+    String(userId||'anon')
+  );
+
+}
+
+
+function offlineReadUnitAccessV171(
+  userId=authUser?.id
+){
+
+  try{
+
+    const row=
+      JSON.parse(
+        localStorage.getItem(
+          offlineUnitCacheKeyV171(
+            userId
+          )
+        )
+        ||
+        'null'
+      );
+
+    if(
+      !row
+      ||
+      !Array.isArray(row.units)
+    ){
+      return null;
+    }
+
+    return row;
+
+  }
+  catch(_e){
+
+    return null;
+
+  }
+}
+
+
+function offlineSaveUnitAccessV171(
+  units
+){
+
+  try{
+
+    localStorage.setItem(
+      offlineUnitCacheKeyV171(),
+      JSON.stringify({
+        user_id:
+          authUser?.id||'',
+
+        units:[
+          ...new Set(
+            (units||[])
+              .map(
+                x=>
+                  String(
+                    x||''
+                  ).trim()
+              )
+              .filter(Boolean)
+          )
+        ],
+
+        active_unit:
+          String(
+            activeUnit||''
+          ),
+
+        at:
+          Date.now()
+      })
+    );
+
+  }
+  catch(_e){}
+}
+
+
+async function recoverOnlineAuthV171(){
+
+  if(
+    !navigator.onLine
+    ||
+    !sb
+    ||
+    !authUser?.id
+  ){
+    return false;
+  }
+
+  try{
+
+    const {
+      data:{
+        session
+      },
+      error
+    }=
+      await sb.auth.getSession();
+
+    if(
+      error
+      ||
+      !session?.user
+      ||
+      String(
+        session.user.id
+      )
+      !==
+      String(
+        authUser.id
+      )
+    ){
+
+      console.warn(
+        '[OFFLINE] Sessao ainda nao restaurada.',
+        error||null
+      );
+
+      return false;
+    }
+
+    const ok=
+      await loadProfile(
+        session.user
+      );
+
+    if(!ok){
+      return false;
+    }
+
+    await loadMyPermissions();
+
+    await loadReferences(true);
+
+    setupRealtime();
+
+    setBackendStatus(
+      'ok',
+      'Supabase conectado'
+    );
+
+    await syncOfflineQueue({
+      silent:false
+    });
+
+    return true;
+
+  }
+  catch(e){
+
+    console.warn(
+      '[OFFLINE] Falha ao recuperar conexao',
+      e
+    );
+
+    return false;
+
+  }
+}
+
 let offlineDbPromise=null;
 let offlineSyncRunning=false;
 let offlineSyncPromise=null;
@@ -3809,18 +4501,130 @@ updateOnlineStatus = function(){
 };
 
 const loadProfileV151=loadProfile;
+
 loadProfile = async function(user){
+
   authUser=user;
+
+
   if(navigator.onLine){
+
     try{
-      const {data,error}=await sb.from('profiles').select('*').eq('id',user.id).single();
-      if(error)throw error;if(!data||!data.active){profile=null;return false;}
-      profile=data;localStorage.setItem(OFFLINE_PROFILE_KEY,JSON.stringify({user_id:user.id,profile:data,at:Date.now()}));return true;
-    }catch(e){console.warn('Perfil online indisponível; tentando cache local.',e);}
+
+      const {
+        data,
+        error
+      }=
+        await sb
+          .from('profiles')
+          .select('*')
+          .eq(
+            'id',
+            user.id
+          )
+          .single();
+
+
+      if(error)throw error;
+
+
+      if(
+        !data
+        ||
+        !data.active
+      ){
+
+        profile=null;
+
+        return false;
+      }
+
+
+      profile=data;
+
+
+      localStorage.setItem(
+        OFFLINE_PROFILE_KEY,
+        JSON.stringify({
+          user_id:
+            user.id,
+
+          profile:
+            data,
+
+          at:
+            Date.now()
+        })
+      );
+
+
+      offlineRememberIdentityV171(
+        user,
+        data.username||''
+      );
+
+
+      return true;
+
+    }
+    catch(e){
+
+      console.warn(
+        'Perfil online indisponivel; tentando cache local.',
+        e
+      );
+
+    }
   }
-  try{const c=JSON.parse(localStorage.getItem(OFFLINE_PROFILE_KEY)||'null');if(c?.user_id===user.id&&c.profile?.active!==false){profile=c.profile;setBackendStatus('checking','Modo offline • perfil local');return true;}}catch(_e){}
-  if(navigator.onLine)return loadProfileV151(user);
-  profile=null;return false;
+
+
+  try{
+
+    const cached=
+      JSON.parse(
+        localStorage.getItem(
+          OFFLINE_PROFILE_KEY
+        )
+        ||
+        'null'
+      );
+
+
+    if(
+      cached?.user_id===user.id
+      &&
+      cached.profile?.active!==false
+    ){
+
+      profile=
+        cached.profile;
+
+
+      setBackendStatus(
+        'checking',
+        'Modo offline - perfil local'
+      );
+
+
+      return true;
+    }
+
+  }
+  catch(_e){}
+
+
+  if(navigator.onLine){
+
+    return loadProfileV151(
+      user
+    );
+
+  }
+
+
+  profile=null;
+
+  return false;
 };
 
 loadMyPermissions = async function(){
@@ -5030,16 +5834,191 @@ function renderActiveUnitSelector(){
   el.disabled=myUnits.length<=1;
   const wrap=$('activeUnitSwitcher');if(wrap)wrap.classList.toggle('unit-single',myUnits.length<=1);
 }
+
 async function loadUnitAccess(){
-  if(!sb||!authUser)return false;
-  const {data,error}=await sb.rpc('get_my_units');
-  if(error){console.warn('Unidades do usuario',error);myUnits=[];activeUnit='';return false;}
-  myUnits=(data||[]).map(x=>String(x?.unit_name??x??'').trim()).filter(Boolean);
-  let saved='';try{saved=localStorage.getItem(unitAccessKey())||'';}catch(_e){}
-  activeUnit=myUnits.includes(saved)?saved:(myUnits[0]||'');
-  renderActiveUnitSelector();
-  return !!activeUnit;
+
+  if(
+    !sb
+    ||
+    !authUser
+  ){
+    return false;
+  }
+
+
+  const applyUnits=(units)=>{
+
+    myUnits=[
+      ...new Set(
+        (units||[])
+          .map(
+            x=>
+              String(
+                x||''
+              ).trim()
+          )
+          .filter(Boolean)
+      )
+    ];
+
+
+    let saved='';
+
+    try{
+
+      saved=
+        localStorage.getItem(
+          unitAccessKey()
+        )
+        ||
+        '';
+
+    }
+    catch(_e){}
+
+
+    const local=
+      offlineReadUnitAccessV171(
+        authUser.id
+      );
+
+
+    const preferred=
+      saved
+      ||
+      local?.active_unit
+      ||
+      '';
+
+
+    activeUnit=
+      myUnits.includes(
+        preferred
+      )
+        ?preferred
+        :(myUnits[0]||'');
+
+
+    renderActiveUnitSelector();
+
+
+    return !!activeUnit;
+  };
+
+
+  // ========================================================
+  // OFFLINE
+  // ========================================================
+
+  if(!navigator.onLine){
+
+    const local=
+      offlineReadUnitAccessV171(
+        authUser.id
+      );
+
+
+    if(local?.units?.length){
+
+      applyUnits(
+        local.units
+      );
+
+
+      setBackendStatus(
+        'checking',
+        'Modo offline - unidade local'
+      );
+
+
+      return true;
+    }
+
+
+    myUnits=[];
+    activeUnit='';
+
+    return false;
+  }
+
+
+  // ========================================================
+  // ONLINE
+  // ========================================================
+
+  try{
+
+    const {
+      data,
+      error
+    }=
+      await sb.rpc(
+        'get_my_units'
+      );
+
+
+    if(error)throw error;
+
+
+    const units=
+      (data||[])
+        .map(
+          x=>
+            String(
+              x?.unit_name
+              ??
+              x
+              ??
+              ''
+            ).trim()
+        )
+        .filter(Boolean);
+
+
+    applyUnits(
+      units
+    );
+
+
+    offlineSaveUnitAccessV171(
+      myUnits
+    );
+
+
+    return !!activeUnit;
+
+  }
+  catch(error){
+
+    console.warn(
+      'Unidades do usuario',
+      error
+    );
+
+
+    const local=
+      offlineReadUnitAccessV171(
+        authUser.id
+      );
+
+
+    if(local?.units?.length){
+
+      applyUnits(
+        local.units
+      );
+
+      return true;
+    }
+
+
+    myUnits=[];
+    activeUnit='';
+
+    return false;
+  }
 }
+
 function resetUnitScopedState(){
   pendingNris=[];historyNris=[];selectedNris.clear();adminAvarias=[];salesDamageMyRequests=[];salesDamageManageRequests=[];
   fefoActiveCount=null;fefoItems=[];fefoEditingItemId=null;fefoActiveCounts=[];fefoReports=[];fefoItemsByCount.clear();
@@ -5917,6 +6896,100 @@ setupRealtime=function(){
   if(canRotatingAsset()){realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'rotating_asset_counts'},()=>debounceReload('rotating_asset'));realtimeChannel.on('postgres_changes',{event:'*',schema:'public',table:'rotating_asset_entries'},()=>debounceReload('rotating_asset'));}
   realtimeChannel.subscribe();
 };
+
+
+// V1.7.0 - LOGIN / OPERACAO OFFLINE APK -----------------------
+
+const loadReferencesOnlineV171=
+  loadReferences;
+
+loadReferences=async function(
+  useCache=false
+){
+
+  if(!navigator.onLine){
+
+    const cached=
+      readRefCache();
+
+    if(cached){
+
+      refs=cached;
+
+      rebuildReferenceMaps();
+
+      populateReferenceInputs();
+
+    }
+    else{
+
+      console.warn(
+        '[OFFLINE] Base local de produtos/clientes ainda nao existe.'
+      );
+
+    }
+
+    return;
+  }
+
+
+  return await loadReferencesOnlineV171(
+    useCache
+  );
+};
+
+
+const setupRealtimeOnlineV171=
+  setupRealtime;
+
+setupRealtime=function(){
+
+  if(!navigator.onLine){
+
+    teardownRealtime();
+
+    return;
+  }
+
+
+  return setupRealtimeOnlineV171();
+};
+
+
+const initPushNotificationsOnlineV171=
+  initPushNotificationsV170;
+
+initPushNotificationsV170=
+  async function(){
+
+    if(!navigator.onLine){
+
+      try{
+        await updatePushButtonV170();
+      }
+      catch(_e){}
+
+      return;
+    }
+
+
+    return await initPushNotificationsOnlineV171();
+  };
+
+
+const deactivatePushDeviceOnlineV171=
+  deactivatePushDeviceV170;
+
+deactivatePushDeviceV170=
+  async function(){
+
+    if(!navigator.onLine){
+      return;
+    }
+
+    return await deactivatePushDeviceOnlineV171();
+  };
+
 
 const changeActiveUnitBeforePushV170=changeActiveUnit;
 changeActiveUnit=async function(next){await changeActiveUnitBeforePushV170(next);await refreshPushRegistrationV170();};
